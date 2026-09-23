@@ -1,0 +1,21 @@
+# Binaries
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local environment — never commit secrets
+.env
+.env.*
+!.env.example
+kubeconfig*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local working notes — not published
+IMPLEMENTATION_PLAN.md
+prompt.md
