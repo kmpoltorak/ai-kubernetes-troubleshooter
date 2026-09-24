@@ -8,7 +8,11 @@ include .env
 export
 endif
 
-.PHONY: build test test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
+.PHONY: web build test test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
+
+# Builds the React UI into internal/api/ui/dist, which the binary embeds.
+web:
+	cd web && npm ci && npm run build
 
 build:
 	CGO_ENABLED=0 go build -trimpath -o $(BINARY) ./cmd/api

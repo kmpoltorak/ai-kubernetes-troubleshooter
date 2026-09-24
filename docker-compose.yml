@@ -1,6 +1,6 @@
 # Default:            docker compose up --build            (app + postgres, simulation mode)
 # With a local LLM:   LLM_PROVIDER=ollama docker compose --profile ollama up --build
-# With monitoring:    docker compose --profile monitoring up --build   (Prometheus :9090)
+# With monitoring:    docker compose --profile monitoring up --build   (Prometheus :9090, Grafana :3000)
 #
 # Values come from .env (see .env.example). Addresses of other containers
 # (database, Ollama) are fixed here because they are facts of this network.
@@ -88,6 +88,22 @@ services:
       - "9090:9090"
     volumes:
       - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  # Local demo only: anonymous read-only access, admin password from env.
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:12.2.0
+    depends_on: [prometheus]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/kubernetes-troubleshooter.json
+    volumes:
+      - ./deployments/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards:ro
 
 volumes:
   pgdata:

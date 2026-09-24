@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -282,14 +283,33 @@ func TestRequestIDs(t *testing.T) {
 	}
 }
 
-func TestSecurityHeaders(t *testing.T) {
+func TestWebUI(t *testing.T) {
 	srv := newServer(t, llm.RulesProvider{}, nil)
-	resp, _ := do(t, "GET", srv.URL+"/health", "")
-	if resp.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "default-src 'none'") {
-		t.Fatalf("headers: %v", resp.Header)
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("/: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	csp := resp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") ||
+		resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("security headers: %v", resp.Header)
+	}
+	// When the frontend is built, its hashed assets must be served too.
+	if m := regexp.MustCompile(`/assets/[\w.-]+\.js`).Find(page); m != nil {
+		if r, _ := do(t, "GET", srv.URL+string(m), ""); r.StatusCode != 200 {
+			t.Fatalf("%s: %d", m, r.StatusCode)
+		}
 	}
 	if resp, _ := do(t, "GET", srv.URL+"/nope", ""); resp.StatusCode != 404 {
 		t.Errorf("unknown path: %d", resp.StatusCode)
+	}
+	if resp, _ := do(t, "GET", srv.URL+"/api/v1/incidents", ""); resp.Header.Get("Cache-Control") != "no-store" {
+		t.Error("API responses must not be cached")
 	}
 }
 
