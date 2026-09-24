@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
 )
 
@@ -162,3 +163,14 @@ func countRequests(next http.RoundTripper) http.RoundTripper {
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Live serves the real cluster to every investigation. Simulation scenarios
+// cannot be requested against it.
+type Live struct{ Cluster Cluster }
+
+func (l Live) For(_ domain.Target, scenario string) (Cluster, string, error) {
+	if scenario != "" {
+		return Cluster{}, "", fmt.Errorf("scenario %q requires simulation mode", scenario)
+	}
+	return l.Cluster, "", nil
+}
