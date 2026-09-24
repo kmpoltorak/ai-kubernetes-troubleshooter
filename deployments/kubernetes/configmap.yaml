@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: troubleshooter-config
+  namespace: troubleshooter
+data:
+  APP_ENV: production
+  LOG_LEVEL: info
+  # Live mode: in-cluster ServiceAccount credentials (KUBECONFIG unset).
+  SIMULATION_ENABLED: "false"
+  KUBERNETES_CLUSTER_NAME: local
+  # Must match the namespaces that have a troubleshooter-reader RoleBinding.
+  KUBERNETES_ALLOWED_NAMESPACES: payments
+  LLM_PROVIDER: rules
+  LLM_TIMEOUT: 60s
+  INVESTIGATION_TIMEOUT: 90s
+  MAX_CONCURRENT_INVESTIGATIONS: "4"
+  RATE_LIMIT_RPS: "5"
