@@ -1,0 +1,8 @@
+{
+  "title": "payment-service unreachable",
+  "cluster": "local",
+  "namespace": "payments",
+  "resource_type": "service",
+  "resource_name": "payment-service",
+  "description": "Clients get connection errors calling payment-service although pods look healthy"
+}

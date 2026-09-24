@@ -95,17 +95,23 @@ func getPodLogs(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 	if len(info.Streams) == 0 && len(errs) > 0 {
 		return Result{}, errors.Join(errs...)
 	}
-	errorLines := 0
+	errorLines, lastError := 0, ""
 	for _, s := range info.Streams {
 		errorLines += len(s.ErrorLines)
+		if n := len(s.ErrorLines); n > 0 {
+			lastError = s.ErrorLines[n-1]
+		}
 	}
 	health := domain.Healthy
 	if len(signals) > 0 || errorLines > 0 {
 		health = domain.Degraded
 	}
-	summary := fmt.Sprintf("%d log streams, %d error lines.", len(info.Streams), errorLines)
+	summary := fmt.Sprintf("Pod %s: %d log streams, %d error lines.", in.Name, len(info.Streams), errorLines)
 	if len(signals) > 0 {
 		summary += " Patterns: " + strings.Join(signals, ", ") + "."
+	}
+	if lastError != "" {
+		summary += " Last error: " + truncate(lastError, 160)
 	}
 	return Result{Subject: subject, Health: health, Summary: summary, Signals: signals, Data: info}, nil
 }
