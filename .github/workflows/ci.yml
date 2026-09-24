@@ -82,3 +82,12 @@ jobs:
           go-version-file: go.mod
       - name: go build
         run: go build ./...
+      - uses: docker/setup-buildx-action@v4
+      - name: Docker build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: ai-kubernetes-troubleshooter:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,94 @@
+# Default:            docker compose up --build            (app + postgres, simulation mode)
+# With a local LLM:   LLM_PROVIDER=ollama docker compose --profile ollama up --build
+# With monitoring:    docker compose --profile monitoring up --build   (Prometheus :9090)
+#
+# Values come from .env (see .env.example). Addresses of other containers
+# (database, Ollama) are fixed here because they are facts of this network.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: troubleshooter
+      POSTGRES_PASSWORD: troubleshooter
+      POSTGRES_DB: troubleshooter
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U troubleshooter -d troubleshooter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    image: ai-kubernetes-troubleshooter:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      HTTP_PORT: 8080
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://troubleshooter:troubleshooter@postgres:5432/troubleshooter?sslmode=disable
+      KUBERNETES_CLUSTER_NAME: ${KUBERNETES_CLUSTER_NAME:-local}
+      KUBERNETES_ALLOWED_NAMESPACES: ${KUBERNETES_ALLOWED_NAMESPACES:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-rules}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-120s}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OLLAMA_BASE_URL: http://ollama:11434
+      # Compose runs the demo in simulation mode; for a live cluster run the
+      # binary locally or deploy it with deployments/kubernetes.
+      SIMULATION_ENABLED: "true"
+      SIMULATION_SCENARIO: ${SIMULATION_SCENARIO:-healthy}
+      INVESTIGATION_TIMEOUT: ${INVESTIGATION_TIMEOUT:-180s}
+      MAX_CONCURRENT_INVESTIGATIONS: ${MAX_CONCURRENT_INVESTIGATIONS:-4}
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-5}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  ollama:
+    profiles: [ollama]
+    image: ollama/ollama:0.12.3
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot job that downloads the model into the shared volume.
+  ollama-pull:
+    profiles: [ollama]
+    image: ollama/ollama:0.12.3
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["ollama", "pull", "${LLM_MODEL:-llama3.2}"]
+    restart: "no"
+
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v3.6.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+volumes:
+  pgdata:
+  ollama:
