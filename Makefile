@@ -8,7 +8,7 @@ include .env
 export
 endif
 
-.PHONY: build test test-integration test-db test-db-stop lint fmt vet run
+.PHONY: build test test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
 
 build:
 	CGO_ENABLED=0 go build -trimpath -o $(BINARY) ./cmd/api
@@ -43,3 +43,15 @@ vet:
 
 run:
 	go run ./cmd/api
+
+migrate-up:
+	go run ./cmd/api migrate up
+
+migrate-down:
+	go run ./cmd/api migrate down
+
+docker-up:
+	docker compose up --build -d
+
+docker-down:
+	docker compose down
