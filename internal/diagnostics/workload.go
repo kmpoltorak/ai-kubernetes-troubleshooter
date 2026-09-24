@@ -288,7 +288,8 @@ type PodsInfo struct {
 	Total    int       `json:"total"`
 	Ready    int       `json:"ready"`
 	Pods     []PodInfo `json:"pods"`
-	// Spec is the pod spec summary of the first pod, used for a pod target.
+	// Spec is the pod spec summary of the first pod, used when there is no
+	// controller template (pod and service targets).
 	Spec *PodSpecSummary `json:"spec,omitempty"`
 }
 
@@ -324,10 +325,8 @@ func getPods(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 			Signals: []string{SignalNoPods}, Data: info}, nil
 	}
 	sort.Slice(pods, func(i, j int) bool { return pods[i].Name < pods[j].Name })
-	if in.Name != "" {
-		spec := summarizeSpec(pods[0].Spec)
-		info.Spec = &spec
-	}
+	spec := summarizeSpec(pods[0].Spec)
+	info.Spec = &spec
 
 	var signals signalSet
 	for i, p := range pods {
