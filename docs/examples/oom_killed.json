@@ -1,0 +1,8 @@
+{
+  "title": "payment-service restarts under load",
+  "cluster": "local",
+  "namespace": "payments",
+  "resource_type": "deployment",
+  "resource_name": "payment-service",
+  "description": "Pods restart during the nightly settlement batch"
+}

@@ -1,0 +1,8 @@
+{
+  "title": "No traffic reaches payment-service",
+  "cluster": "local",
+  "namespace": "payments",
+  "resource_type": "deployment",
+  "resource_name": "payment-service",
+  "description": "Pods are running but the ingress returns 503"
+}

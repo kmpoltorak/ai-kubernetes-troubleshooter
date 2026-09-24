@@ -1,0 +1,8 @@
+{
+  "title": "payment-service pods keep restarting",
+  "cluster": "local",
+  "namespace": "payments",
+  "resource_type": "deployment",
+  "resource_name": "payment-service",
+  "description": "Pods are repeatedly restarting after the 1.4.3 release"
+}
