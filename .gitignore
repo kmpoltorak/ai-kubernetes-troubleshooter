@@ -19,3 +19,7 @@ kubeconfig*
 # Local working notes — not published
 IMPLEMENTATION_PLAN.md
 prompt.md
+
+# Frontend build output and dependencies
+web/node_modules/
+internal/api/ui/dist/

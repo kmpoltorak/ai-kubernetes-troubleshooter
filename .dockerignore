@@ -7,3 +7,5 @@ docs
 deployments
 *.md
 kubeconfig*
+web/node_modules
+internal/api/ui/dist

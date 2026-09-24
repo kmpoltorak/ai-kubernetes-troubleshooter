@@ -55,6 +55,11 @@ LLM:
   evaluation reference
 - **Least-privilege RBAC**, bound per namespace, with no Secrets, exec,
   attach or write verbs
+- **Web UI** (React + TypeScript + Tailwind) embedded in the binary: create
+  incidents, run investigations with a scenario picker, and read reports
+  with signals, remediation actions and copyable read-only commands
+- **Grafana dashboard** provisioned with Prometheus: investigations, tool
+  health and failures, Kubernetes API calls, LLM latency and failures, HTTP API
 - REST API, PostgreSQL with embedded migrations, Prometheus metrics, JSON logs
   with request and trace IDs, per-IP rate limiting, graceful shutdown
 - Distroless non-root image, Docker Compose, Kubernetes manifests, and a CI
@@ -108,6 +113,13 @@ sequenceDiagram
 
 ## Demo
 
+![Web UI: a NetworkPolicy block diagnosed in simulation mode](docs/images/web-ui.png)
+
+Open <http://localhost:8080> after `docker compose up --build`. The sample
+buttons fill in an incident and pick the matching simulation scenario.
+
+From the command line:
+
 ```bash
 docker compose up --build -d            # app + Postgres, simulation mode, rules analyzer
 
@@ -137,28 +149,37 @@ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario":
 | Kubernetes | `k8s.io/client-go` (typed, metadata and fake clients) |
 | Storage | PostgreSQL 17, `pgx` with plain SQL and embedded migrations |
 | LLM | OpenAI Chat Completions (strict JSON schema), Ollama `/api/chat`, deterministic rules |
-| Observability | Prometheus `client_golang`, JSON logs with request and trace IDs |
+| Observability | Prometheus `client_golang`, Grafana (provisioned dashboard), JSON logs with request and trace IDs |
+| Web UI | React 19, TypeScript, Vite, Tailwind CSS, embedded with `go:embed` |
 | Runtime | Distroless static image, Docker Compose, Kubernetes manifests with kustomize |
 | CI | GitHub Actions: gofmt, vet, golangci-lint, race tests, integration tests, govulncheck, Docker build |
 
 The module has seven direct dependencies: pgx, client_golang, x/time,
-k8s.io/api, apimachinery, client-go and k8s.io/utils.
+k8s.io/api, apimachinery, client-go and k8s.io/utils. The UI's only runtime
+dependencies are React and React DOM.
 
 ## Quick Start
 
-Requirements: Go 1.27+ and Docker.
+Requirements: Go 1.27+ and Docker (Node 22 only to build the UI outside
+Docker).
 
 ```bash
 cp .env.example .env
-docker compose up --build            # http://localhost:8080
+docker compose up --build                          # UI and API on http://localhost:8080
+docker compose --profile monitoring up --build     # plus Prometheus :9090 and Grafana :3000
 ```
 
 Or run the binary against a local Postgres:
 
 ```bash
 docker compose up -d postgres
+make web                             # builds the UI into internal/api/ui/dist (embedded)
 make run                             # applies migrations, then serves on :8080
 ```
+
+Without `make web` the binary still builds and serves the API; `/` then shows
+a short note on how to build the UI. For UI development, run `make run` and
+`cd web && npm run dev` (Vite proxies `/api` to :8080).
 
 Live mode against your current kubeconfig context:
 
@@ -347,7 +368,21 @@ readiness) last.
 | `http_requests_total`, `http_request_duration_seconds` | `method`, `route` (pattern, not raw path), `status` |
 
 Every labeled series starts at zero, so `increase()` sees the first event.
-`docker compose --profile monitoring up` starts Prometheus on `:9090`.
+
+**Prometheus and Grafana.** `docker compose --profile monitoring up` starts
+Prometheus (`:9090`, scraping `app:8080/metrics`) and Grafana (`:3000`,
+anonymous read-only access for the local demo; admin password from
+`GRAFANA_ADMIN_PASSWORD`). The datasource and the dashboard
+([`deployments/grafana/`](deployments/grafana/)) are provisioned from files.
+The dashboard has an overview (incidents, investigations, success rate, p95
+duration, tool and LLM failure ratios), investigations by outcome and
+duration, workload health by tool, tool failures, Kubernetes API requests by
+status code (live mode only), LLM requests, latency and failures, and HTTP
+traffic, errors and p95 by route. A Go test fails if a panel queries a metric
+the app does not export. In Kubernetes, the Deployment carries the
+`prometheus.io/scrape|port|path` annotations.
+
+![Grafana dashboard after running all simulation scenarios](docs/images/grafana-dashboard.png)
 
 ## Testing
 
@@ -376,20 +411,23 @@ make lint               # gofmt, go vet, golangci-lint
 - **Integration** (PostgreSQL): migrations down and up, store round trip,
   sample incidents through REST, engine, simulated cluster, Postgres and the
   report read back.
-- **Manifests**: RBAC is read-only and least-privilege.
+- **Manifests**: RBAC is read-only and least-privilege, and every Grafana
+  query references an exported metric.
+- **Web UI**: `index.html` and hashed assets served with a strict
+  same-origin CSP; CI typechecks, builds and runs `npm audit`.
 
 No real cluster is needed in CI. Live mode was checked manually on minikube
 (see above).
 
 ## Docker
 
-- Multi-stage build to `gcr.io/distroless/static-debian12:nonroot`: 53 MB,
-  UID 65532, no shell. The binary is PID 1 and shuts down gracefully on
+- Multi-stage build (Node builds the UI, Go embeds it) to
+  `gcr.io/distroless/static-debian12:nonroot`: UID 65532, no shell. The binary is PID 1 and shuts down gracefully on
   SIGTERM.
 - Compose runs the app with a read-only root filesystem, all capabilities
   dropped and `no-new-privileges`.
 - Profiles: `ollama` (server plus a one-shot model pull) and `monitoring`
-  (Prometheus).
+  (Prometheus and Grafana).
 
 ## Kubernetes Deployment
 
@@ -428,6 +466,9 @@ provided externally.
   rejected).
 - Internal errors are hidden from clients, and the config log line redacts
   the API key.
+- Same-origin Content-Security-Policy (`default-src 'self'`,
+  `frame-ancestors 'none'`), `nosniff`, `no-referrer`, and `no-store` on API
+  responses. The UI uses only the public REST API.
 - Distroless non-root container, restricted Pod Security, hardened
   `securityContext`.
 - **No API authentication is built in.** Expose the service only behind an
@@ -437,7 +478,7 @@ provided externally.
 
 ```text
 cmd/api/                  entrypoint: config, wiring, migrations, graceful shutdown
-internal/api/             handlers, middleware (request IDs, metrics, rate limit, headers)
+internal/api/             handlers, middleware (request IDs, metrics, rate limit, headers), embedded UI
 internal/config/          environment configuration
 internal/domain/          entities, target policy, analysis and safe-command validation
 internal/incidents/       incident service
@@ -451,7 +492,10 @@ internal/observability/   logger and Prometheus metrics
 migrations/               SQL migrations (embedded)
 deployments/kubernetes/   manifests, RBAC, RBAC test
 deployments/prometheus/   scrape config
+deployments/grafana/      provisioned datasource and dashboard, dashboard test
+web/                      React UI (components: CreateIncidentForm, IncidentList, IncidentDetail, Report)
 docs/examples/            sample incidents and a real report
+docs/images/              screenshots
 ```
 
 ## Roadmap
@@ -462,7 +506,6 @@ docs/examples/            sample incidents and a real report
 - Remediation execution behind explicit human approval (the `remediation_actions` table already tracks status)
 - Asynchronous investigations with a job queue
 - API authentication and authorization, multi-cluster, Slack and GitHub integrations
-- Web frontend
 
 ## License
 

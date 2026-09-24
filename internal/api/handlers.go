@@ -45,6 +45,7 @@ func New(svc *incidents.Service, engine *investigation.Engine, checks map[string
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /ready", h.readiness)
 	mux.Handle("GET /metrics", promhttp.Handler())
+	registerUI(mux)
 	return recoverPanics(log, securityHeaders(withRequestIDs(rateLimit(rps, observe(log, mux)))))
 }
 
