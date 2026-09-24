@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
 type ResourceType string
@@ -45,3 +46,23 @@ func (t Target) Validate() error {
 
 // Ref renders the target as "kind/name", the format used in reports.
 func (t Target) Ref() string { return string(t.ResourceType) + "/" + t.ResourceName }
+
+// TargetPolicy restricts which cluster and namespaces may be investigated.
+type TargetPolicy struct {
+	ClusterName string
+	// AllowedNamespaces is empty when every namespace is allowed.
+	AllowedNamespaces []string
+}
+
+// ErrTargetNotAllowed marks targets outside the policy.
+var ErrTargetNotAllowed = errors.New("target not allowed")
+
+func (p TargetPolicy) Check(t Target) error {
+	if t.Cluster != p.ClusterName {
+		return fmt.Errorf("%w: cluster %q is not configured (available: %q)", ErrTargetNotAllowed, t.Cluster, p.ClusterName)
+	}
+	if len(p.AllowedNamespaces) > 0 && !slices.Contains(p.AllowedNamespaces, t.Namespace) {
+		return fmt.Errorf("%w: namespace %q is not in the allowed namespaces", ErrTargetNotAllowed, t.Namespace)
+	}
+	return nil
+}

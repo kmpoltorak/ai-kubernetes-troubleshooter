@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -131,5 +132,21 @@ func TestRemediationActions(t *testing.T) {
 	}
 	if cmd.Kind != RemediationDiagnosticCommand || cmd.RequiresApproval || cmd.Command == "" || cmd.Position != 2 {
 		t.Fatalf("command: %+v", cmd)
+	}
+}
+
+func TestTargetPolicy(t *testing.T) {
+	tgt := Target{Cluster: "local", Namespace: "payments", ResourceType: ResourcePod, ResourceName: "p"}
+	if err := (TargetPolicy{ClusterName: "local"}).Check(tgt); err != nil {
+		t.Fatalf("any namespace: %v", err)
+	}
+	if err := (TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"payments"}}).Check(tgt); err != nil {
+		t.Fatalf("allowed namespace: %v", err)
+	}
+	if err := (TargetPolicy{ClusterName: "prod"}).Check(tgt); !errors.Is(err, ErrTargetNotAllowed) {
+		t.Fatalf("other cluster: %v", err)
+	}
+	if err := (TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"orders"}}).Check(tgt); !errors.Is(err, ErrTargetNotAllowed) {
+		t.Fatalf("namespace outside allowlist: %v", err)
 	}
 }
