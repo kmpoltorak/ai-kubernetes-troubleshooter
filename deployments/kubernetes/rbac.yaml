@@ -1,0 +1,85 @@
+# Read-only access for the diagnostic tools. The ClusterRole is only a
+# reusable permission set: it is granted per target namespace with a
+# RoleBinding (below), so the ServiceAccount can read nothing elsewhere.
+# Every rule maps to one diagnostic tool; see README "RBAC".
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: troubleshooter-reader
+rules:
+  # get_pods, get_service (selector match), get_resource_usage (limits)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # get_pod_logs: current and previous container logs
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # get_events: BackOff, Unhealthy, FailedScheduling, ...
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list"]
+  # get_service
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+  # get_configmap: presence and key names of referenced ConfigMaps
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+  # get_deployment
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  # get_service: ready endpoints behind a Service
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list"]
+  # get_network_policies
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["list"]
+  # get_resource_usage (only when metrics-server is installed)
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["list"]
+---
+# get_namespace: namespaces are cluster-scoped, so this needs a
+# ClusterRoleBinding. It only allows reading Namespace objects.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: troubleshooter-namespace-reader
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: troubleshooter-namespace-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: troubleshooter-namespace-reader
+subjects:
+  - kind: ServiceAccount
+    name: troubleshooter
+    namespace: troubleshooter
+---
+# One RoleBinding per namespace the troubleshooter may investigate. Keep this
+# list in sync with KUBERNETES_ALLOWED_NAMESPACES in the ConfigMap.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: troubleshooter-reader
+  namespace: payments
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: troubleshooter-reader
+subjects:
+  - kind: ServiceAccount
+    name: troubleshooter
+    namespace: troubleshooter

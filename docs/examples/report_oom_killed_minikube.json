@@ -1,0 +1,195 @@
+{
+  "investigation": {
+    "id": "2ba1057c-2511-48b0-8e68-7fe3da909f33",
+    "incident_id": "f5c57090-e6e9-440f-ac3a-4a27ce3206ac",
+    "status": "completed",
+    "started_at": "2026-09-24T08:38:45.786561Z",
+    "completed_at": "2026-09-24T08:38:47.079507Z"
+  },
+  "tool_executions": [
+    {
+      "tool_name": "get_namespace",
+      "status": "succeeded",
+      "duration_ms": 78
+    },
+    {
+      "tool_name": "get_deployment",
+      "status": "succeeded",
+      "duration_ms": 3
+    },
+    {
+      "tool_name": "get_pods",
+      "status": "succeeded",
+      "duration_ms": 200
+    },
+    {
+      "tool_name": "get_events",
+      "status": "succeeded",
+      "duration_ms": 197
+    },
+    {
+      "tool_name": "get_pod_logs",
+      "status": "succeeded",
+      "duration_ms": 408
+    },
+    {
+      "tool_name": "get_service",
+      "status": "succeeded",
+      "duration_ms": 390
+    },
+    {
+      "tool_name": "get_network_policies",
+      "status": "succeeded",
+      "duration_ms": 5
+    },
+    {
+      "tool_name": "get_resource_usage",
+      "status": "succeeded",
+      "duration_ms": 3
+    }
+  ],
+  "evidence": [
+    {
+      "source": "get_namespace",
+      "subject": "namespace/payments",
+      "health": "healthy",
+      "summary": "Namespace payments exists (Active).",
+      "signals": []
+    },
+    {
+      "source": "get_deployment",
+      "subject": "deployment/settlement",
+      "health": "down",
+      "summary": "Deployment settlement has 0/1 ready replicas. Rollout is not complete.",
+      "signals": [
+        "ReplicasUnavailable"
+      ]
+    },
+    {
+      "source": "get_pods",
+      "subject": "pods/app=settlement",
+      "health": "down",
+      "summary": "0/1 pods ready. Findings: CrashLoopBackOff, OOMKilled, FrequentRestarts.",
+      "signals": [
+        "CrashLoopBackOff",
+        "OOMKilled",
+        "FrequentRestarts"
+      ]
+    },
+    {
+      "source": "get_events",
+      "subject": "events/settlement",
+      "health": "degraded",
+      "summary": "9 related events, 1 warnings. Patterns: BackOff.",
+      "signals": [
+        "BackOff"
+      ]
+    },
+    {
+      "source": "get_pod_logs",
+      "subject": "pod/settlement-79969b45bb-64mvl",
+      "health": "degraded",
+      "summary": "Pod settlement-79969b45bb-64mvl: 2 log streams, 2 error lines. Last error: Killed",
+      "signals": []
+    },
+    {
+      "source": "get_service",
+      "subject": "service/settlement",
+      "health": "healthy",
+      "summary": "No Service selects this workload.",
+      "signals": []
+    },
+    {
+      "source": "get_network_policies",
+      "subject": "networkpolicies/payments",
+      "health": "healthy",
+      "summary": "0 NetworkPolicies select the workload's pods.",
+      "signals": []
+    },
+    {
+      "source": "get_resource_usage",
+      "subject": "pods/payments",
+      "health": "healthy",
+      "summary": "Usage collected for 0 containers.",
+      "signals": []
+    }
+  ],
+  "report": {
+    "id": "2bc3594b-a322-4acc-bb2d-c2cb9d1e9953",
+    "provider": "rules/rules-v1",
+    "analysis": {
+      "summary": "Containers of deployment/settlement are killed by the kernel for exceeding their memory limit and restart repeatedly.",
+      "root_cause": "Container OOMKilled: memory exhaustion",
+      "confidence": 0.94,
+      "severity": "high",
+      "affected_resources": [
+        "deployment/settlement"
+      ],
+      "evidence": [
+        {
+          "source": "get_pods",
+          "description": "0/1 pods ready. Findings: CrashLoopBackOff, OOMKilled, FrequentRestarts."
+        }
+      ],
+      "possible_causes": [
+        "memory limit too low for the workload",
+        "memory leak",
+        "unbounded batch or cache growth"
+      ],
+      "recommended_actions": [
+        "review container memory usage against the limit",
+        "increase the memory limit if the usage is legitimate",
+        "investigate a possible memory leak or unbounded batch size"
+      ],
+      "safe_commands": [
+        "kubectl top pod -n payments",
+        "kubectl describe pod <pod> -n payments"
+      ]
+    },
+    "remediation_actions": [
+      {
+        "id": "461935f7-2921-49a3-b17b-4ee9d5df1a16",
+        "position": 1,
+        "kind": "recommendation",
+        "description": "review container memory usage against the limit",
+        "requires_approval": true,
+        "status": "proposed"
+      },
+      {
+        "id": "36492abd-829a-4db3-8c39-35b5cf948440",
+        "position": 2,
+        "kind": "recommendation",
+        "description": "increase the memory limit if the usage is legitimate",
+        "requires_approval": true,
+        "status": "proposed"
+      },
+      {
+        "id": "9b70e1fa-0194-48c9-a03e-4df9a3ab752b",
+        "position": 3,
+        "kind": "recommendation",
+        "description": "investigate a possible memory leak or unbounded batch size",
+        "requires_approval": true,
+        "status": "proposed"
+      },
+      {
+        "id": "f0e88482-2b39-4bf9-a1c3-d26b957a7533",
+        "position": 4,
+        "kind": "diagnostic_command",
+        "description": "Read-only diagnostic command",
+        "command": "kubectl top pod -n payments",
+        "requires_approval": false,
+        "status": "proposed"
+      },
+      {
+        "id": "910c3307-ba08-45af-8df9-a9d60eadbf84",
+        "position": 5,
+        "kind": "diagnostic_command",
+        "description": "Read-only diagnostic command",
+        "command": "kubectl describe pod <pod> -n payments",
+        "requires_approval": false,
+        "status": "proposed"
+      }
+    ],
+    "created_at": "2026-09-24T08:38:47.079493Z"
+  }
+}

@@ -1,0 +1,20 @@
+# The API has no built-in authentication: expose it only behind an
+# authenticating ingress (OAuth2 proxy, mTLS or an internal-only class).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: troubleshooter
+  namespace: troubleshooter
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: troubleshooter.internal.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: troubleshooter
+                port:
+                  name: http
