@@ -44,7 +44,9 @@ LLM:
 - **Redaction** of logs and event messages: passwords, tokens, JWTs, API
   keys, URL credentials and private keys. Logs are redacted as a whole stream
   before they are split into lines, so multi-line PEM blocks are masked
-  entirely, including blocks cut off by the sample limits
+  entirely, including blocks cut off by the sample limits. Runs of lines of
+  pure base64 (40+ characters) are masked too, which covers a sample taken
+  from inside a key; hex digests and similar blobs are masked as a side effect
 - **Bounded evidence**: tail and byte limits enforced by the API server, the
   last 30 lines plus error lines per stream (log signals are detected on every
   line read), 50 events, 20 pods with the unhealthy ones kept first

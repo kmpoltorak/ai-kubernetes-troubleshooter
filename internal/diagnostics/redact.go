@@ -14,6 +14,11 @@ var redactions = []struct {
 	// means the sample started inside a block, so everything before it goes.
 	{regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)`), "[REDACTED PRIVATE KEY]"},
 	{regexp.MustCompile(`\A[\s\S]*-----END [A-Z ]*PRIVATE KEY-----`), "[REDACTED PRIVATE KEY]"},
+	// A sample from inside a block has neither marker: mask runs of lines
+	// that are pure base64 (PEM wraps at 64). Hex digests and similar blobs
+	// are masked too; that loss is accepted. A final line under 40
+	// characters is left as is.
+	{regexp.MustCompile(`(?m)^[A-Za-z0-9+/]{40,}={0,2}(?:\r?\n[A-Za-z0-9+/]{40,}={0,2})*\r?$`), "[REDACTED KEY MATERIAL]"},
 	{regexp.MustCompile(`eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+`), "[REDACTED JWT]"},
 	{regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}`), "$1 [REDACTED]"},
 	{regexp.MustCompile(`\b(AKIA|ASIA)[0-9A-Z]{16}\b`), "[REDACTED AWS KEY]"},

@@ -280,7 +280,7 @@ func TestGetPodLogs(t *testing.T) {
 func TestParseLogsBounds(t *testing.T) {
 	var b strings.Builder
 	for range 100 {
-		b.WriteString(strings.Repeat("x", 1000) + "\n")
+		b.WriteString(strings.Repeat("x ", 500) + "\n")
 	}
 	s, err := parseLogs(strings.NewReader(b.String()), "app", false)
 	if err != nil {
@@ -445,6 +445,22 @@ func TestParseLogsRedactsMultilinePrivateKey(t *testing.T) {
 		if joined := strings.Join(s.Lines, "\n"); strings.Contains(joined, "SYNTHETICDATA") || !strings.Contains(joined, "[REDACTED PRIVATE KEY]") {
 			t.Errorf("%s: key material kept: %q", name, s.Lines)
 		}
+	}
+}
+
+// A sample taken entirely from inside a PEM block has no markers.
+func TestParseLogsRedactsKeyBodyWithoutMarkers(t *testing.T) {
+	body := "MIIEpAIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo4lgOEePzNm0tRgeLezV6ffAt0gun\r\n" +
+		"VTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u+qKhbwKfBstIs+bMY2Zkp18gnTxK\n" +
+		"LxoS2tFczGkPLPgizskuemMghRniWaoLcyehkd3qqGElvW/VDL5AaWTg0nLVkjRo\n"
+	logs := "starting\n" + body + "ready\nsha256:abc connected\n"
+	s, err := parseLogs(strings.NewReader(logs), "app", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"starting", "[REDACTED KEY MATERIAL]", "ready", "sha256:abc connected"}
+	if !slices.Equal(s.Lines, want) {
+		t.Fatalf("lines = %q, want %q", s.Lines, want)
 	}
 }
 
