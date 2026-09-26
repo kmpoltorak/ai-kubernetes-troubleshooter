@@ -4,6 +4,8 @@ diagnostics (pod status, events, container logs, Deployment, Service and
 EndpointSlices, ConfigMap/Secret presence, NetworkPolicies, resource usage).
 Each evidence item has a "source" (the diagnostic tool), a "subject", a
 "health", a "summary", machine-detected "signals" and structured "data".
+"failed_diagnostics" lists diagnostics that returned an error and observed
+nothing; never treat what they would have checked as healthy.
 
 Rules:
 1. Use ONLY the supplied incident and evidence. Do not invent pods, events,

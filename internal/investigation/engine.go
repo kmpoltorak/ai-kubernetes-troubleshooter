@@ -115,6 +115,8 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 
 	rec := domain.InvestigationRecord{
 		Investigation: domain.Investigation{IncidentID: inc.ID, Status: domain.InvestigationRunning, Scenario: scenario},
+		// Empty, not nil: the API contract has arrays, never null.
+		ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{},
 	}
 	if err := e.store.CreateInvestigation(ctx, &rec.Investigation); err != nil {
 		return domain.InvestigationRecord{}, fmt.Errorf("create investigation: %w", err)
@@ -123,8 +125,10 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 	log.InfoContext(ctx, "investigation started", "scenario", scenario, "target", inc.Ref(), "namespace", inc.Namespace)
 
 	r := &runner{engine: e, log: log, cluster: cluster, ns: inc.Namespace, rec: &rec}
-	r.collect(ctx, inc.Target)
-	analysisErr := e.analyze(ctx, log, inc, &rec)
+	analysisErr := r.collect(ctx, inc.Target)
+	if analysisErr == nil {
+		analysisErr = e.analyze(ctx, log, inc, &rec)
+	}
 
 	now := time.Now().UTC()
 	rec.Investigation.CompletedAt = &now
@@ -166,10 +170,12 @@ type runner struct {
 
 // collect is the diagnostic plan. Each step's input is derived from earlier
 // results (selector from the Deployment, containers from the pods, ConfigMap
-// names from the pod spec), never from model output.
-func (r *runner) collect(ctx context.Context, t domain.Target) {
+// names from the pod spec), never from model output. It fails when the
+// target itself cannot be read: no diagnosis, least of all "healthy", can be
+// made about a resource that was not observed.
+func (r *runner) collect(ctx context.Context, t domain.Target) error {
 	if res, ok := r.run(ctx, diagnostics.GetNamespace, diagnostics.Input{}); ok && res.Health == domain.Down {
-		return
+		return nil
 	}
 
 	var selector string
@@ -180,15 +186,21 @@ func (r *runner) collect(ctx context.Context, t domain.Target) {
 	switch t.ResourceType {
 	case domain.ResourceDeployment:
 		res, ok := r.run(ctx, diagnostics.GetDeployment, diagnostics.Input{Name: t.ResourceName})
-		if !ok || slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
-			return
+		if !ok {
+			return r.unobserved(t)
+		}
+		if slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
+			return nil
 		}
 		d := res.Data.(diagnostics.DeploymentInfo)
 		selector, podLabels, spec = d.Selector, d.PodLabels, &d.Template
 	case domain.ResourceService:
 		res, ok := r.run(ctx, diagnostics.GetService, diagnostics.Input{Name: t.ResourceName})
-		if !ok || slices.Contains(res.Signals, diagnostics.SignalServiceNotFound) {
-			return
+		if !ok {
+			return r.unobserved(t)
+		}
+		if slices.Contains(res.Signals, diagnostics.SignalServiceNotFound) {
+			return nil
 		}
 		if svcs := res.Data.(diagnostics.ServicesInfo).Services; len(svcs) > 0 && len(svcs[0].Selector) > 0 {
 			podLabels = svcs[0].Selector
@@ -196,8 +208,11 @@ func (r *runner) collect(ctx context.Context, t domain.Target) {
 		}
 	case domain.ResourcePod:
 		res, ok := r.run(ctx, diagnostics.GetPods, diagnostics.Input{Name: t.ResourceName})
-		if !ok || slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
-			return
+		if !ok {
+			return r.unobserved(t)
+		}
+		if slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
+			return nil
 		}
 		pods = res.Data.(diagnostics.PodsInfo)
 		if len(pods.Pods) > 0 {
@@ -223,11 +238,7 @@ func (r *runner) collect(ctx context.Context, t domain.Target) {
 	r.run(ctx, diagnostics.GetEvents, diagnostics.Input{Names: subjects[:min(len(subjects), maxEventSubject)]})
 
 	for _, p := range logPods(pods.Pods) {
-		containers := make([]string, 0, len(p.Containers))
-		for _, c := range p.Containers {
-			containers = append(containers, c.Name)
-		}
-		r.run(ctx, diagnostics.GetPodLogs, diagnostics.Input{Name: p.Name, Names: containers})
+		r.run(ctx, diagnostics.GetPodLogs, diagnostics.Input{Name: p.Name, Names: logContainers(p)})
 	}
 
 	if t.ResourceType != domain.ResourceService && len(podLabels) > 0 {
@@ -247,6 +258,13 @@ func (r *runner) collect(ctx context.Context, t domain.Target) {
 	if len(podNames) > 0 {
 		r.run(ctx, diagnostics.GetResourceUsage, diagnostics.Input{Names: podNames})
 	}
+	return nil
+}
+
+// unobserved reports the error of the last, failed, target read.
+func (r *runner) unobserved(t domain.Target) error {
+	te := r.rec.ToolExecutions[len(r.rec.ToolExecutions)-1]
+	return fmt.Errorf("could not read %s (%s): %s", t.Ref(), te.ToolName, te.Error)
 }
 
 // logPods picks the pods whose logs are read: pods with findings first,
@@ -255,6 +273,20 @@ func logPods(pods []diagnostics.PodInfo) []diagnostics.PodInfo {
 	sorted := slices.Clone(pods)
 	sort.SliceStable(sorted, func(i, j int) bool { return len(sorted[i].Signals) > 0 && len(sorted[j].Signals) == 0 })
 	return sorted[:min(len(sorted), maxLogPods)]
+}
+
+// logContainers lists the containers whose logs are read: app containers
+// and init containers that are running or failing. Init containers that
+// completed or have not started yet have nothing to explain.
+func logContainers(p diagnostics.PodInfo) []string {
+	names := make([]string, 0, len(p.Containers))
+	for _, c := range p.Containers {
+		if c.Init && (c.Reason == "Completed" || c.Reason == "PodInitializing") {
+			continue
+		}
+		names = append(names, c.Name)
+	}
+	return names
 }
 
 // run executes one allowlisted tool, records the execution and, on success,
@@ -284,7 +316,7 @@ func (r *runner) run(ctx context.Context, tool string, in diagnostics.Input) (di
 	r.rec.ToolExecutions = append(r.rec.ToolExecutions, te)
 	r.rec.Evidence = append(r.rec.Evidence, domain.Evidence{
 		ID: domain.NewID(), ToolExecutionID: te.ID, Source: tool, Subject: res.Subject,
-		Health: res.Health, Summary: res.Summary, Signals: res.Signals, Data: output,
+		Health: res.Health, Summary: res.Summary, Signals: append([]string{}, res.Signals...), Data: output,
 	})
 	observability.ToolExecutionsTotal.WithLabelValues(tool, string(res.Health)).Inc()
 	r.log.InfoContext(ctx, "diagnostic completed", "tool_name", tool, "duration_ms", te.DurationMs,
@@ -300,7 +332,13 @@ func (e *Engine) analyze(ctx context.Context, log *slog.Logger, inc domain.Incid
 	}
 	provider := e.provider.Name()
 	start := time.Now()
-	analysis, err := e.provider.Analyze(ctx, llm.AnalysisInput{Incident: inc, Evidence: rec.Evidence})
+	var failed []domain.ToolExecution
+	for _, te := range rec.ToolExecutions {
+		if te.Status == domain.ToolFailed {
+			failed = append(failed, te)
+		}
+	}
+	analysis, err := e.provider.Analyze(ctx, llm.AnalysisInput{Incident: inc, Evidence: rec.Evidence, Failed: failed})
 	observability.LLMRequestDuration.WithLabelValues(provider).Observe(time.Since(start).Seconds())
 	if err == nil {
 		sources := make([]string, len(rec.Evidence))

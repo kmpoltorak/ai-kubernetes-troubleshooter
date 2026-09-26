@@ -255,6 +255,7 @@ func getDeployment(ctx context.Context, c kube.Cluster, in Input) (Result, error
 
 type ContainerStatus struct {
 	Name                  string            `json:"name"`
+	Init                  bool              `json:"init,omitempty"`
 	Image                 string            `json:"image"`
 	Ready                 bool              `json:"ready"`
 	RestartCount          int32             `json:"restart_count"`
@@ -329,16 +330,19 @@ func getPods(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 	info.Spec = &spec
 
 	var signals signalSet
-	for i, p := range pods {
+	for _, p := range pods {
 		pi := podInfo(p)
 		signals.add(pi.Signals...)
 		if pi.Ready {
 			info.Ready++
 		}
-		if i < maxPods {
-			info.Pods = append(info.Pods, pi)
-		}
+		info.Pods = append(info.Pods, pi)
 	}
+	// Pods with problems first, so the detail cap never drops them; later
+	// steps read logs and metrics only for the pods kept here.
+	healthy := func(p PodInfo) bool { return p.Ready && len(p.Signals) == 0 }
+	sort.SliceStable(info.Pods, func(i, j int) bool { return !healthy(info.Pods[i]) && healthy(info.Pods[j]) })
+	info.Pods = info.Pods[:min(len(info.Pods), maxPods)]
 
 	health := domain.Healthy
 	switch {
@@ -350,6 +354,9 @@ func getPods(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 	summary := fmt.Sprintf("%d/%d pods ready.", info.Ready, info.Total)
 	if len(signals) > 0 {
 		summary += " Findings: " + strings.Join(signals, ", ") + "."
+	}
+	if len(info.Pods) < info.Total {
+		summary += fmt.Sprintf(" Details for %d of %d pods, problems first.", len(info.Pods), info.Total)
 	}
 	return Result{Subject: subject, Health: health, Summary: summary, Signals: signals, Data: info}, nil
 }
@@ -375,12 +382,13 @@ func podInfo(p corev1.Pod) PodInfo {
 	}
 
 	resources := map[string]corev1.ResourceRequirements{}
-	for _, ctr := range p.Spec.Containers {
+	for _, ctr := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
 		resources[ctr.Name] = ctr.Resources
 	}
-	for _, cs := range p.Status.ContainerStatuses {
-		st := ContainerStatus{Name: cs.Name, Image: cs.Image, Ready: cs.Ready, RestartCount: cs.RestartCount,
-			Requests: quantities(resources[cs.Name].Requests), Limits: quantities(resources[cs.Name].Limits)}
+	statuses := slices.Concat(p.Status.InitContainerStatuses, p.Status.ContainerStatuses)
+	for i, cs := range statuses {
+		st := ContainerStatus{Name: cs.Name, Init: i < len(p.Status.InitContainerStatuses), Image: cs.Image, Ready: cs.Ready,
+			RestartCount: cs.RestartCount, Requests: quantities(resources[cs.Name].Requests), Limits: quantities(resources[cs.Name].Limits)}
 		pi.Restarts += cs.RestartCount
 		switch s := cs.State; {
 		case s.Waiting != nil:
@@ -399,7 +407,8 @@ func podInfo(p corev1.Pod) PodInfo {
 			terminationSignals(&signals, s.Terminated.Reason, s.Terminated.ExitCode)
 		case s.Running != nil:
 			st.State = "running"
-			if !cs.Ready {
+			// A running init container is not ready until it completes.
+			if !cs.Ready && !st.Init {
 				signals.add(SignalPodNotReady)
 			}
 		}

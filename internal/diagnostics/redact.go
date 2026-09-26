@@ -10,7 +10,10 @@ var redactions = []struct {
 	re   *regexp.Regexp
 	with string
 }{
+	// A block without END runs to the end of the text; an END left over
+	// means the sample started inside a block, so everything before it goes.
 	{regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)`), "[REDACTED PRIVATE KEY]"},
+	{regexp.MustCompile(`\A[\s\S]*-----END [A-Z ]*PRIVATE KEY-----`), "[REDACTED PRIVATE KEY]"},
 	{regexp.MustCompile(`eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+`), "[REDACTED JWT]"},
 	{regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}`), "$1 [REDACTED]"},
 	{regexp.MustCompile(`\b(AKIA|ASIA)[0-9A-Z]{16}\b`), "[REDACTED AWS KEY]"},

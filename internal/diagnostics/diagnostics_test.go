@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -212,9 +213,13 @@ func TestGetPods(t *testing.T) {
 func TestGetEvents(t *testing.T) {
 	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	ev := func(name, obj, reason, typ, msg string, at time.Duration) *corev1.Event {
+		kind := "Pod"
+		if strings.HasPrefix(obj, "rs:") {
+			kind, obj = "ReplicaSet", obj[3:]
+		}
 		return &corev1.Event{
 			ObjectMeta:     metav1.ObjectMeta{Name: name, Namespace: ns},
-			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: obj},
+			InvolvedObject: corev1.ObjectReference{Kind: kind, Name: obj},
 			Reason:         reason, Type: typ, Message: msg, Count: 3,
 			LastTimestamp: metav1.NewTime(base.Add(at)),
 		}
@@ -224,17 +229,21 @@ func TestGetEvents(t *testing.T) {
 		ev("e1", "payment-service-7c9d8f6b5-a", "BackOff", "Warning", "Back-off restarting failed container app", time.Minute),
 		ev("e3", "orders-1", "FailedScheduling", "Warning", "unrelated", 0),
 		ev("e4", "payment-service-7c9d8f6b5-a", "Pulled", "Normal", "token=abc123secret pulled", 0),
+		ev("e5", "rs:payment-service-7c9d8f6b5", "SuccessfulCreate", "Normal", "Created pod", -time.Minute),
+		// A different Deployment whose name extends the target's.
+		ev("e6", "payment-service-worker-6b4f5c7d8-xyz", "FailedScheduling", "Warning", "unrelated", 0),
+		ev("e7", "rs:payment-service-worker", "FailedCreate", "Warning", "unrelated", 0),
 	)
-	r := run(t, c, GetEvents, Input{Names: []string{"payment-service"}})
+	r := run(t, c, GetEvents, Input{Names: []string{"payment-service", "payment-service-7c9d8f6b5-a"}})
 	info := r.Data.(EventsInfo)
-	if info.Total != 3 || info.Warnings != 2 {
+	if info.Total != 4 || info.Warnings != 2 {
 		t.Fatalf("total=%d warnings=%d", info.Total, info.Warnings)
 	}
-	if info.Events[0].Reason != "Pulled" || info.Events[2].Reason != "Unhealthy" {
+	if info.Events[0].Reason != "SuccessfulCreate" || info.Events[1].Reason != "Pulled" || info.Events[3].Reason != "Unhealthy" {
 		t.Fatalf("not chronological: %+v", info.Events)
 	}
-	if strings.Contains(info.Events[0].Message, "abc123secret") {
-		t.Fatalf("event message not redacted: %s", info.Events[0].Message)
+	if strings.Contains(info.Events[1].Message, "abc123secret") {
+		t.Fatalf("event message not redacted: %s", info.Events[1].Message)
 	}
 	wantSignals(t, r, SignalBackOff, SignalReadinessProbeFailed)
 	if slices.Contains(r.Signals, SignalFailedScheduling) {
@@ -420,3 +429,79 @@ func TestGetResourceUsage(t *testing.T) {
 }
 
 func intstrPort(p int) intstr.IntOrString { return intstr.FromInt(p) }
+
+// A PEM block spans lines; redaction must not run line by line.
+func TestParseLogsRedactsMultilinePrivateKey(t *testing.T) {
+	for name, logs := range map[string]string{
+		"complete":             "start\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEASYNTHETICDATA\n-----END RSA PRIVATE KEY-----\nready\n",
+		"crlf":                 "-----BEGIN PRIVATE KEY-----\r\nMIIEpAIBAAKCAQEASYNTHETICDATA\r\n-----END PRIVATE KEY-----\r\n",
+		"no end marker":        "-----BEGIN EC PRIVATE KEY-----\nMIIEpAIBAAKCAQEASYNTHETICDATA\n",
+		"sample starts inside": "MIIEpAIBAAKCAQEASYNTHETICDATA\n-----END RSA PRIVATE KEY-----\nready\n",
+	} {
+		s, err := parseLogs(strings.NewReader(logs), "app", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if joined := strings.Join(s.Lines, "\n"); strings.Contains(joined, "SYNTHETICDATA") || !strings.Contains(joined, "[REDACTED PRIVATE KEY]") {
+			t.Errorf("%s: key material kept: %q", name, s.Lines)
+		}
+	}
+}
+
+// Signals come from every line read, not only the kept tail.
+func TestGetPodLogsSignalsBeforeTail(t *testing.T) {
+	c := cluster(t, pod("payment-service-7c9d8f6b5-a", nil))
+	c.Client.(*fake.Clientset).PrependReactor("get", "pods/log", func(k8stesting.Action) (bool, runtime.Object, error) {
+		logs := "error: lookup db: no such host\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEASYNTHETICDATA\n-----END RSA PRIVATE KEY-----\n" +
+			strings.Repeat("info: heartbeat\n", logKeepLines+5)
+		return true, &runtime.Unknown{Raw: []byte(logs)}, nil
+	})
+	r := run(t, c, GetPodLogs, Input{Name: "payment-service-7c9d8f6b5-a", Names: []string{"app"}})
+	wantSignals(t, r, SignalDNSResolutionError)
+	if raw, _ := json.Marshal(r.Data); strings.Contains(string(raw), "SYNTHETICDATA") {
+		t.Fatalf("key material leaked: %s", raw)
+	}
+}
+
+func TestGetPodsInitContainers(t *testing.T) {
+	for reason, sig := range map[string]string{"CrashLoopBackOff": SignalCrashLoopBackOff, "ImagePullBackOff": SignalImagePullError, "OOMKilled": SignalOOMKilled} {
+		p := pod("payment-service-7c9d8f6b5-a", func(p *corev1.Pod) {
+			p.Status.Phase = corev1.PodPending
+			p.Status.Conditions[0].Status = corev1.ConditionFalse
+			p.Status.ContainerStatuses = nil
+			st := corev1.ContainerStatus{Name: "migrate", RestartCount: 5}
+			if reason == "OOMKilled" {
+				st.State.Terminated = &corev1.ContainerStateTerminated{Reason: reason, ExitCode: 137}
+			} else {
+				st.State.Waiting = &corev1.ContainerStateWaiting{Reason: reason}
+			}
+			p.Status.InitContainerStatuses = []corev1.ContainerStatus{st}
+		})
+		r := run(t, cluster(t, p), GetPods, Input{LabelSelector: "app=payment-service"})
+		wantSignals(t, r, sig, SignalFrequentRestarts)
+		ctrs := r.Data.(PodsInfo).Pods[0].Containers
+		if len(ctrs) != 1 || ctrs[0].Name != "migrate" || !ctrs[0].Init {
+			t.Errorf("%s: containers %+v", reason, ctrs)
+		}
+	}
+}
+
+// The detail cap keeps pods with problems even when they sort last.
+func TestGetPodsKeepsProblemPods(t *testing.T) {
+	var objs []runtime.Object
+	for i := range maxPods + 1 {
+		objs = append(objs, pod(fmt.Sprintf("demo-%02d", i), nil))
+	}
+	objs[maxPods] = pod(fmt.Sprintf("demo-%02d", maxPods), func(p *corev1.Pod) {
+		p.Status.Conditions[0].Status = corev1.ConditionFalse
+		p.Status.ContainerStatuses[0].State = corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}
+	})
+	r := run(t, cluster(t, objs...), GetPods, Input{LabelSelector: "app=payment-service"})
+	info := r.Data.(PodsInfo)
+	if info.Total != maxPods+1 || len(info.Pods) != maxPods || info.Pods[0].Name != "demo-20" {
+		t.Fatalf("total=%d kept=%d first=%s", info.Total, len(info.Pods), info.Pods[0].Name)
+	}
+	if !strings.Contains(r.Summary, "Details for 20 of 21 pods") {
+		t.Errorf("summary does not report the cap: %s", r.Summary)
+	}
+}

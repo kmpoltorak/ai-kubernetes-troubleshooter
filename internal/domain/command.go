@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -32,6 +33,11 @@ var (
 // safe to copy into a terminal: an allowlisted verb, no shell syntax, no
 // identity or endpoint overrides, and no access to Secrets.
 func ValidateSafeCommand(cmd string) error {
+	// Checked before tokenizing: Fields would hide a newline that starts a
+	// second command once the text is pasted into a shell.
+	if strings.ContainsFunc(cmd, func(r rune) bool { return r != ' ' && (unicode.IsSpace(r) || unicode.IsControl(r)) }) {
+		return errors.New("must be a single line separated by plain spaces")
+	}
 	args := strings.Fields(cmd)
 	if len(args) < 2 || args[0] != "kubectl" {
 		return errors.New("must be a kubectl command")

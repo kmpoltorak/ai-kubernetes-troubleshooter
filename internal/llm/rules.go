@@ -293,13 +293,21 @@ var rules = []rule{
 	},
 }
 
+// coreTools back the healthy verdict; resource usage and the rest are
+// optional (metrics-server may be absent).
+var coreTools = []string{diagnostics.GetDeployment, diagnostics.GetService, diagnostics.GetPods, diagnostics.GetEvents, diagnostics.GetPodLogs}
+
 func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analysis, error) {
 	if len(in.Evidence) == 0 {
 		return domain.Analysis{}, errors.New("rules: no evidence to analyze")
 	}
 	var all []string
+	// The default finding claims pods are ready, events quiet and logs
+	// clean; it holds only when those were observed and nothing is unhealthy.
+	incomplete := slices.ContainsFunc(in.Failed, func(te domain.ToolExecution) bool { return slices.Contains(coreTools, te.ToolName) })
 	for _, e := range in.Evidence {
 		all = append(all, e.Signals...)
+		incomplete = incomplete || e.Health != domain.Healthy
 	}
 	has := func(sigs ...string) bool {
 		return slices.ContainsFunc(sigs, func(s string) bool { return slices.Contains(all, s) })
@@ -311,6 +319,14 @@ func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analys
 		summary: fmt.Sprintf("%s looks healthy: pods are ready, no warning events and no error patterns were found. The problem may be outside Kubernetes or intermittent.", t.Ref()),
 		causes:  []string{"application-level error not visible in the sampled logs", "intermittent issue not present during the checks", "problem in an external dependency"},
 		actions: []string{"check application metrics and error rates", "re-run the investigation while the problem is occurring"},
+	}
+	if incomplete {
+		f = finding{
+			rootCause: "Inconclusive: no known fault pattern, but health could not be confirmed", severity: domain.SeverityMedium, confidence: 0.3,
+			summary: fmt.Sprintf("No known fault pattern matched for %s, but some diagnostics failed or reported problems, so the workload cannot be called healthy; confidence is low.", t.Ref()),
+			causes:  []string{"diagnostics lacked permission or timed out", "a fault not covered by the known patterns"},
+			actions: []string{"review the failed or degraded diagnostics", "re-run the investigation once the cluster API is reachable"},
+		}
 	}
 	for _, r := range rules {
 		if r.when(has) {
