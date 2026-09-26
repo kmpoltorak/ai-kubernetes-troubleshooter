@@ -44,6 +44,11 @@ type promptIncident struct {
 	domain.Target
 }
 
+type promptFailure struct {
+	Source string `json:"source"`
+	Error  string `json:"error"`
+}
+
 type promptEvidence struct {
 	Source  string          `json:"source"`
 	Subject string          `json:"subject"`
@@ -57,8 +62,9 @@ type promptEvidence struct {
 // for analysis are included; database IDs and timestamps are omitted.
 func userPrompt(in AnalysisInput) (string, error) {
 	msg := struct {
-		Incident promptIncident   `json:"incident"`
-		Evidence []promptEvidence `json:"evidence"`
+		Incident          promptIncident   `json:"incident"`
+		Evidence          []promptEvidence `json:"evidence"`
+		FailedDiagnostics []promptFailure  `json:"failed_diagnostics,omitempty"`
 	}{
 		Incident: promptIncident{Title: in.Incident.Title, Description: in.Incident.Description, Target: in.Incident.Target},
 	}
@@ -66,6 +72,9 @@ func userPrompt(in AnalysisInput) (string, error) {
 		msg.Evidence = append(msg.Evidence, promptEvidence{
 			Source: e.Source, Subject: e.Subject, Health: e.Health, Summary: e.Summary, Signals: e.Signals, Data: e.Data,
 		})
+	}
+	for _, te := range in.Failed {
+		msg.FailedDiagnostics = append(msg.FailedDiagnostics, promptFailure{Source: te.ToolName, Error: te.Error})
 	}
 	b, err := json.Marshal(msg)
 	return string(b), err

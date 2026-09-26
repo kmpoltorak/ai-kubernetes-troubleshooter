@@ -25,6 +25,9 @@ type Provider interface {
 type AnalysisInput struct {
 	Incident domain.Incident
 	Evidence []domain.Evidence
+	// Failed lists diagnostics that observed nothing; their absence from
+	// Evidence is not a sign of health.
+	Failed []domain.ToolExecution
 }
 
 // FromConfig builds the provider selected by LLM_PROVIDER. Config

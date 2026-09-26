@@ -20,10 +20,12 @@ const chip = "rounded-md border border-zinc-200 px-1.5 py-0.5 font-mono text-[11
 export default function Report({ record }: { record: InvestigationRecord }) {
   const report = record.report;
   const a = report?.analysis;
-  const evidenceByExec = new Map(record.evidence.map((e) => [e.tool_execution_id, e]));
+  // The API returns [] for collections, but older stored records may hold null.
+  const evidenceByExec = new Map((record.evidence ?? []).map((e) => [e.tool_execution_id, e]));
   const pct = a ? Math.round(a.confidence * 100) : 0;
-  const recommendations = report?.remediation_actions.filter((r) => r.kind === "recommendation") ?? [];
-  const commands = report?.remediation_actions.filter((r) => r.kind === "diagnostic_command") ?? [];
+  const actions = report?.remediation_actions ?? [];
+  const recommendations = actions.filter((r) => r.kind === "recommendation");
+  const commands = actions.filter((r) => r.kind === "diagnostic_command");
 
   return (
     <>
@@ -35,7 +37,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               <h3 className="mt-1 text-xl font-semibold">{a.root_cause}</h3>
               <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{a.summary}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {a.affected_resources.map((r) => (
+                {(a.affected_resources ?? []).map((r) => (
                   <span key={r} className={chip}>
                     {r}
                   </span>
@@ -89,13 +91,13 @@ export default function Report({ record }: { record: InvestigationRecord }) {
             <div className="card">
               <h4 className="section-title">Possible causes</h4>
               <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm">
-                {a.possible_causes.map((t) => (
+                {(a.possible_causes ?? []).map((t) => (
                   <li key={t}>{t}</li>
                 ))}
               </ul>
               <h4 className="section-title mt-5">Cited evidence</h4>
               <ul className="flex flex-col gap-1.5 text-sm">
-                {a.evidence.map((e, i) => (
+                {(a.evidence ?? []).map((e, i) => (
                   <li key={i}>
                     <span className="mr-2 font-mono text-xs text-zinc-500">{e.source}</span>
                     {e.description}
@@ -120,9 +122,10 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               </tr>
             </thead>
             <tbody>
-              {record.tool_executions.map((te) => {
+              {(record.tool_executions ?? []).map((te) => {
                 const ev = evidenceByExec.get(te.id);
                 const health = ev?.health ?? "failed";
+                const signals = ev?.signals ?? [];
                 return (
                   <tr key={te.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800/60">
                     <td className="py-2.5 pr-4">
@@ -135,9 +138,9 @@ export default function Report({ record }: { record: InvestigationRecord }) {
                     </td>
                     <td className="py-2.5 pr-4">
                       {ev?.summary ?? te.error}
-                      {ev && ev.signals.length > 0 && (
+                      {signals.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
-                          {ev.signals.map((s) => (
+                          {signals.map((s) => (
                             <span key={s} className={chip}>
                               {s}
                             </span>

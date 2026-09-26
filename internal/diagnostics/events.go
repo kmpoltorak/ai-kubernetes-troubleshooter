@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -32,20 +33,31 @@ type EventsInfo struct {
 	Events   []EventInfo `json:"events"`
 }
 
-// getEvents collects events whose involved object is one of in.Names or is
-// owned by one by naming convention (e.g. ReplicaSet "app-7c9d8f6b5" and its
-// pods for Deployment "app"). The newest maxEvents are returned oldest first.
+// replicaSetOf matches "<deployment>-<pod-template-hash>". The hash uses
+// the alphabet of k8s.io/apimachinery/pkg/util/rand.SafeEncodeString, which
+// has no vowels, so "payment-worker" is not a ReplicaSet of "payment".
+var replicaSetOf = regexp.MustCompile(`^(.+)-[bcdfghjklmnpqrstvwxz2456789]{1,10}$`)
+
+// getEvents collects events whose involved object is one of in.Names (the
+// target and its pods, by exact name) or a ReplicaSet of the target. The
+// newest maxEvents are returned oldest first.
+// ponytail: matched by name, not UID; an object recreated under the same
+// name shares its predecessor's recent events.
 func getEvents(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 	list, err := c.Client.CoreV1().Events(in.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return Result{}, err
 	}
-	related := func(name string) bool {
-		return slices.ContainsFunc(in.Names, func(n string) bool { return name == n || strings.HasPrefix(name, n+"-") })
+	related := func(obj corev1.ObjectReference) bool {
+		if slices.Contains(in.Names, obj.Name) {
+			return true
+		}
+		m := replicaSetOf.FindStringSubmatch(obj.Name)
+		return obj.Kind == "ReplicaSet" && m != nil && slices.Contains(in.Names, m[1])
 	}
 	var events []EventInfo
 	for _, e := range list.Items {
-		if len(in.Names) > 0 && !related(e.InvolvedObject.Name) {
+		if len(in.Names) > 0 && !related(e.InvolvedObject) {
 			continue
 		}
 		events = append(events, EventInfo{

@@ -32,7 +32,7 @@ func collect(t *testing.T, scenario string, tgt domain.Target) ([]string, map[st
 		{diagnostics.GetNamespace, diagnostics.Input{}},
 		{diagnostics.GetDeployment, diagnostics.Input{Name: app}},
 		{diagnostics.GetPods, diagnostics.Input{LabelSelector: "app=" + app}},
-		{diagnostics.GetEvents, diagnostics.Input{Names: []string{app}}},
+		{diagnostics.GetEvents, diagnostics.Input{Names: append([]string{app}, pods...)}},
 		{diagnostics.GetPodLogs, diagnostics.Input{Name: pods[0], Names: []string{"app"}}},
 		{diagnostics.GetService, diagnostics.Input{Name: app, Labels: labels}},
 		{diagnostics.GetConfigMap, diagnostics.Input{Name: app + "-config"}},

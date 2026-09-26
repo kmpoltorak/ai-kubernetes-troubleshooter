@@ -175,6 +175,11 @@ func TestOllamaProvider(t *testing.T) {
 	}
 }
 
+func healthy(e domain.Evidence) domain.Evidence {
+	e.Health = domain.Healthy
+	return e
+}
+
 func ev(source, subject string, signals ...string) domain.Evidence {
 	return domain.Evidence{Source: source, Subject: subject, Health: domain.Degraded, Summary: source + " summary",
 		Signals: signals, Data: json.RawMessage("{}")}
@@ -203,7 +208,8 @@ func TestRulesProvider(t *testing.T) {
 		{"crash loop", []domain.Evidence{ev("get_pods", "pods/x", "CrashLoopBackOff"), ev("get_pod_logs", "pod/p", "ConfigurationError")}, "CrashLoopBackOff", domain.SeverityCritical, ""},
 		{"selector mismatch", []domain.Evidence{ev("get_service", "service/payment-service", "SelectorMismatch", "NoReadyEndpoints")}, "selector", domain.SeverityHigh, "service/payment-service"},
 		{"scheduling", []domain.Evidence{ev("get_pods", "pods/x", "Unschedulable")}, "Insufficient cluster resources", domain.SeverityHigh, ""},
-		{"healthy", []domain.Evidence{ev("get_pods", "pods/x"), ev("get_events", "events/x")}, "No Kubernetes-level fault", domain.SeverityLow, ""},
+		{"healthy", []domain.Evidence{healthy(ev("get_pods", "pods/x")), healthy(ev("get_events", "events/x"))}, "No Kubernetes-level fault", domain.SeverityLow, ""},
+		{"degraded without pattern", []domain.Evidence{healthy(ev("get_pods", "pods/x")), ev("get_events", "events/x")}, "Inconclusive", domain.SeverityMedium, ""},
 	}
 	target := domain.Target{Cluster: "local", Namespace: "payments", ResourceType: domain.ResourceDeployment, ResourceName: "payment-service"}
 	for _, tt := range tests {
@@ -229,6 +235,26 @@ func TestRulesProvider(t *testing.T) {
 	}
 	if _, err := (RulesProvider{}).Analyze(context.Background(), AnalysisInput{}); err == nil {
 		t.Fatal("no-evidence input accepted")
+	}
+}
+
+// A failed core diagnostic must not yield a healthy verdict; a failed
+// optional one (metrics-server absent) may.
+func TestRulesProviderFailedDiagnostics(t *testing.T) {
+	in := AnalysisInput{
+		Incident: domain.Incident{Target: domain.Target{Namespace: "payments", ResourceType: domain.ResourceDeployment, ResourceName: "payment-service"}},
+		Evidence: []domain.Evidence{healthy(ev("get_namespace", "namespace/payments"))},
+	}
+	for tool, want := range map[string]string{"get_deployment": "Inconclusive", "get_pods": "Inconclusive", "get_resource_usage": "No Kubernetes-level fault"} {
+		in.Failed = []domain.ToolExecution{{ToolName: tool, Status: domain.ToolFailed, Error: "forbidden"}}
+		a, err := RulesProvider{}.Analyze(context.Background(), in)
+		if err != nil || !strings.Contains(a.RootCause, want) {
+			t.Errorf("%s failed: got %q (%v), want %q", tool, a.RootCause, err, want)
+		}
+	}
+	in.Failed = []domain.ToolExecution{{ToolName: "get_pods", Error: "forbidden"}}
+	if p, _ := userPrompt(in); !strings.Contains(p, `"failed_diagnostics":[{"source":"get_pods","error":"forbidden"}]`) {
+		t.Errorf("prompt does not report failed diagnostics:\n%s", p)
 	}
 }
 

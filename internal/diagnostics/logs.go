@@ -1,7 +1,6 @@
 package diagnostics
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -48,6 +47,8 @@ type LogStream struct {
 	Lines      []string `json:"lines"`
 	ErrorLines []string `json:"error_lines,omitempty"`
 	Truncated  bool     `json:"truncated"`
+	// signals are matched on every line read, not only the kept sample.
+	signals []string
 }
 
 type LogsInfo struct {
@@ -81,13 +82,7 @@ func getPodLogs(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 			if len(s.Lines) == 0 {
 				continue
 			}
-			for _, line := range s.Lines {
-				for _, p := range logPatterns {
-					if p.re.MatchString(line) {
-						signals.add(p.signal)
-					}
-				}
-			}
+			signals.add(s.signals...)
 			info.Streams = append(info.Streams, s)
 		}
 	}
@@ -129,22 +124,31 @@ func readLogs(ctx context.Context, c kube.Cluster, namespace, pod, container str
 
 func parseLogs(r io.Reader, container string, previous bool) (LogStream, error) {
 	s := LogStream{Container: container, Previous: previous}
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64<<10), logLimitBytes+1)
-	var all []string
-	read := 0
-	for sc.Scan() {
-		read += len(sc.Bytes()) + 1
-		line := truncate(Redact(sc.Text()), logMaxLineBytes)
-		all = append(all, line)
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return s, fmt.Errorf("read logs: %w", err)
+	}
+	// Redact the whole stream before splitting: a PEM block spans lines.
+	text := strings.TrimRight(Redact(string(data)), "\n")
+	if text == "" {
+		return s, nil
+	}
+	var signals signalSet
+	all := strings.Split(text, "\n")
+	for i, line := range all {
+		line = truncate(strings.TrimSuffix(line, "\r"), logMaxLineBytes)
+		all[i] = line
 		if errorLine.MatchString(line) && len(s.ErrorLines) < logMaxErrorLines {
 			s.ErrorLines = append(s.ErrorLines, line)
 		}
+		for _, p := range logPatterns {
+			if p.re.MatchString(line) {
+				signals.add(p.signal)
+			}
+		}
 	}
-	if err := sc.Err(); err != nil {
-		return s, fmt.Errorf("read logs: %w", err)
-	}
-	s.Truncated = read > logLimitBytes || len(all) > logKeepLines
+	s.signals = signals
+	s.Truncated = len(data) > logLimitBytes || len(all) > logKeepLines
 	if len(all) > logKeepLines {
 		all = all[len(all)-logKeepLines:]
 	}

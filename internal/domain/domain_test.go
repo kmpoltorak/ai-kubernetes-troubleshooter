@@ -91,6 +91,13 @@ func TestValidateSafeCommand(t *testing.T) {
 		"kubectl get pods --token abc",
 		"kubectl get pods --kubeconfig=/tmp/k",
 		"sudo kubectl get pods",
+		"kubectl get pods\nkubectl delete deployment demo -n payments",
+		"kubectl get pods\r\nkubectl delete deployment demo -n payments",
+		"kubectl get pods\nrm -rf /tmp/x",
+		"kubectl get pods\rrm",
+		"kubectl get pods\tx",
+		"kubectl get pods\u0085rm",
+		"kubectl get pods\x00",
 	}
 	for _, c := range safe {
 		if err := ValidateSafeCommand(c); err != nil {

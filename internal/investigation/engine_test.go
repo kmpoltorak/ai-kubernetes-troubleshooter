@@ -2,6 +2,7 @@ package investigation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -10,6 +11,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/diagnostics"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
@@ -257,5 +264,65 @@ func TestPersistsAfterCallerCancels(t *testing.T) {
 	_, err := newEngine(store, clusters, llm.RulesProvider{}).Investigate(ctx, inc.ID, Options{})
 	if len(store.finished) != 1 {
 		t.Fatalf("investigation not persisted after cancel (err=%v)", err)
+	}
+}
+
+// A target that cannot be read must fail the investigation, not be
+// reported healthy.
+func TestInvestigateFailsWhenTargetUnreadable(t *testing.T) {
+	for _, inc := range []domain.Incident{
+		incident(domain.ResourceDeployment, "payment-service"),
+		incident(domain.ResourceService, "payment-service"),
+		incident(domain.ResourcePod, "payment-service-0"),
+	} {
+		clusters := clustersFunc(func(t domain.Target, _ string) (kube.Cluster, string, error) {
+			c, err := simulation.Build("healthy", t)
+			for _, res := range []string{"deployments", "services", "pods"} {
+				c.Client.(*fake.Clientset).PrependReactor("get", res, func(k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: res}, t.ResourceName, errors.New("rbac"))
+				})
+			}
+			return c, "healthy", err
+		})
+		rec, err := newEngine(newMemStore(inc), clusters, llm.RulesProvider{}).Investigate(context.Background(), inc.ID, Options{})
+		if !errors.Is(err, ErrAnalysisFailed) || rec.Report != nil || rec.Investigation.Status != domain.InvestigationFailed ||
+			!strings.Contains(rec.Investigation.Error, "forbidden") {
+			t.Errorf("%s: err=%v status=%s error=%q", inc.Ref(), err, rec.Investigation.Status, rec.Investigation.Error)
+		}
+	}
+}
+
+// Collections serialize as [] so the UI can render any record.
+func TestRecordJSONHasNoNullArrays(t *testing.T) {
+	inc := incident(domain.ResourceDeployment, "payment-service")
+	rec, err := newEngine(newMemStore(inc), sim(t), llm.RulesProvider{}).Investigate(context.Background(), inc.ID, Options{Scenario: "healthy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rec)
+	if strings.Contains(string(raw), `"signals":null`) {
+		t.Fatalf("null signals in %s", raw)
+	}
+	empty := newEngine(newMemStore(inc), clustersFunc(func(t domain.Target, _ string) (kube.Cluster, string, error) {
+		c, err := simulation.Build("healthy", t)
+		c.Client.(*fake.Clientset).PrependReactor("*", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("api down")
+		})
+		return c, "healthy", err
+	}), llm.RulesProvider{})
+	rec, _ = empty.Investigate(context.Background(), inc.ID, Options{})
+	if raw, _ := json.Marshal(rec); !strings.Contains(string(raw), `"evidence":[]`) {
+		t.Fatalf("evidence not [] when every tool failed: %s", raw)
+	}
+}
+
+func TestLogContainersIncludeFailingInitContainers(t *testing.T) {
+	p := diagnostics.PodInfo{Containers: []diagnostics.ContainerStatus{
+		{Name: "done", Init: true, State: "terminated", Reason: "Completed"},
+		{Name: "migrate", Init: true, State: "waiting", Reason: "CrashLoopBackOff"},
+		{Name: "app", State: "waiting", Reason: "PodInitializing"},
+	}}
+	if got := logContainers(p); !slices.Equal(got, []string{"migrate", "app"}) {
+		t.Fatalf("containers = %v", got)
 	}
 }

@@ -42,12 +42,23 @@ LLM:
   `PartialObjectMetadata`, env vars are reported as names and source kinds,
   and ConfigMaps as key names and sizes
 - **Redaction** of logs and event messages: passwords, tokens, JWTs, API
-  keys, URL credentials and private keys
+  keys, URL credentials and private keys. Logs are redacted as a whole stream
+  before they are split into lines, so multi-line PEM blocks are masked
+  entirely, including blocks cut off by the sample limits. Runs of lines of
+  pure base64 (40+ characters) are masked too, which covers a sample taken
+  from inside a key; hex digests and similar blobs are masked as a side effect
 - **Bounded evidence**: tail and byte limits enforced by the API server, the
-  last 30 lines plus error lines per stream, 50 events, 20 pods
+  last 30 lines plus error lines per stream (log signals are detected on every
+  line read), 50 events, 20 pods with the unhealthy ones kept first
+- **Init containers** are inspected like app containers: their failures raise
+  signals and the logs of running or failing init containers are collected
+- **Events are matched precisely**: by the exact name of the target and its
+  pods, or a ReplicaSet `<deployment>-<pod-template-hash>`, so `payment` never
+  picks up events of `payment-worker`
 - **Strict output validation**: schema, confidence range, severity enum, cited
   sources, `kind/name` resources, and a read-only command allowlist that
-  rejects Secret access, shell syntax and `--as`/`--token`/`--raw`
+  rejects Secret access, shell syntax, line breaks and control characters,
+  and `--as`/`--token`/`--raw`
 - **Simulation mode** with 11 deterministic scenarios built on client-go fake
   clients. The real tools run unchanged against them.
 - **Three analyzers**: OpenAI (strict `json_schema`), Ollama (schema
@@ -231,7 +242,12 @@ default with `SIMULATION_SCENARIO`. Live mode rejects scenario requests.
   server with `/version`.
 - If metrics-server is missing, or a permission is not granted,
   `get_resource_usage` or `get_secret_metadata` is recorded as a failed tool
-  execution and the investigation continues.
+  execution and the investigation continues. Failed diagnostics are passed to
+  the analyzer, and the rules analyzer never reports a workload healthy when
+  pods, events or logs could not be read or any evidence is degraded.
+- If the target itself (Deployment, Service or Pod) cannot be read, e.g.
+  `forbidden` or a timeout, the investigation fails with that error instead
+  of producing a diagnosis for a resource that was never observed.
 
 ## RBAC
 
@@ -344,7 +360,9 @@ invalid, the investigation fails (502) and the evidence is kept.
 The rules analyzer triages in the order an engineer would: a missing target,
 then specific causes (image, config, scheduling, OOM, DNS, NetworkPolicy plus
 timeout, liveness), and generic symptoms (CrashLoopBackOff, selector,
-readiness) last.
+readiness) last. With no matching pattern it reports "no Kubernetes-level
+fault" only when all evidence is healthy and no core diagnostic failed;
+otherwise the result is an explicit low-confidence "inconclusive".
 
 ## Observability
 
@@ -394,18 +412,23 @@ make lint               # gofmt, go vet, golangci-lint
 
 - **Diagnostics**: each tool against `fake.NewClientset` and the fake
   metadata client (found and not found, signals, health, no env, ConfigMap or
-  Secret values, log bounds, redaction).
+  Secret values, log bounds, multi-line PEM redaction through the log path,
+  signals before the kept tail, init containers, problem pods kept past the
+  20-pod cap, event matching against look-alike workloads).
 - **Simulation**: all 10 tools against all 11 scenarios, asserting the
   expected signals (and the absence of misleading ones), plus a determinism
   check.
 - **Evaluation**: every scenario end to end through engine, tools and rules
   analyzer, checking root cause and severity.
 - **Engine**: plans for deployment, pod and service targets, early stop on a
-  missing target, invalid model output rejected with evidence kept, tool
-  failures recorded, busy handling, persistence after the client disconnects.
+  missing target, failure on an unreadable target, invalid model output
+  rejected with evidence kept, tool failures recorded, `[]` instead of `null`
+  in the JSON record, init container log selection, busy handling,
+  persistence after the client disconnects.
 - **LLM**: strict decoding, prompt content, OpenAI and Ollama request shape
-  and error mapping via `httptest`, timeouts, rule precedence, and every
-  rule's commands passing the safe-command validator.
+  and error mapping via `httptest`, timeouts, rule precedence, no healthy
+  verdict with failed core diagnostics, and every rule's commands passing the
+  safe-command validator (which rejects multi-line commands, LF and CRLF).
 - **API**: lifecycle, error table, limits, rate limiting, headers, request
   IDs, metrics labels.
 - **Integration** (PostgreSQL): migrations down and up, store round trip,

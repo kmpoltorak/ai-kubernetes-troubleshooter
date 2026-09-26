@@ -31,7 +31,7 @@ export interface Evidence {
   subject: string;
   health: Health;
   summary: string;
-  signals: string[];
+  signals: string[] | null;
 }
 
 export interface Analysis {
@@ -58,8 +58,8 @@ export interface RemediationAction {
 
 export interface InvestigationRecord {
   investigation: { id: string; status: string; scenario?: string; error?: string };
-  tool_executions: ToolExecution[];
-  evidence: Evidence[];
+  tool_executions: ToolExecution[] | null;
+  evidence: Evidence[] | null;
   report?: { provider: string; analysis: Analysis; remediation_actions: RemediationAction[] };
 }
 
