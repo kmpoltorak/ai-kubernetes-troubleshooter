@@ -26,7 +26,7 @@ jobs:
         run: go vet ./... && go vet -tags integration ./...
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.2
+          version: v2.14.0
           # Build with the workflow's Go so the linter supports the go.mod version.
           install-mode: goinstall
           args: --build-tags integration
