@@ -2,145 +2,17 @@
 
 [![CI](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/actions/workflows/ci.yml/badge.svg)](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/actions/workflows/ci.yml)
 
-A Go service that investigates Kubernetes workload incidents. It runs a fixed,
-read-only diagnostic plan against the cluster, turns the results into
-structured evidence, and asks an LLM for a root-cause report. The report is
-validated before it is stored.
+A Go service that investigates broken Kubernetes workloads (Deployment, Service
+or Pod). It runs a fixed, read-only diagnostic plan against the cluster, turns
+the results into structured evidence with signals such as `OOMKilled` or
+`SelectorMismatch`, and has an LLM or a built-in rules engine write a
+root-cause report, which is validated before it is stored. It runs offline
+against simulated clusters, or live with a read-only ServiceAccount.
 
-The application owns the workflow. The LLM only reads evidence: it has no
-tools, no shell and no Kubernetes client, and it cannot trigger an API call.
-
-## Overview
-
-Triage of a broken workload usually means running the same dozen `kubectl`
-commands, reading noisy events and logs, and correlating them by hand. This
-service automates the collection step and hands the correlation step to an
-LLM:
-
-1. You file an incident: *"payment-service pods keep restarting"*.
-2. The service inspects the namespace, Deployment, pods, events, current and
-   previous logs, Services and EndpointSlices, referenced ConfigMaps and
-   Secrets, NetworkPolicies and resource usage.
-3. Each result becomes evidence with a health verdict, a summary and stable
-   **signals** such as `OOMKilled`, `SelectorMismatch` or `DNSResolutionError`.
-4. An analyzer (OpenAI, Ollama or the built-in deterministic rules) returns a
-   JSON report. The service checks that the report cites only evidence that
-   was actually collected and suggests only read-only `kubectl` commands.
-5. Everything is stored in PostgreSQL: incident, every tool execution,
-   evidence, report and remediation actions.
-
-## Features
-
-- **10 allowlisted, read-only diagnostics** on client-go: `get_namespace`,
-  `get_deployment`, `get_pods`, `get_events`, `get_pod_logs`, `get_service`,
-  `get_configmap`, `get_secret_metadata`, `get_network_policies`,
-  `get_resource_usage`
-- **Deterministic plan**: every tool input comes from earlier results (the
-  selector from the Deployment, container names from the pods, ConfigMap names
-  from the pod spec), never from model output
-- **Secret values are never read.** Secrets are fetched as
-  `PartialObjectMetadata`, env vars are reported as names and source kinds,
-  and ConfigMaps as key names and sizes
-- **Redaction** of logs and event messages: passwords, tokens, JWTs, API
-  keys, URL credentials and private keys. Logs are redacted as a whole stream
-  before they are split into lines, so multi-line PEM blocks are masked
-  entirely, including blocks cut off by the sample limits. Runs of lines of
-  pure base64 (40+ characters) are masked too, which covers a sample taken
-  from inside a key; hex digests and similar blobs are masked as a side effect
-- **Bounded evidence**: tail and byte limits enforced by the API server, the
-  last 30 lines plus error lines per stream (log signals are detected on every
-  line read), 50 events, 20 pods with the unhealthy ones kept first
-- **Init containers** are inspected like app containers: their failures raise
-  signals and the logs of running or failing init containers are collected
-- **Events are matched precisely**: by the exact name of the target and its
-  pods, or a ReplicaSet `<deployment>-<pod-template-hash>`, so `payment` never
-  picks up events of `payment-worker`
-- **Strict output validation**: schema, confidence range, severity enum, cited
-  sources, `kind/name` resources, and a read-only command allowlist that
-  rejects Secret access, shell syntax, line breaks and control characters,
-  and `--as`/`--token`/`--raw`
-- **Simulation mode** with 11 deterministic scenarios built on client-go fake
-  clients. The real tools run unchanged against them.
-- **Three analyzers**: OpenAI (strict `json_schema`), Ollama (schema
-  `format`), and `rules`, an offline deterministic baseline that is also the
-  evaluation reference
-- **Least-privilege RBAC**, bound per namespace, with no Secrets, exec,
-  attach or write verbs
-- **Web UI** (React + TypeScript + Tailwind) embedded in the binary: create
-  incidents, run investigations with a scenario picker, and read reports
-  with signals, remediation actions and copyable read-only commands
-- **Grafana dashboard** provisioned with Prometheus: investigations, tool
-  health and failures, Kubernetes API calls, LLM latency and failures, HTTP API
-- REST API, PostgreSQL with embedded migrations, Prometheus metrics, JSON logs
-  with request and trace IDs, per-IP rate limiting, graceful shutdown
-- Distroless non-root image, Docker Compose, Kubernetes manifests, and a CI
-  pipeline with lint, race tests, Postgres integration tests, govulncheck and
-  a Docker build
-
-## Architecture
-
-```mermaid
-flowchart LR
-    U[User / CI] -->|REST| API[REST API<br/>net/http]
-    API --> IS[Incident service<br/>validation + target policy]
-    API --> IE[Investigation engine<br/>deterministic plan]
-    IE --> TR[Tool registry<br/>10-tool allowlist]
-    TR -->|Get / List / GetLogs| K8S[(Kubernetes API)]
-    TR -.simulation.-> FAKE[(client-go fake clients<br/>scenario fixtures)]
-    TR --> EN[Evidence<br/>health · summary · signals · redacted data]
-    EN --> LLM[Analyzer<br/>OpenAI · Ollama · rules]
-    LLM --> V{Validator}
-    V -->|valid| R[Report +<br/>remediation actions]
-    V -->|invalid| F[Failed investigation<br/>evidence kept]
-    IS --> DB[(PostgreSQL)]
-    R --> DB
-    F --> DB
-```
-
-Investigation lifecycle:
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant A as API
-    participant E as Engine
-    participant K as Kubernetes API
-    participant L as Analyzer
-    participant D as PostgreSQL
-    C->>A: POST /incidents/{id}/investigate
-    A->>E: Investigate (concurrency slot, target policy)
-    E->>D: create investigation (running)
-    loop plan: namespace → workload → pods → events → logs → services → config → policies → usage
-        E->>K: read-only call (per-tool timeout)
-        K-->>E: objects / logs
-        E->>E: normalize + redact → evidence
-    end
-    E->>L: incident + evidence (JSON)
-    L-->>E: analysis (JSON)
-    E->>E: validate (sources, schema, safe commands)
-    E->>D: executions + evidence + report + actions (one transaction)
-    A-->>C: 201 record / 502 with evidence
-```
-
-## Demo
-
-![Web UI: a NetworkPolicy block diagnosed in simulation mode](docs/images/web-ui.png)
-
-Open <http://localhost:8080> after `docker compose up --build`. The sample
-buttons fill in an incident and pick the matching simulation scenario.
-
-From the command line:
-
-```bash
-docker compose up --build -d            # app + Postgres, simulation mode, rules analyzer
-
-curl -s -X POST localhost:8080/api/v1/incidents -d @docs/examples/oom_killed.json | tee /tmp/inc.json
-ID=$(jq -r .id /tmp/inc.json)
-curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario":"oom_killed"}' \
-  | jq '.report.analysis | {root_cause, severity, confidence, safe_commands}'
-```
-
-```json
+```text
+$ ID=$(curl -s -X POST localhost:8080/api/v1/incidents -d @docs/examples/oom_killed.json | jq -r .id)
+$ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario":"oom_killed"}' \
+    | jq '.report.analysis | {root_cause, severity, confidence, safe_commands}'
 {
   "root_cause": "Container OOMKilled: memory exhaustion",
   "severity": "high",
@@ -152,384 +24,159 @@ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario":
 }
 ```
 
-## Technology Stack
+- The LLM gets data only: no tools, shell or Kubernetes client. The 10 diagnostics are a fixed allowlist calling only `Get`, `List` and `GetLogs`, and every tool input comes from earlier results, never from model output.
+- Secret values are never read: Secrets are fetched as metadata only, env vars are reported as names and source kinds, ConfigMaps as key names and sizes.
+- Passwords, tokens, JWTs, API keys, URL credentials and private keys are redacted from logs and events before storage or analysis, including multi-line PEM blocks.
+- A report may cite only evidence that was collected and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation with `502` and keeps the evidence.
+- A diagnostic that fails is passed to the analyzer as failed; the rules engine never calls a workload healthy when pods, events or logs could not be read.
 
-| Area | Choice |
-|---|---|
-| Language | Go 1.27, standard library router and `log/slog` |
-| Kubernetes | `k8s.io/client-go` (typed, metadata and fake clients) |
-| Storage | PostgreSQL 17, `pgx` with plain SQL and embedded migrations |
-| LLM | OpenAI Chat Completions (strict JSON schema), Ollama `/api/chat`, deterministic rules |
-| Observability | Prometheus `client_golang`, Grafana (provisioned dashboard), JSON logs with request and trace IDs |
-| Web UI | React 19, TypeScript, Vite, Tailwind CSS, embedded with `go:embed` |
-| Runtime | Distroless static image, Docker Compose, Kubernetes manifests with kustomize |
-| CI | GitHub Actions: gofmt, vet, golangci-lint, race tests, integration tests, govulncheck, Docker build |
+## Install
 
-The module has seven direct dependencies: pgx, client_golang, x/time,
-k8s.io/api, apimachinery, client-go and k8s.io/utils. The UI's only runtime
-dependencies are React and React DOM.
-
-## Quick Start
-
-Requirements: Go 1.27+ and Docker (Node 22 only to build the UI outside
-Docker).
+Requires Docker with Compose. Go 1.27+ (and Node 22 for the UI) only to run
+outside Docker.
 
 ```bash
+git clone https://github.com/kmpoltorak/ai-kubernetes-troubleshooter.git
+cd ai-kubernetes-troubleshooter
 cp .env.example .env
-docker compose up --build                          # UI and API on http://localhost:8080
-docker compose --profile monitoring up --build     # plus Prometheus :9090 and Grafana :3000
 ```
 
-Or run the binary against a local Postgres:
+## Quick start
+
+```bash
+docker compose up --build                          # UI and API on http://localhost:8080
+docker compose --profile monitoring up --build     # plus Prometheus :9090 and Grafana :3000
+docker compose --profile ollama up --build         # plus a local Ollama with a model pull
+```
+
+The UI's sample buttons fill in an incident and pick the matching simulation
+scenario. Outside Docker:
 
 ```bash
 docker compose up -d postgres
-make web                             # builds the UI into internal/api/ui/dist (embedded)
-make run                             # applies migrations, then serves on :8080
+make web    # optional: builds the UI into the binary
+make run    # applies migrations, serves on :8080
+SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESPACES=payments make run   # live
 ```
 
-Without `make web` the binary still builds and serves the API; `/` then shows
-a short note on how to build the UI. For UI development, run `make run` and
-`cd web && npm run dev` (Vite proxies `/api` to :8080).
+## Configuration
 
-Live mode against your current kubeconfig context:
-
-```bash
-SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster \
-KUBERNETES_ALLOWED_NAMESPACES=payments make run
-```
-
-## Simulation Mode
-
-With `SIMULATION_ENABLED=true` (the default), each investigation gets its own
-fake cluster built around the incident's namespace and resource name. That
-means Namespace, Deployment, Pods, Service, EndpointSlice, ConfigMap, Secret
-metadata, NetworkPolicies, Events, container logs (served through the fake
-`pods/log` reactor) and usage metrics. The real diagnostic tools run against
-it, so simulation exercises the production code path. All timestamps come
-from a fixed reference time, so every run gives the same result.
-
-| Scenario | What the cluster shows | Rules analyzer verdict |
+| Variable | Default | Meaning |
 |---|---|---|
-| `healthy` | 2/2 ready, no warnings | No Kubernetes-level fault |
-| `crash_loop_backoff` | CrashLoopBackOff, exit 1, `missing required configuration` in previous logs | Application startup failure |
-| `image_pull_error` | ImagePullBackOff, `manifest unknown`, rollout stuck | Image cannot be pulled |
-| `oom_killed` | last state OOMKilled (137), memory at 98% of limit | OOMKilled: memory exhaustion |
-| `readiness_probe_failure` | running, not ready, `Readiness probe failed: 503` | Readiness probe failure |
-| `liveness_probe_failure` | restarts, `Liveness probe failed`, `Killing` events | Liveness probe failure |
-| `missing_configmap` | CreateContainerConfigError, ConfigMap absent | Referenced ConfigMap is missing |
-| `service_selector_mismatch` | healthy pods, Service selector `app=<name>-api`, no endpoints | Service selector mismatch |
-| `dns_failure` | `lookup postgres-primary...: no such host` in logs | DNS resolution failure |
-| `resource_pressure` | Pending pod, `Insufficient memory` FailedScheduling | Insufficient cluster resources |
-| `network_policy_block` | egress policy allowing only DNS, `i/o timeout` to the DB | NetworkPolicy blocks egress |
+| `APP_ENV`, `HTTP_PORT`, `LOG_LEVEL` | `development`, `8080`, `info` | |
+| `DATABASE_URL` | | PostgreSQL; Compose points it at its own container |
+| `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
+| `SIMULATION_SCENARIO` | `healthy` | default scenario |
+| `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |
+| `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
+| `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
+| `LLM_PROVIDER` | `rules` | `rules`, `openai`, `ollama` |
+| `LLM_MODEL` | per provider | `gpt-4o-mini`, `llama3.2` |
+| `LLM_TIMEOUT` | `60s` | per LLM request |
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | |
+| `INVESTIGATION_TIMEOUT` | `90s` | |
+| `MAX_CONCURRENT_INVESTIGATIONS` | `4` | more get `429 busy` |
+| `RATE_LIMIT_RPS` | `5` | per-IP rate limit |
+| `GRAFANA_ADMIN_PASSWORD` | `admin` | `monitoring` profile only |
 
-Pick a scenario per request with `{"scenario": "dns_failure"}`, or set the
-default with `SIMULATION_SCENARIO`. Live mode rejects scenario requests.
+**Simulation.** Each investigation gets its own fake cluster built around the
+incident's namespace and name, and the real tools run against it.
 
-## Kubernetes Access
-
-- **Live mode** (`SIMULATION_ENABLED=false`) loads `KUBECONFIG` and
-  `KUBERNETES_CONTEXT`. If neither is set and the process runs in a pod, it
-  uses the in-cluster ServiceAccount.
-- **Target policy**: an incident's `cluster` must equal
-  `KUBERNETES_CLUSTER_NAME`, and its namespace must be in
-  `KUBERNETES_ALLOWED_NAMESPACES` when that is set. The policy is checked at
-  incident creation and again before each investigation.
-- All names are validated as RFC 1123 before any API call. Tools only call
-  `Get`, `List` and `GetLogs`, and there is no write path in the code.
-- Every API request is counted in
-  `kubernetes_api_requests_total{method,code}`. `/ready` checks the API
-  server with `/version`.
-- If metrics-server is missing, or a permission is not granted,
-  `get_resource_usage` or `get_secret_metadata` is recorded as a failed tool
-  execution and the investigation continues. Failed diagnostics are passed to
-  the analyzer, and the rules analyzer never reports a workload healthy when
-  pods, events or logs could not be read or any evidence is degraded.
-- If the target itself (Deployment, Service or Pod) cannot be read, e.g.
-  `forbidden` or a timeout, the investigation fails with that error instead
-  of producing a diagnosis for a resource that was never observed.
-
-## RBAC
-
-[`deployments/kubernetes/rbac.yaml`](deployments/kubernetes/rbac.yaml).
-`troubleshooter-reader` is a ClusterRole used as a permission set and granted
-**per namespace with a RoleBinding**, so the ServiceAccount can read nothing
-outside the bound namespaces.
-
-| Resource | Verbs | Why |
+| Scenario | The cluster shows | Rules verdict |
 |---|---|---|
-| `pods` | get, list | pod status, restarts, container states, limits; Service selector match |
-| `pods/log` | get | current and previous container logs |
-| `events` | list | BackOff, Unhealthy, FailedScheduling, FailedMount, ... |
-| `services` | get, list | the target Service and Services selecting the workload |
-| `configmaps` | get | presence and key names of referenced ConfigMaps |
-| `apps/deployments` | get | replicas, conditions, rollout, pod template |
-| `discovery.k8s.io/endpointslices` | list | ready and not-ready endpoints behind a Service |
-| `networking.k8s.io/networkpolicies` | list | policies selecting the workload's pods |
-| `metrics.k8s.io/pods` | list | usage compared with limits (only with metrics-server) |
-| `namespaces` (ClusterRole `troubleshooter-namespace-reader`) | get | confirm the target namespace exists |
+| `healthy` | 2/2 ready, no warnings | no Kubernetes-level fault |
+| `crash_loop_backoff` | exit 1, config error in previous logs | application startup failure |
+| `image_pull_error` | ImagePullBackOff, `manifest unknown` | image cannot be pulled |
+| `oom_killed` | OOMKilled (137), memory at 98% of limit | OOMKilled: memory exhaustion |
+| `readiness_probe_failure` | running, not ready, probe 503 | readiness probe failure |
+| `liveness_probe_failure` | restarts, `Killing` events | liveness probe failure |
+| `missing_configmap` | CreateContainerConfigError | referenced ConfigMap is missing |
+| `service_selector_mismatch` | healthy pods, Service has no endpoints | Service selector mismatch |
+| `dns_failure` | `no such host` in logs | DNS resolution failure |
+| `resource_pressure` | Pending, `Insufficient memory` | insufficient cluster resources |
+| `network_policy_block` | egress only to DNS, `i/o timeout` to the DB | NetworkPolicy blocks egress |
 
-**Not granted:** cluster-admin, any write verb, `pods/exec`, `pods/attach`,
-`pods/portforward`, `secrets` list or watch. Kubernetes RBAC cannot grant
-metadata-only access to Secrets, so `get secrets` lives in a separate
-**opt-in** manifest,
-[`optional/secret-metadata-rbac.yaml`](deployments/kubernetes/optional/secret-metadata-rbac.yaml).
-The app reads Secrets only as `PartialObjectMetadata`. A Go test
-(`deployments/kubernetes/rbac_test.go`) fails the build if any of these rules
-regresses.
+Live mode rejects a `scenario` in the request.
 
-Checked on minikube with
-`kubectl auth can-i --as=system:serviceaccount:troubleshooter:troubleshooter`:
-`get pods/log -n payments` → yes; `get secrets`, `create pods/exec`,
-`delete pods`, `patch deployments` in `payments` → no; `get pods -n kube-system` → no.
+**Diagnostics:** `get_namespace`, `get_deployment`, `get_pods`, `get_events`,
+`get_pod_logs`, `get_service`, `get_configmap`, `get_secret_metadata`,
+`get_network_policies`, `get_resource_usage`. Evidence is bounded: the last 30
+lines plus error lines per log stream, 50 events, 20 pods with unhealthy ones
+first. Events match the exact target, its pods or its ReplicaSets, so `payment`
+never picks up `payment-worker`.
 
-## API Examples
+## API
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/v1/incidents` | create an incident |
-| `GET` | `/api/v1/incidents?limit=20&offset=0` | list incidents, newest first (max 100) |
-| `GET` | `/api/v1/incidents/{id}` | get an incident |
-| `POST` | `/api/v1/incidents/{id}/investigate` | run an investigation; optional `{"scenario": "..."}` |
+| `POST` | `/api/v1/incidents` | `cluster`, `namespace`, `resource_type` (`deployment`, `service`, `pod`), `resource_name`, `description`, optional `title` |
+| `GET` | `/api/v1/incidents?limit=&offset=` | newest first, max 100 |
+| `GET` | `/api/v1/incidents/{id}` | one incident |
+| `POST` | `/api/v1/incidents/{id}/investigate` | optional `{"scenario": "..."}` |
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
-| `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes), Prometheus |
+| `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`), Prometheus |
 
-```bash
-curl -s -X POST localhost:8080/api/v1/incidents -d '{
-  "cluster": "local",
-  "namespace": "payments",
-  "resource_type": "deployment",
-  "resource_name": "payment-service",
-  "description": "Pods are repeatedly restarting"
-}'
-```
+Errors are `{"error": {"code", "message"}, "request_id"}`: `400`
+`validation_failed` / `invalid_json` (including a target outside the policy),
+`404` `not_found`, `413` `body_too_large` (over 1 MiB), `429` `busy` /
+`rate_limited` with `Retry-After`, `502` `analysis_failed` with the stored
+evidence. Logs are JSON with request and trace IDs. The `monitoring` profile
+provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
 
-`resource_type` is `deployment`, `service` or `pod`. `title` is optional.
-
-Errors always have the same shape:
-
-```json
-{"error": {"code": "validation_failed", "message": "target: target not allowed: namespace \"kube-system\" is not in the allowed namespaces"}, "request_id": "c5be6edcd917dbe609776fe05d4b2a9a"}
-```
-
-| Status | Code | When |
-|---|---|---|
-| 400 | `validation_failed`, `invalid_json` | bad input, unknown fields, target outside policy, unknown scenario |
-| 404 | `not_found` | unknown incident, or no completed investigation yet |
-| 413 | `body_too_large` | body over 1 MiB |
-| 429 | `busy`, `rate_limited` | all investigation slots in use, or per-IP rate limit (`Retry-After`) |
-| 502 | `analysis_failed` | analyzer error or invalid output; the body includes the stored evidence |
-
-## Example Investigation
-
-A real run against minikube (live mode, in-cluster ServiceAccount), where a
-Deployment allocates more memory than its 32Mi limit. Full output:
-[`docs/examples/report_oom_killed_minikube.json`](docs/examples/report_oom_killed_minikube.json).
-
-```text
-tools:     get_namespace → get_deployment → get_pods → get_events → get_pod_logs
-           → get_service → get_network_policies → get_resource_usage
-evidence:  0/1 pods ready. Findings: CrashLoopBackOff, OOMKilled, FrequentRestarts.
-report:    Container OOMKilled: memory exhaustion (high, 0.94)
-actions:   review memory usage vs limit · increase the limit if legitimate ·
-           investigate a leak / unbounded batch · kubectl top pod -n payments
-```
-
-In the same run, four other workloads came out as expected:
-`payment-service` → startup failure (CrashLoopBackOff, configuration error in
-previous logs); `ledger` → missing ConfigMap; `service/checkout` → selector
-mismatch; `deployment/ghost` → target not found. The crash-looping pod printed
-`postgres://app:hunter2@db...`. The stored evidence contains `[REDACTED]`
-instead, and the password appears nowhere in the database or app logs.
-
-## LLM Providers
-
-| `LLM_PROVIDER` | Default model | Notes |
-|---|---|---|
-| `rules` (default) | `rules-v1` | offline, deterministic, ordered triage rules; the evaluation baseline |
-| `openai` | `gpt-4o-mini` | Chat Completions with `response_format: json_schema` (strict); `OPENAI_BASE_URL` works with compatible APIs |
-| `ollama` | `llama3.2` | `/api/chat` with the schema in `format`; `docker compose --profile ollama up` |
-
-All providers get the same system prompt
-([`internal/llm/system_prompt.txt`](internal/llm/system_prompt.txt)). It says
-to use evidence only, treat log and event text as untrusted data, prefer the
-specific cause over the symptom, and suggest read-only commands only. Output
-is decoded strictly and then validated by `Analysis.Validate`. If it is
-invalid, the investigation fails (502) and the evidence is kept.
-
-The rules analyzer triages in the order an engineer would: a missing target,
-then specific causes (image, config, scheduling, OOM, DNS, NetworkPolicy plus
-timeout, liveness), and generic symptoms (CrashLoopBackOff, selector,
-readiness) last. With no matching pattern it reports "no Kubernetes-level
-fault" only when all evidence is healthy and no core diagnostic failed;
-otherwise the result is an explicit low-confidence "inconclusive".
-
-## Observability
-
-- **Logs**: JSON (`log/slog`) with `request_id` (a valid `X-Request-ID` is
-  honored and echoed) and `trace_id` (from W3C `traceparent`, or generated).
-  Investigation logs carry `incident_id` and `investigation_id`, and each
-  tool logs its name, duration, health and signals.
-- **Metrics** (`/metrics`):
-
-| Metric | Labels |
-|---|---|
-| `incidents_total` | |
-| `investigations_total` | `status` |
-| `investigation_duration_seconds` | |
-| `kubernetes_tool_executions_total` | `tool`, `health` |
-| `kubernetes_tool_failures_total` | `tool` |
-| `kubernetes_api_requests_total` | `method`, `code` |
-| `llm_requests_total` | `provider`, `status` |
-| `llm_request_duration_seconds` | `provider` |
-| `llm_failures_total` | `provider`, `reason` |
-| `http_requests_total`, `http_request_duration_seconds` | `method`, `route` (pattern, not raw path), `status` |
-
-Every labeled series starts at zero, so `increase()` sees the first event.
-
-**Prometheus and Grafana.** `docker compose --profile monitoring up` starts
-Prometheus (`:9090`, scraping `app:8080/metrics`) and Grafana (`:3000`,
-anonymous read-only access for the local demo; admin password from
-`GRAFANA_ADMIN_PASSWORD`). The datasource and the dashboard
-([`deployments/grafana/`](deployments/grafana/)) are provisioned from files.
-The dashboard has an overview (incidents, investigations, success rate, p95
-duration, tool and LLM failure ratios), investigations by outcome and
-duration, workload health by tool, tool failures, Kubernetes API requests by
-status code (live mode only), LLM requests, latency and failures, and HTTP
-traffic, errors and p95 by route. A Go test fails if a panel queries a metric
-the app does not export. In Kubernetes, the Deployment carries the
-`prometheus.io/scrape|port|path` annotations.
-
-![Grafana dashboard after running all simulation scenarios](docs/images/grafana-dashboard.png)
-
-## Testing
-
-```bash
-make test               # unit tests with the race detector
-make test-integration   # starts a disposable Postgres container, runs -tags integration
-make lint               # gofmt, go vet, golangci-lint
-```
-
-- **Diagnostics**: each tool against `fake.NewClientset` and the fake
-  metadata client (found and not found, signals, health, no env, ConfigMap or
-  Secret values, log bounds, multi-line PEM redaction through the log path,
-  signals before the kept tail, init containers, problem pods kept past the
-  20-pod cap, event matching against look-alike workloads).
-- **Simulation**: all 10 tools against all 11 scenarios, asserting the
-  expected signals (and the absence of misleading ones), plus a determinism
-  check.
-- **Evaluation**: every scenario end to end through engine, tools and rules
-  analyzer, checking root cause and severity.
-- **Engine**: plans for deployment, pod and service targets, early stop on a
-  missing target, failure on an unreadable target, invalid model output
-  rejected with evidence kept, tool failures recorded, `[]` instead of `null`
-  in the JSON record, init container log selection, busy handling,
-  persistence after the client disconnects.
-- **LLM**: strict decoding, prompt content, OpenAI and Ollama request shape
-  and error mapping via `httptest`, timeouts, rule precedence, no healthy
-  verdict with failed core diagnostics, and every rule's commands passing the
-  safe-command validator (which rejects multi-line commands, LF and CRLF).
-- **API**: lifecycle, error table, limits, rate limiting, headers, request
-  IDs, metrics labels.
-- **Integration** (PostgreSQL): migrations down and up, store round trip,
-  sample incidents through REST, engine, simulated cluster, Postgres and the
-  report read back.
-- **Manifests**: RBAC is read-only and least-privilege, and every Grafana
-  query references an exported metric.
-- **Web UI**: `index.html` and hashed assets served with a strict
-  same-origin CSP; CI typechecks, builds and runs `npm audit`.
-
-No real cluster is needed in CI. Live mode was checked manually on minikube
-(see above).
-
-## Docker
-
-- Multi-stage build (Node builds the UI, Go embeds it) to
-  `gcr.io/distroless/static-debian12:nonroot`: UID 65532, no shell. The binary is PID 1 and shuts down gracefully on
-  SIGTERM.
-- Compose runs the app with a read-only root filesystem, all capabilities
-  dropped and `no-new-privileges`.
-- Profiles: `ollama` (server plus a one-shot model pull) and `monitoring`
-  (Prometheus and Grafana).
-
-## Kubernetes Deployment
+## Kubernetes deployment
 
 ```bash
 kubectl apply -k deployments/kubernetes
 kubectl -n troubleshooter create secret generic troubleshooter-secrets \
   --from-literal=DATABASE_URL='postgres://...' --from-literal=OPENAI_API_KEY=''
-# For each additional namespace: add a RoleBinding in rbac.yaml and extend
-# KUBERNETES_ALLOWED_NAMESPACES in configmap.yaml.
 ```
 
-The kustomization contains the Namespace (Pod Security `restricted`),
-ServiceAccount, RBAC, ConfigMap (live mode), Deployment (2 replicas,
-readiness `/ready`, liveness `/health`, requests and limits, non-root,
-read-only root filesystem, no privilege escalation, all capabilities dropped,
-`RuntimeDefault` seccomp), Service and Ingress. `secret.example.yaml` and
-`optional/` are applied manually on purpose. PostgreSQL is expected to be
-provided externally.
+For each additional namespace, add a RoleBinding in
+[rbac.yaml](deployments/kubernetes/rbac.yaml) and extend
+`KUBERNETES_ALLOWED_NAMESPACES` in `configmap.yaml`. PostgreSQL is external.
+The kustomization has the Namespace (Pod Security `restricted`), ServiceAccount,
+RBAC, ConfigMap (live mode), Deployment (2 replicas, non-root, read-only root
+filesystem, no capabilities, `RuntimeDefault` seccomp), Service and Ingress.
 
-## Security
+RBAC grants, per namespace through a RoleBinding: `get, list` on pods,
+services; `get` on `pods/log`, configmaps, deployments; `list` on events,
+endpointslices, networkpolicies and `metrics.k8s.io/pods`; plus `get` on
+namespaces. Nothing else: no write verbs, `pods/exec`, `attach`, `portforward`
+or Secrets. `get secrets` (used as metadata only) is in the opt-in
+[optional/secret-metadata-rbac.yaml](deployments/kubernetes/optional/secret-metadata-rbac.yaml);
+without it, or without metrics-server, that diagnostic is recorded as failed and
+the investigation continues. If the target itself cannot be read, the
+investigation fails rather than diagnose something it never saw.
 
-- The LLM gets data only: no tool calling, no shell, no Kubernetes client.
-  The workflow is fixed in code.
-- 10-tool allowlist; inputs are validated (RFC 1123) before any API call.
-- Read-only RBAC bound per namespace, plus an application-level namespace
-  allowlist.
-- Secret values are never transferred: metadata API only, no annotations,
-  env values replaced by their source kind, ConfigMaps reported as key names.
-- Redaction of credentials in logs, events and status messages before
-  storage or analysis.
-- The system prompt treats log and event text as untrusted data. Output
-  validation stops a manipulated model from citing uncollected evidence or
-  suggesting write, exec or Secret commands.
-- Per-tool and per-investigation timeouts, a concurrency cap, per-IP rate
-  limiting, a 1 MiB body limit, and strict JSON decoding (unknown fields
-  rejected).
-- Internal errors are hidden from clients, and the config log line redacts
-  the API key.
-- Same-origin Content-Security-Policy (`default-src 'self'`,
-  `frame-ancestors 'none'`), `nosniff`, `no-referrer`, and `no-store` on API
-  responses. The UI uses only the public REST API.
-- Distroless non-root container, restricted Pod Security, hardened
-  `securityContext`.
-- **No API authentication is built in.** Expose the service only behind an
-  authenticating ingress or on an internal network (see the Roadmap).
+## Limitations
 
-## Project Structure
+- No API authentication: expose it only behind an authenticating ingress or on an internal network.
+- Workloads are Deployments, Services and Pods only: no StatefulSets, DaemonSets, Jobs, HPA, PVCs, Ingress or node diagnostics.
+- Investigations are synchronous, one cluster per instance; no remediation is ever executed.
+- Live mode was checked by hand on minikube only; CI uses no real cluster. The OpenAI and Ollama clients are tested against fake servers.
+- Redaction masks runs of base64 lines, so hex digests and similar blobs in logs are masked too.
 
-```text
-cmd/api/                  entrypoint: config, wiring, migrations, graceful shutdown
-internal/api/             handlers, middleware (request IDs, metrics, rate limit, headers), embedded UI
-internal/config/          environment configuration
-internal/domain/          entities, target policy, analysis and safe-command validation
-internal/incidents/       incident service
-internal/investigation/   engine: plan, tool execution, analysis; evaluation test
-internal/kube/            client-go connection, API metrics, metrics.k8s.io reader
-internal/diagnostics/     the 10 tools, signals, redaction
-internal/simulation/      scenario fixtures on client-go fake clients
-internal/llm/             OpenAI, Ollama and rules analyzers, prompt, schema
-internal/storage/         PostgreSQL store and migration runner
-internal/observability/   logger and Prometheus metrics
-migrations/               SQL migrations (embedded)
-deployments/kubernetes/   manifests, RBAC, RBAC test
-deployments/prometheus/   scrape config
-deployments/grafana/      provisioned datasource and dashboard, dashboard test
-web/                      React UI (components: CreateIncidentForm, IncidentList, IncidentDetail, Report)
-docs/examples/            sample incidents and a real report
-docs/images/              screenshots
+## Development
+
+```bash
+make test               # unit tests with the race detector
+make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
+make lint               # gofmt, go vet, golangci-lint
 ```
 
-## Roadmap
+Each tool is tested against client-go fake clients, and all 10 tools run
+against all 11 scenarios checking the expected signals and the absence of
+misleading ones. An evaluation runs every scenario end to end through the
+rules analyzer and checks root cause and severity. Integration tests run
+migrations and send the sample incidents through REST, the engine and
+PostgreSQL. Go tests also fail if the RBAC manifest gains a permission or a
+Grafana panel queries a metric the app does not export. CI adds govulncheck,
+`npm audit` and a Docker build. A report from a live minikube run is in
+[docs/examples/report_oom_killed_minikube.json](docs/examples/report_oom_killed_minikube.json).
 
-- StatefulSet, DaemonSet, Job/CronJob, HPA, PVC, Ingress and node diagnostics
-- Prometheus queries as evidence (error rate, latency) and a Grafana dashboard
-- LLM-requested follow-up diagnostics, restricted to the existing allowlist
-- Remediation execution behind explicit human approval (the `remediation_actions` table already tracks status)
-- Asynchronous investigations with a job queue
-- API authentication and authorization, multi-cluster, Slack and GitHub integrations
+Built with an AI coding assistant. I wrote the spec and reviewed every change.
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
