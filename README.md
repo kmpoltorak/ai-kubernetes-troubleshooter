@@ -59,6 +59,22 @@ make run    # applies migrations, serves on :8080
 SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESPACES=payments make run   # live
 ```
 
+## Shared monitoring
+
+For the same Ubuntu host as [kmpoltorak-monitoring-tools](https://github.com/kmpoltorak/kmpoltorak-monitoring-tools),
+start the monitoring stack first, then:
+
+```sh
+docker compose -f docker-compose.yml -f compose.monitoring.yaml up -d --build
+```
+
+This mode publishes the application on `127.0.0.1:18081` (override with
+`MONITORED_HTTP_PORT`) and joins its dedicated external monitoring network.
+Database ports stay internal and the local monitoring services stay disabled.
+The central dashboard filters metrics by this application's job; standalone dashboards are intended for their own Prometheus.
+Enable the matching target configuration in the monitoring repository.
+Its migration guide covers backups and rollback; application data volumes stay in this project.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -158,6 +174,8 @@ investigation fails rather than diagnose something it never saw.
 - Redaction masks runs of base64 lines, so hex digests and similar blobs in logs are masked too.
 
 ## Development
+
+Shared monitoring configuration: `python3 -m unittest discover -s tests -p 'test_shared_monitoring.py' -v` (Docker Compose 2.30+).
 
 ```bash
 make test               # unit tests with the race detector

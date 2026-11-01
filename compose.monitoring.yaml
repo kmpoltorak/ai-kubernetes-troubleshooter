@@ -1,0 +1,19 @@
+# Same-host integration with kmpoltorak-monitoring-tools. Start monitoring first.
+services:
+  app:
+    ports: !override ["127.0.0.1:${MONITORED_HTTP_PORT:-18081}:8080"]
+    networks:
+      default:
+      monitoring:
+        aliases: [ai-kubernetes-troubleshooter]
+  postgres:
+    ports: !reset []
+  prometheus:
+    profiles: !override [local-monitoring]
+  grafana:
+    profiles: !override [local-monitoring]
+
+networks:
+  monitoring:
+    external: true
+    name: kmpoltorak-monitoring-kubernetes-troubleshooter

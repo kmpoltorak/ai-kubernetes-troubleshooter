@@ -109,3 +109,10 @@ jobs:
           tags: ai-kubernetes-troubleshooter:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  shared-monitoring:
+    name: Shared monitoring configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -p 'test_shared_monitoring.py' -v
