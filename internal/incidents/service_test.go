@@ -2,6 +2,7 @@ package incidents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -116,5 +117,65 @@ func TestReportNotFound(t *testing.T) {
 	_, err = svc.Report(context.Background(), inc.ID)
 	if !errors.Is(err, domain.ErrNotFound) || !strings.Contains(err.Error(), "completed investigation") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestCreateMasksBeforeStorageAndGetMasksLegacy(t *testing.T) {
+	svc, repo := newService()
+	in := valid()
+	in.Title = "password=synthetic-title"
+	in.Description = "password=synthetic-description"
+	inc, err := svc.Create(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := repo.incidents[inc.ID]
+	if strings.Contains(inc.Title+inc.Description+stored.Title+stored.Description, "synthetic-") {
+		t.Fatalf("leaked: %+v", stored)
+	}
+	stored.Description = "password=legacy-secret"
+	repo.incidents[inc.ID] = stored
+	got, err := svc.Get(context.Background(), inc.ID)
+	if err != nil || strings.Contains(got.Description, "legacy-secret") || repo.incidents[inc.ID].Description != stored.Description {
+		t.Fatalf("unsafe legacy read: %+v %v", got, err)
+	}
+	in.Description = "password=" + strings.Repeat("x", 5001)
+	if _, err := svc.Create(context.Background(), in); err == nil {
+		t.Fatal("masking bypassed length validation")
+	}
+}
+
+type legacyRepo struct {
+	fakeRepo
+	list   []domain.Incident
+	record domain.InvestigationRecord
+}
+
+func (r *legacyRepo) ListIncidents(context.Context, int, int) ([]domain.Incident, error) {
+	return r.list, nil
+}
+func (r *legacyRepo) LatestReport(context.Context, string) (domain.InvestigationRecord, error) {
+	return r.record, nil
+}
+
+func TestLegacyListAndReportDoNotMutateStorage(t *testing.T) {
+	inc := domain.Incident{ID: domain.NewID(), Description: "password=synthetic-legacy"}
+	repo := &legacyRepo{fakeRepo: fakeRepo{incidents: map[string]domain.Incident{inc.ID: inc}}, list: []domain.Incident{inc}, record: domain.InvestigationRecord{Evidence: []domain.Evidence{{Summary: inc.Description, Data: json.RawMessage(`{"password":"synthetic-data"}`)}}}}
+	svc := NewService(repo, domain.TargetPolicy{})
+	list, err := svc.List(context.Background(), 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := svc.Report(context.Background(), inc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rec)
+	if strings.Contains(list[0].Description+string(raw), "synthetic-") || repo.list[0].Description != inc.Description || repo.record.Evidence[0].Summary != inc.Description {
+		t.Fatal("legacy masking leaked or mutated source")
+	}
+	repo.record.Evidence[0].Data = json.RawMessage(`{"password":"synthetic-invalid"`)
+	if _, err := svc.Report(context.Background(), inc.ID); err == nil || strings.Contains(err.Error(), "synthetic-invalid") {
+		t.Fatalf("unsafe malformed record: %v", err)
 	}
 }

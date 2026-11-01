@@ -1,9 +1,11 @@
 package investigation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
@@ -22,6 +25,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/llm"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/simulation"
 )
 
@@ -324,5 +328,67 @@ func TestLogContainersIncludeFailingInitContainers(t *testing.T) {
 	}}
 	if got := logContainers(p); !slices.Equal(got, []string{"migrate", "app"}) {
 		t.Fatalf("containers = %v", got)
+	}
+}
+
+type privacyProvider struct {
+	t       *testing.T
+	failure error
+}
+
+func (p privacyProvider) Name() string { return "test/privacy" }
+func (p privacyProvider) Analyze(ctx context.Context, in llm.AnalysisInput) (domain.Analysis, error) {
+	raw, _ := json.Marshal(in)
+	if strings.Contains(string(raw), "synthetic-") {
+		p.t.Errorf("unmasked analyzer input: %s", raw)
+	}
+	if p.failure != nil {
+		return domain.Analysis{}, p.failure
+	}
+	a, err := (llm.RulesProvider{}).Analyze(ctx, in)
+	a.Summary = "password=synthetic-output"
+	return a, err
+}
+
+func TestInvestigationMasksBeforeAnalyzerStorageAndResponse(t *testing.T) {
+	for _, failure := range []error{nil, fmt.Errorf("password=synthetic-provider-error: %w", llm.ErrInputTooLarge)} {
+		inc := incident(domain.ResourceDeployment, "payment-service")
+		inc.Title = "password=synthetic-title"
+		inc.Description = "password=synthetic-description"
+		store := newMemStore(inc)
+		clusters := clustersFunc(func(target domain.Target, _ string) (kube.Cluster, string, error) {
+			c, err := simulation.Build("healthy", target)
+			if err == nil {
+				deployment, readErr := c.Client.AppsV1().Deployments(target.Namespace).Get(context.Background(), target.ResourceName, metav1.GetOptions{})
+				if readErr != nil {
+					return c, "", readErr
+				}
+				deployment.Spec.Template.Spec.Containers[0].Image = "https://operator:synthetic-image@example.com/app"
+				if _, updateErr := c.Client.AppsV1().Deployments(target.Namespace).Update(context.Background(), deployment, metav1.UpdateOptions{}); updateErr != nil {
+					return c, "", updateErr
+				}
+				c.Client.(*fake.Clientset).PrependReactor("list", "events", func(k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, errors.New("password=synthetic-cluster-error")
+				})
+			}
+			return c, "healthy", err
+		})
+		var logs bytes.Buffer
+		engine := NewEngine(store, clusters, privacyProvider{t, failure}, observability.NewLogger(&logs, slog.LevelInfo), Config{MaxConcurrent: 1, Policy: policy})
+		rec, err := engine.Investigate(context.Background(), inc.ID, Options{})
+		if failure != nil && (!errors.Is(err, ErrAnalysisFailed) || !errors.Is(err, llm.ErrInputTooLarge) || rec.Report != nil || len(rec.Evidence) == 0) {
+			t.Fatalf("failure lost evidence/class: %+v %v", rec, err)
+		}
+		if failure == nil && (err != nil || rec.Report == nil) {
+			t.Fatalf("analysis failed: %v", err)
+		}
+		raw, _ := json.Marshal(rec)
+		stored, _ := json.Marshal(store.finished)
+		if strings.Contains(string(raw)+string(stored)+logs.String()+fmt.Sprint(err), "synthetic-") {
+			t.Fatalf("leaked record/log/error: %s %s %v", raw, logs.String(), err)
+		}
+		if store.incidents[inc.ID].Description != inc.Description {
+			t.Fatal("legacy incident was rewritten")
+		}
 	}
 }

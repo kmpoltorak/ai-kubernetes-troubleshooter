@@ -4,12 +4,15 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -137,5 +140,82 @@ func TestIntegrationReadiness(t *testing.T) {
 	resp, out := do(t, "GET", srv.URL+"/ready", "")
 	if resp.StatusCode != http.StatusOK || out["checks"].(map[string]any)["database"] != "ok" {
 		t.Fatalf("ready: %d %v", resp.StatusCode, out)
+	}
+}
+
+func TestIntegrationLegacyReadsMaskWithoutRewriting(t *testing.T) {
+	srv := newIntegrationServer(t, llm.RulesProvider{})
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	id := createIncident(t, srv)
+	if _, err := pool.Exec(ctx, `UPDATE incidents SET title='password=synthetic-title', description='password=synthetic-description' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	resp, out := do(t, "POST", srv.URL+"/api/v1/incidents/"+id+"/investigate", "")
+	if resp.StatusCode != 201 {
+		t.Fatalf("investigate: %d %v", resp.StatusCode, out)
+	}
+	invID := out["investigation"].(map[string]any)["id"].(string)
+	if _, err := pool.Exec(ctx, `UPDATE tool_executions SET error='password=synthetic-tool', output='{"password":"synthetic-output"}' WHERE investigation_id=$1`, invID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE evidence SET summary='password=synthetic-summary', data='{"token":"synthetic-data"}' WHERE investigation_id=$1`, invID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE reports SET analysis=jsonb_set(analysis,'{summary}','"password=synthetic-analysis"') WHERE investigation_id=$1`, invID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE remediation_actions SET description='password=synthetic-action' WHERE report_id=(SELECT id FROM reports WHERE investigation_id=$1)`, invID); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"", "/" + id, "/" + id + "/report"} {
+		resp, out := do(t, "GET", srv.URL+"/api/v1/incidents"+path, "")
+		raw, _ := json.Marshal(out)
+		if resp.StatusCode != 200 || strings.Contains(string(raw), "synthetic-") {
+			t.Fatalf("unsafe legacy read %s: %d %s", path, resp.StatusCode, raw)
+		}
+	}
+	var description, data, summary string
+	if err := pool.QueryRow(ctx, `SELECT description FROM incidents WHERE id=$1`, id).Scan(&description); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT data::text FROM evidence WHERE investigation_id=$1 LIMIT 1`, invID).Scan(&data); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT analysis->>'summary' FROM reports WHERE investigation_id=$1`, invID).Scan(&summary); err != nil {
+		t.Fatal(err)
+	}
+	if description != "password=synthetic-description" || !strings.Contains(data, "synthetic-data") || summary != "password=synthetic-analysis" {
+		t.Fatal("historical records rewritten")
+	}
+}
+
+func TestIntegrationInputLimitPreservesEvidence(t *testing.T) {
+	var calls atomic.Int32
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); w.WriteHeader(500) }))
+	defer endpoint.Close()
+	provider := llm.FromConfig(config.Config{LLMProvider: "openai", OpenAIBaseURL: endpoint.URL, LLMTimeout: time.Second, LLMMaxInputBytes: 1})
+	srv := newIntegrationServer(t, provider)
+	id := createIncident(t, srv)
+	resp, out := do(t, "POST", srv.URL+"/api/v1/incidents/"+id+"/investigate", "")
+	if resp.StatusCode != 502 || calls.Load() != 0 || len(out["result"].(map[string]any)["evidence"].([]any)) == 0 {
+		t.Fatalf("limit not enforced: %d calls=%d", resp.StatusCode, calls.Load())
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	var status, reason string
+	var evidence, executions, reports int
+	err = pool.QueryRow(ctx, `SELECT status,error,(SELECT count(*) FROM evidence WHERE investigation_id=i.id),(SELECT count(*) FROM tool_executions WHERE investigation_id=i.id),(SELECT count(*) FROM reports WHERE investigation_id=i.id) FROM investigations i WHERE incident_id=$1`, id).Scan(&status, &reason, &evidence, &executions, &reports)
+	if err != nil || status != "failed" || !strings.Contains(reason, "LLM_MAX_INPUT_BYTES") || evidence == 0 || executions == 0 || reports != 0 {
+		t.Fatalf("failure not stored: %s %s evidence=%d executions=%d reports=%d %v", status, reason, evidence, executions, reports, err)
 	}
 }

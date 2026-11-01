@@ -337,3 +337,12 @@ func TestRateLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestAPIErrorMasksEchoedInput(t *testing.T) {
+	srv := newServer(t, llm.RulesProvider{}, nil)
+	resp, out := do(t, "POST", srv.URL+"/api/v1/incidents", `{"password=synthetic-secret":true}`)
+	raw, _ := json.Marshal(out)
+	if resp.StatusCode != 400 || strings.Contains(string(raw), "synthetic-secret") || out["error"].(map[string]any)["code"] != "invalid_json" {
+		t.Fatalf("unsafe validation error: %d %s", resp.StatusCode, raw)
+	}
+}

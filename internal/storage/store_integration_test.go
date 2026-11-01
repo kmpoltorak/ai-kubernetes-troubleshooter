@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,5 +148,51 @@ func TestFinishInvestigationAndLatestReport(t *testing.T) {
 	updated, _ := s.GetIncident(ctx, inc.ID)
 	if updated.Status != domain.IncidentAnalyzed {
 		t.Fatalf("incident status = %s, want analyzed", updated.Status)
+	}
+}
+
+func TestStorageMasksWrites(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	inc := testIncident()
+	inc.Title = "password=synthetic-title"
+	inc.Description = "password=synthetic-description"
+	if err := s.CreateIncident(ctx, &inc); err != nil {
+		t.Fatal(err)
+	}
+	var title, description string
+	if err := s.pool.QueryRow(ctx, "SELECT title, description FROM incidents WHERE id=$1", inc.ID).Scan(&title, &description); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(title+description, "synthetic-") {
+		t.Fatalf("raw secret stored: %s %s", title, description)
+	}
+	inv := domain.Investigation{IncidentID: inc.ID, Status: domain.InvestigationRunning}
+	if err := s.CreateInvestigation(ctx, &inv); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	inv.CompletedAt = &now
+	inv.Status = domain.InvestigationFailed
+	inv.Error = "password=synthetic-error"
+	te := domain.ToolExecution{ID: domain.NewID(), ToolName: "get_pods", Status: domain.ToolSucceeded, StartedAt: now, Input: json.RawMessage(`{"password":"synthetic-input"}`), Output: json.RawMessage(`{"token":"synthetic-output","count":18446744073709551615}`)}
+	ev := domain.Evidence{ID: domain.NewID(), ToolExecutionID: te.ID, Source: te.ToolName, Subject: "pods/app=api", Health: domain.Down, Summary: "password=synthetic-summary", Data: te.Output}
+	rec := domain.InvestigationRecord{Investigation: inv, ToolExecutions: []domain.ToolExecution{te}, Evidence: []domain.Evidence{ev}}
+	if err := s.FinishInvestigation(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	var output, input, data, summary, reason string
+	if err := s.pool.QueryRow(ctx, `SELECT input::text,output::text FROM tool_executions WHERE id=$1`, te.ID).Scan(&input, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT summary,data::text FROM evidence WHERE id=$1`, ev.ID).Scan(&summary, &data); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT error FROM investigations WHERE id=$1`, inv.ID).Scan(&reason); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(input+output+data+summary+reason, "synthetic-") || !strings.Contains(data, "18446744073709551615") {
+		t.Fatalf("unsafe stored record: %s %s %s %s %s", input, output, data, summary, reason)
 	}
 }

@@ -4,8 +4,12 @@ package observability
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 type ctxKey int
@@ -36,7 +40,7 @@ func WithUser(ctx context.Context, user string) context.Context {
 // NewLogger returns a JSON logger that adds request_id and trace_id from the
 // context of each record. Use the *Context logging methods to benefit.
 func NewLogger(w io.Writer, level slog.Level) *slog.Logger {
-	return slog.New(contextHandler{slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})})
+	return slog.New(contextHandler{slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level, ReplaceAttr: maskAttr})})
 }
 
 type contextHandler struct{ slog.Handler }
@@ -60,4 +64,31 @@ func (h contextHandler) WithAttrs(a []slog.Attr) slog.Handler {
 
 func (h contextHandler) WithGroup(name string) slog.Handler {
 	return contextHandler{h.Handler.WithGroup(name)}
+}
+
+func maskAttr(_ []string, a slog.Attr) slog.Attr {
+	switch a.Value.Kind() {
+	case slog.KindString:
+		a.Value = slog.StringValue(redact.Field(a.Key, a.Value.String()))
+	case slog.KindAny:
+		if err, ok := a.Value.Any().(error); ok {
+			a.Value = slog.StringValue(redact.Field(a.Key, fmt.Sprint(err)))
+			return a
+		}
+		raw, err := json.Marshal(map[string]any{a.Key: a.Value.Any()})
+		if err == nil {
+			raw, err = redact.JSON(raw)
+		}
+		if err != nil {
+			a.Value = slog.StringValue("[UNAVAILABLE]")
+			return a
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			a.Value = slog.StringValue("[UNAVAILABLE]")
+			return a
+		}
+		a.Value = slog.AnyValue(fields[a.Key])
+	}
+	return a
 }

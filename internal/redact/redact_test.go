@@ -1,4 +1,4 @@
-package diagnostics
+package redact
 
 import (
 	"strings"
@@ -17,15 +17,19 @@ func TestRedact(t *testing.T) {
 		{`openai sk-proj-abcdefghijklmnopqrstu`, "sk-proj-abcdefghijklmnopqrstu"},
 		{"-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\n-----END RSA PRIVATE KEY-----", "MIIEpAIBAAKCAQEA"},
 		{`client_secret="xyz987654321"`, "xyz987654321"},
+		{`password="first second secret" next=ok`, "second secret"},
+		{`password='first second secret' next=ok`, "second secret"},
+		{`password="first \" second secret" next=ok`, "second secret"},
+		{`password="first second secret`, "second secret"},
 	}
 	for _, tt := range tests {
-		got := Redact(tt.in)
+		got := Text(tt.in)
 		if strings.Contains(got, tt.secret) || !strings.Contains(got, "REDACTED") {
-			t.Errorf("Redact(%q) = %q, secret not masked", tt.in, got)
+			t.Errorf("Text(%q) = %q, secret not masked", tt.in, got)
 		}
 	}
-	plain := `dial tcp 10.0.0.5:5432: connect: connection refused`
-	if got := Redact(plain); got != plain {
+	plain := `dial tcp 192.0.2.5:5432: connect: connection refused`
+	if got := Text(plain); got != plain {
 		t.Errorf("plain text changed: %q", got)
 	}
 }

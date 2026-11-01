@@ -12,6 +12,7 @@ import (
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 // Log limits: the API server returns at most logTailLines lines and
@@ -129,7 +130,7 @@ func parseLogs(r io.Reader, container string, previous bool) (LogStream, error) 
 		return s, fmt.Errorf("read logs: %w", err)
 	}
 	// Redact the whole stream before splitting: a PEM block spans lines.
-	text := strings.TrimRight(Redact(string(data)), "\n")
+	text := strings.TrimRight(redact.Text(string(data)), "\n")
 	if text == "" {
 		return s, nil
 	}

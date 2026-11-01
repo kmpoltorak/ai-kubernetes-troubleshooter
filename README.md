@@ -26,7 +26,7 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
 
 - The LLM gets data only: no tools, shell or Kubernetes client. The 10 diagnostics are a fixed allowlist calling only `Get`, `List` and `GetLogs`, and every tool input comes from earlier results, never from model output.
 - Secret values are never read: Secrets are fetched as metadata only, env vars are reported as names and source kinds, ConfigMaps as key names and sizes.
-- Passwords, tokens, JWTs, API keys, URL credentials and private keys are redacted from logs and events before storage or analysis, including multi-line PEM blocks.
+- Passwords, tokens, JWTs, API keys, URL credentials and private keys are masked in incident text, diagnostic data, reports and errors before storage, API responses and LLM requests, including multi-line PEM blocks.
 - A report may cite only evidence that was collected and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation with `502` and keeps the evidence.
 - A diagnostic that fails is passed to the analyzer as failed; the rules engine never calls a workload healthy when pods, events or logs could not be read.
 
@@ -75,6 +75,7 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `ollama` |
 | `LLM_MODEL` | per provider | `gpt-4o-mini`, `llama3.2` |
+| `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized OpenAI/Ollama request body; overflow fails analysis without sending, preserving evidence |
 | `LLM_TIMEOUT` | `60s` | per LLM request |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | |
@@ -164,7 +165,8 @@ investigation fails rather than diagnose something it never saw.
 - Workloads are Deployments, Services and Pods only: no StatefulSets, DaemonSets, Jobs, HPA, PVCs, Ingress or node diagnostics.
 - Investigations are synchronous, one cluster per instance; no remediation is ever executed.
 - Live mode was checked by hand on minikube only; CI uses no real cluster. The OpenAI and Ollama clients are tested against fake servers.
-- Redaction masks runs of base64 lines, so hex digests and similar blobs in logs are masked too.
+- Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
+- The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
 
 ## Development
 

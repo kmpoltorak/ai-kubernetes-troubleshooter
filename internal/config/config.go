@@ -16,6 +16,9 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 )
 
+// DefaultLLMMaxInputBytes bounds the serialized provider request, including its schema.
+const DefaultLLMMaxInputBytes = 256 << 10
+
 // Config holds all runtime settings. Construct it with Load.
 type Config struct {
 	AppEnv   string
@@ -33,12 +36,13 @@ type Config struct {
 	// the ServiceAccount can read.
 	AllowedNamespaces []string
 
-	LLMProvider   string
-	LLMModel      string
-	LLMTimeout    time.Duration
-	OpenAIAPIKey  string
-	OpenAIBaseURL string
-	OllamaBaseURL string
+	LLMMaxInputBytes int
+	LLMProvider      string
+	LLMModel         string
+	LLMTimeout       time.Duration
+	OpenAIAPIKey     string
+	OpenAIBaseURL    string
+	OllamaBaseURL    string
 
 	SimulationEnabled  bool
 	SimulationScenario string
@@ -77,6 +81,7 @@ func Load(getenv func(string) string) (Config, error) {
 		AllowedNamespaces:           p.list("KUBERNETES_ALLOWED_NAMESPACES"),
 		LLMProvider:                 strings.ToLower(p.str("LLM_PROVIDER", "rules")),
 		LLMModel:                    p.str("LLM_MODEL", ""),
+		LLMMaxInputBytes:            p.int("LLM_MAX_INPUT_BYTES", DefaultLLMMaxInputBytes),
 		LLMTimeout:                  p.duration("LLM_TIMEOUT", 60*time.Second),
 		OpenAIAPIKey:                p.str("OPENAI_API_KEY", ""),
 		OpenAIBaseURL:               strings.TrimRight(p.str("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
@@ -117,6 +122,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.LLMProvider == "openai" && c.OpenAIAPIKey == "" {
 		p.fail("OPENAI_API_KEY", "is required when LLM_PROVIDER=openai")
+	}
+	if c.LLMMaxInputBytes <= 0 {
+		p.fail("LLM_MAX_INPUT_BYTES", "must be positive")
 	}
 	if c.LLMTimeout <= 0 {
 		p.fail("LLM_TIMEOUT", "must be positive")

@@ -14,6 +14,7 @@ import (
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 const maxEvents = 50
@@ -63,7 +64,7 @@ func getEvents(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 		events = append(events, EventInfo{
 			Time: eventTime(e), Type: e.Type, Reason: e.Reason, Count: max(e.Count, 1),
 			Object:  strings.ToLower(e.InvolvedObject.Kind) + "/" + e.InvolvedObject.Name,
-			Message: truncate(Redact(e.Message), maxMessageBytes),
+			Message: truncate(redact.Text(e.Message), maxMessageBytes),
 		})
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })

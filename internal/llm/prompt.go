@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 //go:embed system_prompt.txt
@@ -61,6 +62,7 @@ type promptEvidence struct {
 // userPrompt renders the incident and evidence as JSON. Only fields useful
 // for analysis are included; database IDs and timestamps are omitted.
 func userPrompt(in AnalysisInput) (string, error) {
+	in.Incident = in.Incident.Redacted()
 	msg := struct {
 		Incident          promptIncident   `json:"incident"`
 		Evidence          []promptEvidence `json:"evidence"`
@@ -69,12 +71,16 @@ func userPrompt(in AnalysisInput) (string, error) {
 		Incident: promptIncident{Title: in.Incident.Title, Description: in.Incident.Description, Target: in.Incident.Target},
 	}
 	for _, e := range in.Evidence {
+		data, err := redact.JSON(e.Data)
+		if err != nil {
+			return "", err
+		}
 		msg.Evidence = append(msg.Evidence, promptEvidence{
-			Source: e.Source, Subject: e.Subject, Health: e.Health, Summary: e.Summary, Signals: e.Signals, Data: e.Data,
+			Source: e.Source, Subject: redact.Text(e.Subject), Health: e.Health, Summary: redact.Text(e.Summary), Signals: e.Signals, Data: data,
 		})
 	}
 	for _, te := range in.Failed {
-		msg.FailedDiagnostics = append(msg.FailedDiagnostics, promptFailure{Source: te.ToolName, Error: te.Error})
+		msg.FailedDiagnostics = append(msg.FailedDiagnostics, promptFailure{Source: te.ToolName, Error: redact.Text(te.Error)})
 	}
 	b, err := json.Marshal(msg)
 	return string(b), err

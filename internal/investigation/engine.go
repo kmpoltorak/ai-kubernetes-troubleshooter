@@ -22,6 +22,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/llm"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 var (
@@ -100,6 +101,7 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 	if err != nil {
 		return domain.InvestigationRecord{}, fmt.Errorf("load incident: %w", err)
 	}
+	inc = inc.Redacted()
 	// Re-checked here: the policy may have changed since the incident was filed.
 	if err := e.cfg.Policy.Check(inc.Target); err != nil {
 		return domain.InvestigationRecord{}, fmt.Errorf("%w: %w", ErrInvalidOptions, err)
@@ -135,7 +137,7 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 	rec.Investigation.Status = domain.InvestigationCompleted
 	if analysisErr != nil {
 		rec.Investigation.Status = domain.InvestigationFailed
-		rec.Investigation.Error = analysisErr.Error()
+		rec.Investigation.Error = redact.Text(analysisErr.Error())
 	}
 
 	// Persist even if the caller went away or the deadline passed, so an
@@ -154,7 +156,7 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 		"tool_executions", len(rec.ToolExecutions), "evidence", len(rec.Evidence))
 
 	if analysisErr != nil {
-		return rec, fmt.Errorf("%w: %w", ErrAnalysisFailed, analysisErr)
+		return rec, fmt.Errorf("%w: %w", ErrAnalysisFailed, redact.Error(analysisErr))
 	}
 	return rec, nil
 }
@@ -293,7 +295,8 @@ func logContainers(p diagnostics.PodInfo) []string {
 // the evidence. ok is false when the tool could not observe anything.
 func (r *runner) run(ctx context.Context, tool string, in diagnostics.Input) (diagnostics.Result, bool) {
 	in.Namespace = r.ns
-	input, _ := json.Marshal(in) // Input always marshals
+	input, _ := json.Marshal(in)  // Input always marshals
+	input, _ = redact.JSON(input) // marshaled Input is valid JSON
 	te := domain.ToolExecution{ID: domain.NewID(), ToolName: tool, Input: input, StartedAt: time.Now().UTC()}
 
 	toolCtx, cancel := context.WithTimeout(ctx, r.engine.cfg.ToolTimeout)
@@ -304,9 +307,12 @@ func (r *runner) run(ctx context.Context, tool string, in diagnostics.Input) (di
 	var output []byte
 	if err == nil {
 		output, err = json.Marshal(res.Data)
+		if err == nil {
+			output, err = redact.JSON(output)
+		}
 	}
 	if err != nil {
-		te.Status, te.Error = domain.ToolFailed, err.Error()
+		te.Status, te.Error = domain.ToolFailed, redact.Text(err.Error())
 		r.rec.ToolExecutions = append(r.rec.ToolExecutions, te)
 		observability.ToolFailuresTotal.WithLabelValues(tool).Inc()
 		r.log.WarnContext(ctx, "diagnostic failed", "tool_name", tool, "duration_ms", te.DurationMs, "error", err)
@@ -315,8 +321,8 @@ func (r *runner) run(ctx context.Context, tool string, in diagnostics.Input) (di
 	te.Status, te.Output = domain.ToolSucceeded, output
 	r.rec.ToolExecutions = append(r.rec.ToolExecutions, te)
 	r.rec.Evidence = append(r.rec.Evidence, domain.Evidence{
-		ID: domain.NewID(), ToolExecutionID: te.ID, Source: tool, Subject: res.Subject,
-		Health: res.Health, Summary: res.Summary, Signals: append([]string{}, res.Signals...), Data: output,
+		ID: domain.NewID(), ToolExecutionID: te.ID, Source: tool, Subject: redact.Text(res.Subject),
+		Health: res.Health, Summary: redact.Text(res.Summary), Signals: append([]string{}, res.Signals...), Data: output,
 	})
 	observability.ToolExecutionsTotal.WithLabelValues(tool, string(res.Health)).Inc()
 	r.log.InfoContext(ctx, "diagnostic completed", "tool_name", tool, "duration_ms", te.DurationMs,
@@ -340,6 +346,7 @@ func (e *Engine) analyze(ctx context.Context, log *slog.Logger, inc domain.Incid
 	}
 	analysis, err := e.provider.Analyze(ctx, llm.AnalysisInput{Incident: inc, Evidence: rec.Evidence, Failed: failed})
 	observability.LLMRequestDuration.WithLabelValues(provider).Observe(time.Since(start).Seconds())
+	analysis = analysis.Redacted()
 	if err == nil {
 		sources := make([]string, len(rec.Evidence))
 		for i, ev := range rec.Evidence {
@@ -354,11 +361,14 @@ func (e *Engine) analyze(ctx context.Context, log *slog.Logger, inc domain.Incid
 		if errors.Is(err, llm.ErrInvalidOutput) {
 			reason = "invalid_output"
 		}
+		if errors.Is(err, llm.ErrInputTooLarge) {
+			reason = "input_limit"
+		}
 		observability.LLMRequestsTotal.WithLabelValues(provider, "error").Inc()
 		observability.LLMFailuresTotal.WithLabelValues(provider, reason).Inc()
 		// The error never contains the raw model response, only a summary.
 		log.ErrorContext(ctx, "analysis failed", "provider", provider, "reason", reason, "error", err)
-		return fmt.Errorf("analysis by %s failed: %w", provider, err)
+		return fmt.Errorf("analysis by %s failed: %w", provider, redact.Error(err))
 	}
 	observability.LLMRequestsTotal.WithLabelValues(provider, "ok").Inc()
 	rec.Report = &domain.Report{ID: domain.NewID(), Provider: provider, Analysis: analysis,
@@ -383,7 +393,7 @@ func initMetrics(provider string) {
 	for _, status := range []string{"ok", "error"} {
 		observability.LLMRequestsTotal.WithLabelValues(provider, status)
 	}
-	for _, reason := range []string{"request", "invalid_output"} {
+	for _, reason := range []string{"request", "invalid_output", "input_limit"} {
 		observability.LLMFailuresTotal.WithLabelValues(provider, reason)
 	}
 }

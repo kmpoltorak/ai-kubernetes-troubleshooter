@@ -121,3 +121,20 @@ func TestStringRedactsSecrets(t *testing.T) {
 		t.Fatalf("secret leaked or not redacted: %s", s)
 	}
 }
+
+func TestLLMInputBudget(t *testing.T) {
+	for _, value := range []string{"0", "-1", "invalid"} {
+		if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_MAX_INPUT_BYTES": value})); err == nil || !strings.Contains(err.Error(), "LLM_MAX_INPUT_BYTES") {
+			t.Fatalf("accepted %q: %v", value, err)
+		}
+	}
+	for _, tc := range []struct {
+		value string
+		want  int
+	}{{"", DefaultLLMMaxInputBytes}, {"1024", 1024}} {
+		got, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_MAX_INPUT_BYTES": tc.value}))
+		if err != nil || got.LLMMaxInputBytes != tc.want {
+			t.Fatalf("got %d %v", got.LLMMaxInputBytes, err)
+		}
+	}
+}

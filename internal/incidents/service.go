@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -66,6 +67,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.Incident, 
 	if err := s.validate(inc); err != nil {
 		return domain.Incident{}, err
 	}
+	inc = inc.Redacted()
 	if err := s.repo.CreateIncident(ctx, &inc); err != nil {
 		return domain.Incident{}, fmt.Errorf("create incident: %w", err)
 	}
@@ -96,7 +98,7 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Incident, error) {
 	if errors.Is(err, domain.ErrNotFound) {
 		return inc, fmt.Errorf("incident %w", err)
 	}
-	return inc, err
+	return inc.Redacted(), err
 }
 
 // List returns a page of incidents, newest first. A non-positive limit
@@ -109,7 +111,12 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]domain.Inciden
 	if offset < 0 {
 		return nil, &ValidationError{"offset", "must not be negative"}
 	}
-	return s.repo.ListIncidents(ctx, limit, offset)
+	list, err := s.repo.ListIncidents(ctx, limit, offset)
+	list = slices.Clone(list)
+	for i := range list {
+		list[i] = list[i].Redacted()
+	}
+	return list, err
 }
 
 // Report returns the latest completed investigation of an incident.
@@ -121,5 +128,8 @@ func (s *Service) Report(ctx context.Context, incidentID string) (domain.Investi
 	if errors.Is(err, domain.ErrNotFound) {
 		return rec, fmt.Errorf("completed investigation %w", err)
 	}
-	return rec, err
+	if err != nil {
+		return domain.InvestigationRecord{}, err
+	}
+	return rec.Redacted()
 }
