@@ -6,6 +6,9 @@ metadata:
 data:
   APP_ENV: production
   LOG_LEVEL: info
+  # No identity provider needed for local/test installs. Use ../kubernetes-authenticated
+  # with AUTH_ENABLED=true when access must require login.
+  AUTH_ENABLED: "false"
   # Live mode: in-cluster ServiceAccount credentials (KUBECONFIG unset).
   SIMULATION_ENABLED: "false"
   KUBERNETES_CLUSTER_NAME: local

@@ -64,6 +64,9 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 | Variable | Default | Meaning |
 |---|---|---|
 | `APP_ENV`, `HTTP_PORT`, `LOG_LEVEL` | `development`, `8080`, `info` | |
+| `AUTH_ENABLED` | `false` | no login/provider needed when off; checks UI, API and metrics through OAuth2 Proxy when on |
+| `AUTH_PROXY_URL` | `http://127.0.0.1:4180` | internal OAuth2 Proxy origin; Compose uses its own service address |
+| `AUTH_PUBLIC_URL` | empty | required when auth is on; HTTPS origin, or HTTP loopback for local auth tests |
 | `DATABASE_URL` | | PostgreSQL; Compose points it at its own container |
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
 | `SIMULATION_SCENARIO` | `healthy` | default scenario |
@@ -106,6 +109,12 @@ lines plus error lines per log stream, 50 events, 20 pods with unhealthy ones
 first. Events match the exact target, its pods or its ReplicaSets, so `payment`
 never picks up `payment-worker`.
 
+**Authentication:** `AUTH_ENABLED=false` supports local/test/minikube without SSO.
+Enable it with the [OIDC setup](docs/authentication.md); the backend checks each
+request, including direct requests to its port. Browser sessions use cookies;
+API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
+`/health` and `/ready` remain public; readiness also checks auth when enabled.
+
 ## API
 
 | Method | Path | Description |
@@ -117,7 +126,7 @@ never picks up `payment-worker`.
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
 | `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`), Prometheus |
 
-Errors are `{"error": {"code", "message"}, "request_id"}`: `400`
+API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
 `validation_failed` / `invalid_json` (including a target outside the policy),
 `404` `not_found`, `413` `body_too_large` (over 1 MiB), `429` `busy` /
 `rate_limited` with `Retry-After`, `502` `analysis_failed` with the stored
@@ -151,7 +160,7 @@ investigation fails rather than diagnose something it never saw.
 
 ## Limitations
 
-- No API authentication: expose it only behind an authenticating ingress or on an internal network.
+- Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
 - Workloads are Deployments, Services and Pods only: no StatefulSets, DaemonSets, Jobs, HPA, PVCs, Ingress or node diagnostics.
 - Investigations are synchronous, one cluster per instance; no remediation is ever executed.
 - Live mode was checked by hand on minikube only; CI uses no real cluster. The OpenAI and Ollama clients are tested against fake servers.
@@ -161,6 +170,7 @@ investigation fails rather than diagnose something it never saw.
 
 ```bash
 make test               # unit tests with the race detector
+make test-auth          # real OAuth2 Proxy + disposable OIDC provider; requires Docker
 make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
 make lint               # gofmt, go vet, golangci-lint
 ```

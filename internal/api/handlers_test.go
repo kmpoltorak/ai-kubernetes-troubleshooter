@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
@@ -91,6 +92,12 @@ func newServer(t *testing.T, provider llm.Provider, ready error) *httptest.Serve
 }
 
 func newServerRPS(t *testing.T, provider llm.Provider, ready error, rps float64) *httptest.Server {
+	srv := httptest.NewServer(newHandler(t, provider, ready, rps, config.Auth{}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func newHandler(t *testing.T, provider llm.Provider, ready error, rps float64, auth config.Auth) http.Handler {
 	t.Helper()
 	store := &memStore{incidents: map[string]domain.Incident{}, reports: map[string]domain.InvestigationRecord{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -101,10 +108,7 @@ func newServerRPS(t *testing.T, provider llm.Provider, ready error, rps float64)
 	policy := domain.TargetPolicy{ClusterName: "local"}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 2, Policy: policy})
 	checks := map[string]func(context.Context) error{"database": func(context.Context) error { return ready }}
-	h := New(incidents.NewService(store, policy), engine, checks, log, rps)
-	srv := httptest.NewServer(h)
-	t.Cleanup(srv.Close)
-	return srv
+	return New(incidents.NewService(store, policy), engine, checks, log, rps, auth)
 }
 
 func do(t *testing.T, method, url, body string, headers ...string) (*http.Response, map[string]any) {

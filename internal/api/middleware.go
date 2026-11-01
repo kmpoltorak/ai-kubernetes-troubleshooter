@@ -104,23 +104,24 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/oauth2/") {
 			h.Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// rateLimit applies a token bucket per client IP to /api/ routes; probes and
-// metrics are exempt. The client IP is the TCP peer: X-Forwarded-For is not
+// rateLimit applies a token bucket per client IP to /api/ routes, or all
+// non-probe routes when auth is enabled. The client IP is the TCP peer: X-Forwarded-For is not
 // trusted because any client can set it. Behind an ingress, the limit
 // therefore applies per ingress replica, which still caps total load.
-func rateLimit(rps float64, next http.Handler) http.Handler {
+// ponytail: peer buckets are shared behind ingress; use verified-user buckets if per-user limits are needed.
+func rateLimit(rps float64, protectAll bool, next http.Handler) http.Handler {
 	var mu sync.Mutex
 	limiters := map[string]*rate.Limiter{}
 	burst := max(int(rps*2), 1)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || (!protectAll && !strings.HasPrefix(r.URL.Path, "/api/")) {
 			next.ServeHTTP(w, r)
 			return
 		}

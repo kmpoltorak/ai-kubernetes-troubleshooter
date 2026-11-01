@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
@@ -46,7 +47,7 @@ func newIntegrationServer(t *testing.T, provider llm.Provider) *httptest.Server 
 	policy := domain.TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"payments"}}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 10 * time.Second, MaxConcurrent: 4, Policy: policy})
 	srv := httptest.NewServer(New(incidents.NewService(store, policy), engine,
-		map[string]func(context.Context) error{"database": store.Ping}, log, 1000))
+		map[string]func(context.Context) error{"database": store.Ping}, log, 1000, config.Auth{}))
 	t.Cleanup(srv.Close)
 	return srv
 }

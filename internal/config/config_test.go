@@ -19,8 +19,46 @@ func TestLoadDefaults(t *testing.T) {
 	if c.HTTPPort != 8080 || c.LLMProvider != "rules" || c.LLMModel != "rules-v1" ||
 		!c.SimulationEnabled || c.SimulationScenario != "healthy" || c.LogLevel != slog.LevelInfo ||
 		c.InvestigationTimeout != 90*time.Second || c.MaxConcurrentInvestigations != 4 ||
-		c.ClusterName != "local" || c.AllowedNamespaces != nil || c.RateLimitRPS != 5 {
+		c.ClusterName != "local" || c.AllowedNamespaces != nil || c.RateLimitRPS != 5 || c.Auth.Enabled {
 		t.Fatalf("unexpected defaults: %+v", c)
+	}
+}
+
+func TestAuthConfiguration(t *testing.T) {
+	for _, tt := range []struct {
+		name, enabled, proxy, public string
+		wantError                    string
+	}{
+		{"disabled without provider", "false", "", "", ""},
+		{"disabled ignores unused URLs", "false", ":bad", ":bad", ""},
+		{"enabled", "true", "", "https://troubleshooter.example.com/", ""},
+		{"local HTTP", "true", "http://127.0.0.1:4180", "http://127.0.0.1:8080", ""},
+		{"missing public URL", "true", "", "", "AUTH_PUBLIC_URL"},
+		{"bad bool", "maybe", "", "", "AUTH_ENABLED"},
+		{"public HTTP", "true", "", "http://example.com", "AUTH_PUBLIC_URL"},
+		{"credentials", "true", "http://user:secret@example.com", "https://example.com", "AUTH_PROXY_URL"},
+		{"proxy path", "true", "http://example.com/auth", "https://example.com", "AUTH_PROXY_URL"},
+		{"proxy scheme", "true", "file:///tmp/proxy", "https://example.com", "AUTH_PROXY_URL"},
+		{"proxy port", "true", "http://example.com:70000", "https://example.com", "AUTH_PROXY_URL"},
+		{"public query", "true", "", "https://example.com?token=secret", "AUTH_PUBLIC_URL"},
+		{"public fragment", "true", "", "https://example.com#fragment", "AUTH_PUBLIC_URL"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := Load(env(map[string]string{"DATABASE_URL": "x", "AUTH_ENABLED": tt.enabled,
+				"AUTH_PROXY_URL": tt.proxy, "AUTH_PUBLIC_URL": tt.public}))
+			if tt.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantError) || strings.Contains(err.Error(), "secret") {
+					t.Fatalf("expected safe error for %s, got %v", tt.wantError, err)
+				}
+				return
+			}
+			if err != nil || c.Auth.Enabled != (tt.enabled == "true") {
+				t.Fatalf("unexpected config: %+v, %v", c.Auth, err)
+			}
+			if c.Auth.Enabled && (c.Auth.ProxyURL == nil || c.Auth.PublicURL == nil || c.Auth.PublicURL.Path != "") {
+				t.Fatalf("URLs not parsed/canonicalized: %+v", c.Auth)
+			}
+		})
 	}
 }
 

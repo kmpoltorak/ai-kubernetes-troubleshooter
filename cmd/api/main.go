@@ -66,6 +66,9 @@ func run(args []string) error {
 	log.Info("database ready", "migrations_applied", n)
 
 	checks := map[string]func(context.Context) error{"database": store.Ping}
+	if cfg.Auth.Enabled {
+		checks["authentication"] = func(ctx context.Context) error { return api.AuthenticationReady(ctx, cfg.Auth) }
+	}
 	var clusters investigation.Clusters
 	if cfg.SimulationEnabled {
 		sim, err := simulation.NewClusters(cfg.SimulationScenario)
@@ -91,7 +94,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),
-		Handler:           api.New(incidents.NewService(store, policy), engine, checks, log, cfg.RateLimitRPS),
+		Handler:           api.New(incidents.NewService(store, policy), engine, checks, log, cfg.RateLimitRPS, cfg.Auth),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		// Investigations run synchronously, so writes may take up to the
