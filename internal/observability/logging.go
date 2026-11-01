@@ -13,6 +13,7 @@ type ctxKey int
 const (
 	requestIDKey ctxKey = iota
 	traceIDKey
+	userKey
 )
 
 // WithRequestIDs returns a context carrying the request and trace IDs that
@@ -25,6 +26,11 @@ func WithRequestIDs(ctx context.Context, requestID, traceID string) context.Cont
 func RequestID(ctx context.Context) string {
 	s, _ := ctx.Value(requestIDKey).(string)
 	return s
+}
+
+// WithUser records only an identity returned by the authentication service.
+func WithUser(ctx context.Context, user string) context.Context {
+	return context.WithValue(ctx, userKey, user)
 }
 
 // NewLogger returns a JSON logger that adds request_id and trace_id from the
@@ -41,6 +47,9 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	}
 	if id, ok := ctx.Value(traceIDKey).(string); ok {
 		r.AddAttrs(slog.String("trace_id", id))
+	}
+	if user, ok := ctx.Value(userKey).(string); ok {
+		r.AddAttrs(slog.String("user_id", user))
 	}
 	return h.Handler.Handle(ctx, r)
 }

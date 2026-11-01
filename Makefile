@@ -8,7 +8,7 @@ include .env
 export
 endif
 
-.PHONY: web build test test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
+.PHONY: web build test test-auth test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
 
 # Builds the React UI into internal/api/ui/dist, which the binary embeds.
 web:
@@ -19,6 +19,10 @@ build:
 
 test:
 	go test -race ./...
+
+# Runs a real OAuth2 Proxy with a disposable protocol-level OIDC provider.
+test-auth:
+	go test -race -tags authintegration -count=1 -run '^TestOIDCAuthentication$$' ./internal/api
 
 # Starts a disposable PostgreSQL container (port 55433) if it is not running.
 test-db:
@@ -37,7 +41,7 @@ test-integration: test-db
 lint:
 	test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1)
 	go vet ./...
-	golangci-lint run --build-tags integration
+	golangci-lint run --build-tags integration,authintegration
 
 fmt:
 	gofmt -w .

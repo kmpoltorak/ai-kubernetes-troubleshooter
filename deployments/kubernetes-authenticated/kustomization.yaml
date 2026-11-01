@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../kubernetes
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+configMapGenerator:
+  - name: troubleshooter-oauth2-proxy
+    namespace: troubleshooter
+    files:
+      - oauth2-proxy.cfg
+patches:
+  - target:
+      kind: ConfigMap
+      name: troubleshooter-config
+    patch: |-
+      - op: add
+        path: /data/AUTH_ENABLED
+        value: "true"
+      - op: add
+        path: /data/AUTH_PUBLIC_URL
+        value: https://troubleshooter.internal.example.com
+      - op: add
+        path: /data/AUTH_PROXY_URL
+        value: http://troubleshooter-auth:4180
+  - target:
+      kind: Ingress
+      name: troubleshooter
+    patch: |-
+      - op: remove
+        path: /spec/ingressClassName
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [troubleshooter.internal.example.com]
+            secretName: troubleshooter-tls

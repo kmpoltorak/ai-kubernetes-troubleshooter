@@ -34,6 +34,9 @@ services:
       APP_ENV: ${APP_ENV:-development}
       HTTP_PORT: 8080
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_PROXY_URL: http://oauth2-proxy:4180
+      AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-}
       DATABASE_URL: postgres://troubleshooter:troubleshooter@postgres:5432/troubleshooter?sslmode=disable
       KUBERNETES_CLUSTER_NAME: ${KUBERNETES_CLUSTER_NAME:-local}
       KUBERNETES_ALLOWED_NAMESPACES: ${KUBERNETES_ALLOWED_NAMESPACES:-}
@@ -55,6 +58,24 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+
+  oauth2-proxy:
+    profiles: [auth]
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    command: [--config=/etc/oauth2-proxy.cfg]
+    volumes:
+      - ./deployments/kubernetes-authenticated/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
+    environment:
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OAUTH2_PROXY_COOKIE_SECRET: ${AUTH_COOKIE_SECRET:-}
+      OAUTH2_PROXY_ALLOWED_GROUPS: ${OIDC_ALLOWED_GROUPS:-troubleshooter-users}
+      OAUTH2_PROXY_REDIRECT_URL: ${AUTH_PUBLIC_URL:-}/oauth2/callback
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 
   ollama:
     profiles: [ollama]

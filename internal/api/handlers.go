@@ -14,6 +14,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
@@ -33,8 +34,8 @@ type handler struct {
 
 // New returns the fully wired HTTP handler. checks are the readiness checks
 // by dependency name (database, kubernetes). API routes are rate limited per
-// client IP at rps requests per second.
-func New(svc *incidents.Service, engine *investigation.Engine, checks map[string]func(context.Context) error, log *slog.Logger, rps float64) http.Handler {
+// client IP at rps requests per second; auth also limits other non-probe routes.
+func New(svc *incidents.Service, engine *investigation.Engine, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth) http.Handler {
 	h := &handler{incidents: svc, engine: engine, checks: checks, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/incidents", h.createIncident)
@@ -46,7 +47,7 @@ func New(svc *incidents.Service, engine *investigation.Engine, checks map[string
 	mux.HandleFunc("GET /ready", h.readiness)
 	mux.Handle("GET /metrics", promhttp.Handler())
 	registerUI(mux)
-	return recoverPanics(log, securityHeaders(withRequestIDs(rateLimit(rps, observe(log, mux)))))
+	return recoverPanics(log, securityHeaders(withRequestIDs(rateLimit(rps, auth.Enabled, authenticate(auth, log, observe(log, mux))))))
 }
 
 func (h *handler) createIncident(w http.ResponseWriter, r *http.Request) {

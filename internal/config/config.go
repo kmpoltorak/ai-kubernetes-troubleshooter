@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ type Config struct {
 	LogLevel slog.Level
 
 	DatabaseURL string
+	Auth        Auth
 
 	Kubeconfig        string
 	KubernetesContext string
@@ -43,6 +46,13 @@ type Config struct {
 	InvestigationTimeout        time.Duration
 	MaxConcurrentInvestigations int
 	RateLimitRPS                float64
+}
+
+// Auth is inactive by default, so local/test runs do not need an identity provider.
+type Auth struct {
+	Enabled   bool
+	ProxyURL  *url.URL
+	PublicURL *url.URL
 }
 
 var defaultModels = map[string]string{
@@ -76,6 +86,11 @@ func Load(getenv func(string) string) (Config, error) {
 		InvestigationTimeout:        p.duration("INVESTIGATION_TIMEOUT", 90*time.Second),
 		MaxConcurrentInvestigations: p.int("MAX_CONCURRENT_INVESTIGATIONS", 4),
 		RateLimitRPS:                p.float("RATE_LIMIT_RPS", 5),
+	}
+	c.Auth.Enabled = p.bool("AUTH_ENABLED", false)
+	if c.Auth.Enabled {
+		c.Auth.ProxyURL = p.authURL("AUTH_PROXY_URL", "http://127.0.0.1:4180", false)
+		c.Auth.PublicURL = p.authURL("AUTH_PUBLIC_URL", "", true)
 	}
 
 	if c.AppEnv != "development" && c.AppEnv != "production" {
@@ -124,9 +139,9 @@ func Load(getenv func(string) string) (Config, error) {
 
 // String renders the configuration with secrets redacted, safe for logs.
 func (c Config) String() string {
-	return fmt.Sprintf("env=%s port=%d cluster=%s context=%q namespaces=%v provider=%s model=%s simulation=%t scenario=%s openai_key=%s",
+	return fmt.Sprintf("env=%s port=%d cluster=%s context=%q namespaces=%v provider=%s model=%s simulation=%t scenario=%s auth=%t openai_key=%s",
 		c.AppEnv, c.HTTPPort, c.ClusterName, c.KubernetesContext, c.AllowedNamespaces, c.LLMProvider, c.LLMModel,
-		c.SimulationEnabled, c.SimulationScenario, redact(c.OpenAIAPIKey))
+		c.SimulationEnabled, c.SimulationScenario, c.Auth.Enabled, redact(c.OpenAIAPIKey))
 }
 
 func redact(s string) string {
@@ -144,6 +159,30 @@ type parser struct {
 
 func (p *parser) fail(key, msg string) {
 	p.errs = append(p.errs, fmt.Errorf("%s %s", key, msg))
+}
+
+func (p *parser) authURL(key, def string, public bool) *url.URL {
+	u, err := url.Parse(p.str(key, def))
+	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") ||
+		u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		(u.Path != "" && u.Path != "/") {
+		p.fail(key, "must be an HTTP(S) origin without credentials, query or fragment")
+		return nil
+	}
+	if port := u.Port(); port != "" {
+		n, parseErr := strconv.Atoi(port)
+		if parseErr != nil || n < 1 || n > 65535 {
+			p.fail(key, "port must be between 1 and 65535")
+			return nil
+		}
+	}
+	ip := net.ParseIP(u.Hostname())
+	if public && u.Scheme != "https" && u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		p.fail(key, "must use HTTPS (HTTP is allowed only on loopback for local testing)")
+		return nil
+	}
+	u.Path = ""
+	return u
 }
 
 func (p *parser) str(key, def string) string {

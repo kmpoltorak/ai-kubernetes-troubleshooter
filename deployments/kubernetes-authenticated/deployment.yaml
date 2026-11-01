@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: troubleshooter-auth
+  namespace: troubleshooter
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: troubleshooter-auth
+  template:
+    metadata:
+      labels:
+        app: troubleshooter-auth
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+          args:
+            - --config=/etc/oauth2-proxy/oauth2-proxy.cfg
+          ports:
+            - name: auth
+              containerPort: 4180
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: auth
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: auth
+            timeoutSeconds: 2
+          envFrom:
+            - secretRef:
+                name: troubleshooter-auth
+          volumeMounts:
+            - name: oauth2-proxy-config
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: oauth2-proxy-config
+          configMap:
+            name: troubleshooter-oauth2-proxy
