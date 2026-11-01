@@ -14,6 +14,7 @@ import (
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 type Provider interface {
@@ -35,13 +36,24 @@ type AnalysisInput struct {
 func FromConfig(cfg config.Config) Provider {
 	switch cfg.LLMProvider {
 	case "openai":
-		return NewOpenAIProvider(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.LLMModel, cfg.LLMTimeout)
+		p := NewOpenAIProvider(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.LLMModel, cfg.LLMTimeout)
+		if cfg.LLMMaxInputBytes > 0 {
+			p.maxInputBytes = cfg.LLMMaxInputBytes
+		}
+		return p
 	case "ollama":
-		return NewOllamaProvider(cfg.OllamaBaseURL, cfg.LLMModel, cfg.LLMTimeout)
+		p := NewOllamaProvider(cfg.OllamaBaseURL, cfg.LLMModel, cfg.LLMTimeout)
+		if cfg.LLMMaxInputBytes > 0 {
+			p.maxInputBytes = cfg.LLMMaxInputBytes
+		}
+		return p
 	default:
 		return RulesProvider{}
 	}
 }
+
+// ErrInputTooLarge prevents sending requests that exceed the configured byte budget.
+var ErrInputTooLarge = errors.New("LLM request exceeds LLM_MAX_INPUT_BYTES")
 
 // ErrInvalidOutput marks responses that are not a well-formed analysis.
 var ErrInvalidOutput = errors.New("invalid model output")
@@ -64,15 +76,18 @@ func decodeAnalysis(content string) (domain.Analysis, error) {
 	if dec.More() {
 		return domain.Analysis{}, fmt.Errorf("%w: trailing data after JSON object", ErrInvalidOutput)
 	}
-	return a, nil
+	return a.Redacted(), nil
 }
 
 // postJSON sends body to url and decodes a 2xx JSON response into out.
 // Error bodies are truncated so a misbehaving endpoint cannot flood logs.
-func postJSON(ctx context.Context, client *http.Client, url string, headers map[string]string, body, out any) error {
+func postJSON(ctx context.Context, client *http.Client, url string, headers map[string]string, body, out any, maxBytes int) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err
+	}
+	if len(payload) > maxBytes {
+		return ErrInputTooLarge
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
@@ -92,7 +107,7 @@ func postJSON(ctx context.Context, client *http.Client, url string, headers map[
 		return fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, truncate(string(data), 300))
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, truncate(redactedBody(data), 300))
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("%w: decode response envelope: %w", ErrInvalidOutput, err)
@@ -105,4 +120,11 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func redactedBody(data []byte) string {
+	if clean, err := redact.JSON(data); err == nil {
+		return string(clean)
+	}
+	return redact.Text(string(data))
 }

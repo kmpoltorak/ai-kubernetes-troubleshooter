@@ -27,13 +27,14 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/llm"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/simulation"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/storage"
 )
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(os.Stderr, "error:", redact.Text(err.Error()))
 		os.Exit(1)
 	}
 }

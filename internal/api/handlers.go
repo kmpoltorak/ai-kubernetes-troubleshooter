@@ -19,6 +19,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 const maxBodyBytes = 1 << 20
@@ -226,7 +227,7 @@ type errorBody struct {
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
 	writeJSON(w, status, map[string]any{
-		"error":      errorBody{Code: code, Message: msg},
+		"error":      errorBody{Code: code, Message: redact.Text(msg)},
 		"request_id": observability.RequestID(r.Context()),
 	})
 }

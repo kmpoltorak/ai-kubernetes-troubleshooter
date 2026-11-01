@@ -1,11 +1,10 @@
-package diagnostics
+// Package redact masks recognizable credentials in free-form data.
+package redact
 
 import "regexp"
 
-// Redaction runs on every free-form string that comes from the cluster
-// (logs, event and container messages) before it is stored or sent to an
-// LLM. It is pattern based, so it lowers rather than eliminates risk; the
-// primary control is that Secret objects are never read.
+// Pattern matching lowers rather than eliminates risk. Kubernetes Secret
+// values must still never be collected.
 var redactions = []struct {
 	re   *regexp.Regexp
 	with string
@@ -27,11 +26,11 @@ var redactions = []struct {
 	// user:password@ in connection strings and URLs.
 	{regexp.MustCompile(`(://[^:/\s@]+):[^@/\s]+@`), "$1:[REDACTED]@"},
 	// key=value / key: value / "key": "value" for sensitive key names.
-	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|credentials?)["']?\s*[:=]\s*["']?)[^\s"',;&]+`), "${1}[REDACTED]"},
+	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|credentials?)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\s"',;&]+)`), "${1}[REDACTED]"},
 }
 
-// Redact masks credentials in s.
-func Redact(s string) string {
+// Text masks recognizable credentials in s.
+func Text(s string) string {
 	for _, r := range redactions {
 		s = r.re.ReplaceAllString(s, r.with)
 	}

@@ -6,25 +6,29 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 // OpenAIProvider calls the Chat Completions API (or any compatible endpoint)
 // with a strict JSON schema response format.
 type OpenAIProvider struct {
-	baseURL string
-	apiKey  string
-	model   string
-	client  *http.Client
+	maxInputBytes int
+	baseURL       string
+	apiKey        string
+	model         string
+	client        *http.Client
 }
 
 func NewOpenAIProvider(baseURL, apiKey, model string, timeout time.Duration) *OpenAIProvider {
-	return &OpenAIProvider{baseURL: baseURL, apiKey: apiKey, model: model, client: &http.Client{Timeout: timeout}}
+	return &OpenAIProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, baseURL: baseURL, apiKey: apiKey, model: model, client: &http.Client{Timeout: timeout}}
 }
 
 func (p *OpenAIProvider) Name() string { return "openai/" + p.model }
 
-func (p *OpenAIProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.Analysis, error) {
+func (p *OpenAIProvider) Analyze(ctx context.Context, in AnalysisInput) (analysis domain.Analysis, err error) {
+	defer func() { err = redact.Error(err) }()
 	msgs, err := messages(in)
 	if err != nil {
 		return domain.Analysis{}, err
@@ -52,7 +56,7 @@ func (p *OpenAIProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.
 		} `json:"choices"`
 	}
 	headers := map[string]string{"Authorization": "Bearer " + p.apiKey}
-	if err := postJSON(ctx, p.client, p.baseURL+"/chat/completions", headers, req, &resp); err != nil {
+	if err := postJSON(ctx, p.client, p.baseURL+"/chat/completions", headers, req, &resp, p.maxInputBytes); err != nil {
 		return domain.Analysis{}, fmt.Errorf("openai: %w", err)
 	}
 	if len(resp.Choices) == 0 {
@@ -61,7 +65,7 @@ func (p *OpenAIProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.
 	c := resp.Choices[0]
 	switch {
 	case c.Message.Refusal != "":
-		return domain.Analysis{}, fmt.Errorf("openai: %w: model refused: %s", ErrInvalidOutput, truncate(c.Message.Refusal, 200))
+		return domain.Analysis{}, fmt.Errorf("openai: %w: model refused: %s", ErrInvalidOutput, truncate(redact.Text(c.Message.Refusal), 200))
 	case c.FinishReason == "length":
 		return domain.Analysis{}, fmt.Errorf("openai: %w: response truncated", ErrInvalidOutput)
 	}

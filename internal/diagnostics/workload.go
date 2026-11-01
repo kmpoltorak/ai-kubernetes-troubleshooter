@@ -14,6 +14,7 @@ import (
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 const (
@@ -226,7 +227,7 @@ func getDeployment(ctx context.Context, c kube.Cluster, in Input) (Result, error
 	var signals signalSet
 	for _, cond := range st.Conditions {
 		info.Conditions = append(info.Conditions, Condition{Type: string(cond.Type), Status: string(cond.Status),
-			Reason: cond.Reason, Message: truncate(Redact(cond.Message), maxMessageBytes)})
+			Reason: cond.Reason, Message: truncate(redact.Text(cond.Message), maxMessageBytes)})
 		if cond.Type == appsv1.DeploymentProgressing && cond.Reason == "ProgressDeadlineExceeded" {
 			signals.add(SignalRolloutStuck)
 		}
@@ -364,12 +365,12 @@ func getPods(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 func podInfo(p corev1.Pod) PodInfo {
 	pi := PodInfo{
 		Name: p.Name, Phase: string(p.Status.Phase), Reason: p.Status.Reason,
-		Message: truncate(Redact(p.Status.Message), maxMessageBytes), Node: p.Spec.NodeName, Labels: p.Labels,
+		Message: truncate(redact.Text(p.Status.Message), maxMessageBytes), Node: p.Spec.NodeName, Labels: p.Labels,
 	}
 	var signals signalSet
 	for _, cond := range p.Status.Conditions {
 		pi.Conditions = append(pi.Conditions, Condition{Type: string(cond.Type), Status: string(cond.Status),
-			Reason: cond.Reason, Message: truncate(Redact(cond.Message), maxMessageBytes)})
+			Reason: cond.Reason, Message: truncate(redact.Text(cond.Message), maxMessageBytes)})
 		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
 			pi.Ready = true
 		}
@@ -392,7 +393,7 @@ func podInfo(p corev1.Pod) PodInfo {
 		pi.Restarts += cs.RestartCount
 		switch s := cs.State; {
 		case s.Waiting != nil:
-			st.State, st.Reason, st.Message = "waiting", s.Waiting.Reason, truncate(Redact(s.Waiting.Message), maxMessageBytes)
+			st.State, st.Reason, st.Message = "waiting", s.Waiting.Reason, truncate(redact.Text(s.Waiting.Message), maxMessageBytes)
 			switch s.Waiting.Reason {
 			case "CrashLoopBackOff":
 				signals.add(SignalCrashLoopBackOff)

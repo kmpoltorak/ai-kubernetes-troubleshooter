@@ -47,6 +47,7 @@ func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 func (s *Store) Close()                         { s.pool.Close() }
 
 func (s *Store) CreateIncident(ctx context.Context, in *domain.Incident) error {
+	*in = in.Redacted()
 	return s.pool.QueryRow(ctx, `
 		INSERT INTO incidents (title, description, cluster, namespace, resource_type, resource_name)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -92,6 +93,11 @@ func (s *Store) CreateInvestigation(ctx context.Context, inv *domain.Investigati
 // and records its final status. The incident becomes "analyzed" only when a
 // report is stored.
 func (s *Store) FinishInvestigation(ctx context.Context, rec domain.InvestigationRecord) error {
+	var err error
+	rec, err = rec.Redacted()
+	if err != nil {
+		return err
+	}
 	inv := rec.Investigation
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		for _, te := range rec.ToolExecutions {
