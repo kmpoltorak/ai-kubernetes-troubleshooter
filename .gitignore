@@ -17,6 +17,8 @@ kubeconfig*
 .DS_Store
 
 # Local working notes — not published
+report-*
+plan-*
 IMPLEMENTATION_PLAN.md
 prompt.md
 
