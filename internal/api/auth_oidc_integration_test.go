@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -129,9 +130,15 @@ func TestOIDCAuthentication(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		out, cmdErr := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+		cmd := exec.CommandContext(ctx, "docker", args...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, cmdErr := cmd.Output()
 		if cmdErr != nil {
-			t.Fatalf("docker %s failed: %v: %s", args[0], cmdErr, out)
+			t.Fatalf("docker %s failed: %v: %s%s", args[0], cmdErr, out, stderr.Bytes())
+		}
+		if args[0] == "logs" {
+			out = append(out, stderr.Bytes()...)
 		}
 		return strings.TrimSpace(string(out))
 	}
