@@ -59,6 +59,8 @@ export interface RemediationAction {
 export interface Investigation {
   id: string;
   incident_id: string;
+  job_id?: string;
+  execution_attempt?: number;
   status: "queued" | "running" | "completed" | "failed";
   scenario?: string;
   error?: string;
@@ -80,6 +82,19 @@ export interface InvestigationRecord {
   report?: { created_at: string; provider: string; analysis: Analysis; remediation_actions: RemediationAction[] };
 }
 
+export interface JobRecord {
+  job: {
+    id: string;
+    incident_id: string;
+    status: Investigation["status"];
+    stage: "queued" | "diagnostics" | "analyzing" | "completed" | "failed";
+    attempts: number;
+    deadline_at: string;
+    error?: string;
+  };
+  result: InvestigationRecord;
+}
+
 export interface CreateIncident {
   title?: string;
   description: string;
@@ -93,20 +108,28 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly body: { result?: InvestigationRecord } = {},
   ) {
     super(message);
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (body !== undefined) headers.set("Content-Type", "application/json");
+  const timeout = AbortSignal.timeout(15_000);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
   const res = await fetch(path, {
+    ...options,
     method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers,
+    signal,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error?.message ?? `HTTP ${res.status}`, res.status, data);
+  const data = await res.json().catch((e) => {
+    if (signal.aborted || res.ok) throw e;
+    return {};
+  });
+  if (!res.ok) throw new ApiError(data.error?.message ?? `HTTP ${res.status}`, res.status);
   return data as T;
 }
 
@@ -114,8 +137,10 @@ export const api = {
   listIncidents: () => request<{ incidents: Incident[] }>("GET", "/api/v1/incidents?limit=100").then((r) => r.incidents),
   getIncident: (id: string) => request<Incident>("GET", `/api/v1/incidents/${id}`),
   createIncident: (body: CreateIncident) => request<Incident>("POST", "/api/v1/incidents", body),
-  investigate: (id: string, scenario: string) =>
-    request<InvestigationRecord>("POST", `/api/v1/incidents/${id}/investigate`, scenario ? { scenario } : {}),
+  submitJob: (id: string, scenario: string, key: string, signal: AbortSignal) =>
+    request<JobRecord>("POST", `/api/v1/incidents/${id}/jobs`, scenario ? { scenario } : {}, { signal, headers: { "Idempotency-Key": key } }),
+  job: (id: string, jobID: string, signal: AbortSignal) =>
+    request<JobRecord>("GET", `/api/v1/incidents/${id}/jobs/${jobID}`, undefined, { signal }),
   investigations: (id: string, offset = 0) =>
     request<InvestigationPage>("GET", `/api/v1/incidents/${id}/investigations?limit=20&offset=${offset}`),
   investigation: (id: string, investigationID: string) =>

@@ -140,7 +140,7 @@ for job storage errors, `502` `analysis_failed` with stored evidence on the wait
 Jobs survive client disconnects. See [queue, retries and upgrade instructions](docs/durable-jobs.md).
 Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
-The UI separates attempt history from the latest successful report; see the [history contract](docs/investigation-history.md).
+The UI submits durable jobs, checks status every 2 seconds and resumes the saved job after a tab reload. It keeps older attempts separate from the latest successful report; see the [history contract](docs/investigation-history.md).
 
 ## Data deletion
 
@@ -177,7 +177,8 @@ investigation fails rather than diagnose something it never saw.
 
 - Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
 - Workloads are Deployments, Services and Pods only: no StatefulSets, DaemonSets, Jobs, HPA, PVCs, Ingress or node diagnostics.
-- One cluster per installation; replicas must use the same limits, target policy and analyzer. The UI uses the waiting endpoint and refreshes history on demand. No remediation is executed.
+- One cluster per installation; replicas must use the same limits, target policy and analyzer. No remediation is executed.
+- The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`. It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
 - Live mode was checked by hand on minikube only; CI uses no real cluster. The OpenAI and Ollama clients are tested against fake servers.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
@@ -190,7 +191,7 @@ make test               # unit tests with the race detector
 make test-auth          # real OAuth2 Proxy + disposable OIDC provider; requires Docker
 make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
 make lint               # gofmt, go vet, golangci-lint
-cd web && npm test && npm run build  # UI render tests, typecheck and build (Node 22)
+cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck and build (Node 22)
 ```
 
 Each tool is tested against client-go fake clients, and all 10 tools run

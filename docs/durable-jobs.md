@@ -40,7 +40,44 @@ returning its previous record shape with `201` or `502 analysis_failed`. Its key
 is optional; without one, every call creates a new job, including network
 retries. Its `Location` identifies the accepted job. Configure client and proxy
 response timeouts for queue wait plus execution, or use the asynchronous routes.
-The UI uses the waiting endpoint; history refresh is manual.
+The UI uses the asynchronous routes described below.
+
+## Browser UI
+
+**Run investigation** submits a job and shows its status, stage, attempt number
+and saved diagnostics. Status is read every two seconds after the previous
+request finishes; requests have a 15-second timeout. Only one read is in flight.
+Terminal jobs stop polling. Read errors keep the last results visible; temporary
+errors retry automatically, while authentication and other client errors stop
+until **Retry status check** or a reload. Retrying status never submits work.
+
+Before submission, the UI saves the UUID key and scenario in this tab's session
+storage. A lost response, timeout, malformed response or server error leaves them
+available for **Retry submission**, including after a reload. The scenario stays
+fixed until that submission is resolved. A known rejection (validation, access,
+missing incident, key conflict, body limit or full queue) clears the pending
+submission so the user can change options. A deliberate new analysis after a
+terminal job gets a new key.
+
+After acceptance, session storage holds only the job ID. Opening that incident
+again in the same tab resumes observation. Without a saved job, the UI opens a
+queued/running durable attempt from the loaded history page, or the newest
+attempt if none is active. Selecting an active attempt on an older page also
+starts observation. It watches one job at a time; it does not scan every history
+page for other sessions' work. Legacy `running` rows have no job to follow.
+
+History remains selectable during work. Choosing an older completed/failed
+attempt keeps that selection while the job status continues updating. **View
+current attempt** returns to live progress, including a new attempt after recovery.
+History and the latest successful report refresh when an observed attempt changes
+or the job finishes; manual refresh remains available.
+
+Leaving the incident aborts local requests and timers, while accepted server work
+continues. Closing a tab or clearing session data can remove an unconfirmed key;
+inspect history before submitting again in another session. No diagnostic bodies
+or credentials are stored in browser session storage. If that storage is blocked
+or malformed, new submissions stop with an error rather than losing a retry key.
+The UI requires browser support for `AbortSignal.timeout` and `AbortSignal.any`.
 
 ## Limits and recovery
 

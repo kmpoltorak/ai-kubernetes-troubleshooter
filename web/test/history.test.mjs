@@ -8,6 +8,7 @@ const vite = await createServer({ server: { middlewareMode: true, hmr: false }, 
 after(() => vite.close());
 const { default: History } = await vite.ssrLoadModule("/src/components/InvestigationHistory.tsx");
 const { default: Report } = await vite.ssrLoadModule("/src/components/Report.tsx");
+const { default: JobStatus } = await vite.ssrLoadModule("/src/components/JobStatus.tsx");
 const render = (Component, props) => renderToStaticMarkup(createElement(Component, props));
 const success = { id: "success", status: "completed", started_at: "2026-01-01T00:00:00Z", completed_at: "2026-01-01T00:01:00Z" };
 const failure = { id: "failure", status: "failed", started_at: "2026-01-02T00:00:00Z", completed_at: "2026-01-02T00:01:00Z", error: "provider unavailable" };
@@ -58,4 +59,21 @@ test("queued attempts remain readable before a worker starts", () => {
   const html = render(Report, { record: { investigation: { ...failure, status: "queued", error: undefined, completed_at: undefined }, tool_executions: [], evidence: [] } });
   assert.match(html, /This investigation is queued/);
   assert.doesNotMatch(html, /Root cause/);
+});
+
+test("job status shows queue, analysis and unknown outcome without hiding stored results", () => {
+  const callbacks = { onRetry() {}, onView() {} };
+  for (const stage of ["queued", "diagnostics", "analyzing"]) {
+    const status = stage === "queued" ? "queued" : "running";
+    const html = render(JobStatus, { ...callbacks, record: { job: { id: "job", status, stage, attempts: 2 } }, error: "offline" });
+    assert.match(html, new RegExp(`Stage: <strong>${stage}`));
+    assert.match(html, /Attempt 2 of 3/);
+    assert.match(html, /Checking every 2 seconds/);
+    assert.match(html, /Leaving this page does not stop/);
+    assert.match(html, /Saved results remain below/);
+    assert.match(html, /Retry status check/);
+  }
+  const html = render(JobStatus, { ...callbacks, record: { job: { id: "job", status: "failed", stage: "failed", attempts: 1, error: "analysis outcome unknown; start a new job to retry" } }, error: "" });
+  assert.match(html, /analysis outcome unknown/);
+  assert.doesNotMatch(html, /Checking every/);
 });
