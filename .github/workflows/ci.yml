@@ -89,6 +89,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - name: Render UI history and failure states
+        run: npm test
       - name: Typecheck and build
         run: npm run build
       - name: Audit production dependencies

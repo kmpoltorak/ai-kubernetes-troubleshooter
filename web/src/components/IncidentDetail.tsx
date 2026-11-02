@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { api, ApiError, SCENARIOS, type Incident, type InvestigationRecord } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { api, ApiError, SCENARIOS, type Incident, type InvestigationPage, type InvestigationRecord } from "../api";
 import { target } from "../format";
 import Report from "./Report";
+import InvestigationHistory from "./InvestigationHistory";
 
 interface Props {
   id: string;
@@ -16,16 +17,59 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
 
+  const [page, setPage] = useState<InvestigationPage | null>(null);
+  const [latestReport, setLatestReport] = useState<InvestigationRecord | null>(null);
+  const [historyError, setHistoryError] = useState("");
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingRecord, setLoadingRecord] = useState(false);
+  const historyVersion = useRef(0);
+  const recordVersion = useRef(0);
+
+  async function selectAttempt(attemptID: string) {
+    const version = ++recordVersion.current;
+    setLoadingRecord(true);
+    setHistoryError("");
+    setRecord(null);
+    try {
+      const result = await api.investigation(id, attemptID);
+      if (version === recordVersion.current) setRecord(result);
+    } catch (e) {
+      if (version === recordVersion.current) setHistoryError((e as Error).message);
+    } finally {
+      if (version === recordVersion.current) setLoadingRecord(false);
+    }
+  }
+
+  async function loadHistory(offset = 0, selectNewest = false) {
+    const version = ++historyVersion.current;
+    setLoadingHistory(true);
+    setHistoryError("");
+    try {
+      const [inc, attempts, lastReport] = await Promise.all([
+        api.getIncident(id), api.investigations(id, offset),
+        api.report(id).catch((e) => {
+          if (e instanceof ApiError && e.status === 404) return null;
+          throw e;
+        }),
+      ]);
+      if (version !== historyVersion.current) return;
+      setIncident(inc);
+      setPage(attempts);
+      setLatestReport(lastReport);
+      if (selectNewest) {
+        if (attempts.investigations[0]) await selectAttempt(attempts.investigations[0].id);
+        else setRecord(null);
+      }
+    } catch (e) {
+      if (version === historyVersion.current) setHistoryError((e as Error).message);
+    } finally {
+      if (version === historyVersion.current) setLoadingHistory(false);
+    }
+  }
+
   useEffect(() => {
-    let active = true;
-    api.getIncident(id).then((inc) => active && setIncident(inc), (e) => active && setError(e.message));
-    api.report(id).then(
-      (rec) => active && setRecord(rec),
-      (e) => active && !(e instanceof ApiError && e.status === 404) && setError(e.message),
-    );
-    return () => {
-      active = false;
-    };
+    loadHistory(0, true);
+    return () => { ++historyVersion.current; ++recordVersion.current; };
   }, [id]);
 
   async function investigate() {
@@ -40,12 +84,13 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
       // A failed analysis still returns the collected evidence.
       if (e instanceof ApiError && e.body.result) setRecord(e.body.result);
     } finally {
+      await loadHistory();
       setRunning(false);
     }
   }
 
   if (!incident) {
-    return error ? <p className="card text-sm text-red-600">{error}</p> : <div className="card h-40 animate-pulse" />;
+    return (error || historyError) ? <p className="card text-sm text-red-600">{error || historyError}</p> : <div className="card h-40 animate-pulse" />;
   }
 
   return (
@@ -82,7 +127,7 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
               ))}
             </select>
           </label>
-          <button type="button" className="btn-primary" onClick={investigate} disabled={running}>
+          <button type="button" className="btn-primary" onClick={investigate} disabled={running || loadingHistory || loadingRecord}>
             {running && <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
             {running ? "Investigating…" : "Run investigation"}
           </button>
@@ -94,6 +139,10 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
         {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
 
+      <InvestigationHistory page={page} selectedID={record?.investigation.id} latestReport={latestReport}
+        busy={running || loadingHistory || loadingRecord} error={historyError}
+        onSelect={selectAttempt} onPage={(offset) => loadHistory(offset)} onRefresh={() => loadHistory(0, true)} />
+      {loadingRecord && <p role="status" className="text-sm text-zinc-500">Loading investigation…</p>}
       {record && <Report record={record} />}
     </div>
   );

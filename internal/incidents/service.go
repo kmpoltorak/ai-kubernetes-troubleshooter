@@ -23,6 +23,8 @@ type Repository interface {
 	GetIncident(ctx context.Context, id string) (domain.Incident, error)
 	ListIncidents(ctx context.Context, limit, offset int) ([]domain.Incident, error)
 	LatestReport(ctx context.Context, incidentID string) (domain.InvestigationRecord, error)
+	ListInvestigations(ctx context.Context, incidentID string, limit, offset int) ([]domain.Investigation, error)
+	GetInvestigation(ctx context.Context, incidentID, id string) (domain.InvestigationRecord, error)
 }
 
 // ValidationError describes invalid user input; the API maps it to 400.
@@ -128,6 +130,45 @@ func (s *Service) Report(ctx context.Context, incidentID string) (domain.Investi
 	if errors.Is(err, domain.ErrNotFound) {
 		return rec, fmt.Errorf("completed investigation %w", err)
 	}
+	if err != nil {
+		return domain.InvestigationRecord{}, err
+	}
+	return rec.Redacted()
+}
+
+// InvestigationPage is a bounded page of attempt headers, including failures.
+type InvestigationPage struct {
+	Investigations []domain.Investigation `json:"investigations"`
+	Offset         int                    `json:"offset"`
+	Limit          int                    `json:"limit"`
+	HasMore        bool                   `json:"has_more"`
+}
+
+func (s *Service) Investigations(ctx context.Context, incidentID string, limit, offset int) (InvestigationPage, error) {
+	if limit <= 0 {
+		limit = DefaultPageSize
+	}
+	limit = min(limit, MaxPageSize)
+	if offset < 0 {
+		return InvestigationPage{}, &ValidationError{"offset", "must not be negative"}
+	}
+	if _, err := s.Get(ctx, incidentID); err != nil {
+		return InvestigationPage{}, err
+	}
+	list, err := s.repo.ListInvestigations(ctx, incidentID, limit+1, offset)
+	if err != nil {
+		return InvestigationPage{}, err
+	}
+	more := len(list) > limit
+	list = append([]domain.Investigation{}, list[:min(len(list), limit)]...)
+	for i := range list {
+		list[i] = list[i].Redacted()
+	}
+	return InvestigationPage{Investigations: list, Offset: offset, Limit: limit, HasMore: more}, nil
+}
+
+func (s *Service) Investigation(ctx context.Context, incidentID, id string) (domain.InvestigationRecord, error) {
+	rec, err := s.repo.GetInvestigation(ctx, incidentID, id)
 	if err != nil {
 		return domain.InvestigationRecord{}, err
 	}

@@ -56,11 +56,28 @@ export interface RemediationAction {
   status: string;
 }
 
+export interface Investigation {
+  id: string;
+  incident_id: string;
+  status: "running" | "completed" | "failed";
+  scenario?: string;
+  error?: string;
+  started_at: string;
+  completed_at?: string;
+}
+
+export interface InvestigationPage {
+  investigations: Investigation[];
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
 export interface InvestigationRecord {
-  investigation: { id: string; status: string; scenario?: string; error?: string };
+  investigation: Investigation;
   tool_executions: ToolExecution[] | null;
   evidence: Evidence[] | null;
-  report?: { provider: string; analysis: Analysis; remediation_actions: RemediationAction[] };
+  report?: { created_at: string; provider: string; analysis: Analysis; remediation_actions: RemediationAction[] };
 }
 
 export interface CreateIncident {
@@ -99,6 +116,10 @@ export const api = {
   createIncident: (body: CreateIncident) => request<Incident>("POST", "/api/v1/incidents", body),
   investigate: (id: string, scenario: string) =>
     request<InvestigationRecord>("POST", `/api/v1/incidents/${id}/investigate`, scenario ? { scenario } : {}),
+  investigations: (id: string, offset = 0) =>
+    request<InvestigationPage>("GET", `/api/v1/incidents/${id}/investigations?limit=20&offset=${offset}`),
+  investigation: (id: string, investigationID: string) =>
+    request<InvestigationRecord>("GET", `/api/v1/incidents/${id}/investigations/${investigationID}`),
   report: (id: string) => request<InvestigationRecord>("GET", `/api/v1/incidents/${id}/report`),
 };
 

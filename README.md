@@ -124,6 +124,8 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 | `GET` | `/api/v1/incidents?limit=&offset=` | newest first, max 100 |
 | `GET` | `/api/v1/incidents/{id}` | one incident |
 | `POST` | `/api/v1/incidents/{id}/investigate` | optional `{"scenario": "..."}` |
+| `GET` | `/api/v1/incidents/{id}/investigations?limit=&offset=` | all attempts, newest first, default 20/max 100, with `has_more` |
+| `GET` | `/api/v1/incidents/{id}/investigations/{investigationID}` | one attempt, including failed/running attempts without a report |
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
 | `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`), Prometheus |
 
@@ -133,6 +135,7 @@ API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
 `rate_limited` with `Retry-After`, `502` `analysis_failed` with the stored
 evidence. Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
+The UI separates attempt history from the latest successful report; see the [history contract](docs/investigation-history.md).
 
 ## Data deletion
 
@@ -181,6 +184,7 @@ make test               # unit tests with the race detector
 make test-auth          # real OAuth2 Proxy + disposable OIDC provider; requires Docker
 make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
 make lint               # gofmt, go vet, golangci-lint
+cd web && npm test && npm run build  # UI render tests, typecheck and build (Node 22)
 ```
 
 Each tool is tested against client-go fake clients, and all 10 tools run

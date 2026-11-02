@@ -156,63 +156,90 @@ func insertReport(ctx context.Context, tx pgx.Tx, inv domain.Investigation, r *d
 	return err
 }
 
-// LatestReport returns the most recent completed investigation of an
-// incident with its executions, evidence, report and remediation actions.
-func (s *Store) LatestReport(ctx context.Context, incidentID string) (domain.InvestigationRecord, error) {
-	var rec domain.InvestigationRecord
-	inv := &rec.Investigation
-	err := s.pool.QueryRow(ctx, `
-		SELECT id, incident_id, status, scenario, error, started_at, completed_at
-		FROM investigations
-		WHERE incident_id = $1 AND status = 'completed'
-		ORDER BY started_at DESC LIMIT 1`, incidentID,
-	).Scan(&inv.ID, &inv.IncidentID, &inv.Status, &inv.Scenario, &inv.Error, &inv.StartedAt, &inv.CompletedAt)
-	if err != nil {
-		return rec, notFound(err)
-	}
+const investigationColumns = `id, incident_id, status, scenario, error, started_at, completed_at`
 
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, tool_name, status, input, COALESCE(output, 'null'::jsonb), error, duration_ms, started_at
-		FROM tool_executions WHERE investigation_id = $1 ORDER BY started_at, id`, inv.ID)
-	if err != nil {
-		return rec, err
-	}
-	rec.ToolExecutions, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ToolExecution, error) {
-		var te domain.ToolExecution
-		err := r.Scan(&te.ID, &te.ToolName, &te.Status, &te.Input, &te.Output, &te.Error, &te.DurationMs, &te.StartedAt)
-		return te, err
-	})
-	if err != nil {
-		return rec, err
-	}
-
-	rows, err = s.pool.Query(ctx, `
-		SELECT id, tool_execution_id, source, subject, health, summary, signals, data
-		FROM evidence WHERE investigation_id = $1 ORDER BY position`, inv.ID)
-	if err != nil {
-		return rec, err
-	}
-	rec.Evidence, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.Evidence, error) {
-		var ev domain.Evidence
-		err := r.Scan(&ev.ID, &ev.ToolExecutionID, &ev.Source, &ev.Subject, &ev.Health, &ev.Summary, &ev.Signals, &ev.Data)
-		return ev, err
-	})
-	if err != nil {
-		return rec, err
-	}
-
-	rep, err := s.report(ctx, inv.ID)
-	if err != nil {
-		return rec, err
-	}
-	rec.Report = &rep
-	return rec, nil
+func scanInvestigation(row pgx.Row) (domain.Investigation, error) {
+	var inv domain.Investigation
+	err := row.Scan(&inv.ID, &inv.IncidentID, &inv.Status, &inv.Scenario, &inv.Error, &inv.StartedAt, &inv.CompletedAt)
+	return inv, err
 }
 
-func (s *Store) report(ctx context.Context, investigationID string) (domain.Report, error) {
+func (s *Store) ListInvestigations(ctx context.Context, incidentID string, limit, offset int) ([]domain.Investigation, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+investigationColumns+` FROM investigations WHERE incident_id=$1 ORDER BY started_at DESC,id DESC LIMIT $2 OFFSET $3`, incidentID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Investigation, error) { return scanInvestigation(row) })
+}
+
+// LatestReport retains the completed-report endpoint's meaning.
+func (s *Store) LatestReport(ctx context.Context, incidentID string) (domain.InvestigationRecord, error) {
+	var id string
+	err := s.pool.QueryRow(ctx, `SELECT i.id FROM investigations i JOIN reports r ON r.investigation_id=i.id
+ WHERE i.incident_id=$1 AND i.status='completed' ORDER BY i.started_at DESC,i.id DESC LIMIT 1`, incidentID).Scan(&id)
+	if err != nil {
+		return domain.InvestigationRecord{}, notFound(err)
+	}
+	return s.GetInvestigation(ctx, incidentID, id)
+}
+
+// GetInvestigation reads one snapshot, including unfinished/failed attempts.
+func (s *Store) GetInvestigation(ctx context.Context, incidentID, id string) (domain.InvestigationRecord, error) {
+	rec := domain.InvestigationRecord{ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{}}
+	err := pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		var err error
+		rec.Investigation, err = scanInvestigation(tx.QueryRow(ctx, `SELECT `+investigationColumns+` FROM investigations WHERE incident_id=$1 AND id=$2`, incidentID, id))
+		if err != nil {
+			return notFound(err)
+		}
+		inv := &rec.Investigation
+		rows, err := tx.Query(ctx, `
+		SELECT id, tool_name, status, input, COALESCE(output, 'null'::jsonb), error, duration_ms, started_at
+		FROM tool_executions WHERE investigation_id = $1 ORDER BY started_at, id`, inv.ID)
+		if err != nil {
+			return err
+		}
+		rec.ToolExecutions, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ToolExecution, error) {
+			var te domain.ToolExecution
+			err := r.Scan(&te.ID, &te.ToolName, &te.Status, &te.Input, &te.Output, &te.Error, &te.DurationMs, &te.StartedAt)
+			return te, err
+		})
+		if err != nil {
+			return err
+		}
+
+		rows, err = tx.Query(ctx, `
+		SELECT id, tool_execution_id, source, subject, health, summary, signals, data
+		FROM evidence WHERE investigation_id = $1 ORDER BY position`, inv.ID)
+		if err != nil {
+			return err
+		}
+		rec.Evidence, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.Evidence, error) {
+			var ev domain.Evidence
+			err := r.Scan(&ev.ID, &ev.ToolExecutionID, &ev.Source, &ev.Subject, &ev.Health, &ev.Summary, &ev.Signals, &ev.Data)
+			return ev, err
+		})
+		if err != nil {
+			return err
+		}
+
+		rep, err := readReport(ctx, tx, inv.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		rec.Report = &rep
+		return nil
+	})
+	return rec, err
+}
+
+func readReport(ctx context.Context, tx pgx.Tx, investigationID string) (domain.Report, error) {
 	var r domain.Report
 	var analysis []byte
-	err := s.pool.QueryRow(ctx,
+	err := tx.QueryRow(ctx,
 		`SELECT id, provider, analysis, created_at FROM reports WHERE investigation_id = $1`, investigationID,
 	).Scan(&r.ID, &r.Provider, &analysis, &r.CreatedAt)
 	if err != nil {
@@ -221,7 +248,7 @@ func (s *Store) report(ctx context.Context, investigationID string) (domain.Repo
 	if err := json.Unmarshal(analysis, &r.Analysis); err != nil {
 		return r, fmt.Errorf("decode report analysis: %w", err)
 	}
-	rows, err := s.pool.Query(ctx, `
+	rows, err := tx.Query(ctx, `
 		SELECT id, position, kind, description, command, requires_approval, status
 		FROM remediation_actions WHERE report_id = $1 ORDER BY position`, r.ID)
 	if err != nil {

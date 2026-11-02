@@ -66,6 +66,8 @@ func TestAuthenticationProtectsBackend(t *testing.T) {
 		want                     int
 	}{
 		{"anonymous read", "GET", "/api/v1/incidents", "", nil, 401},
+		{"anonymous history", "GET", "/api/v1/incidents/00000000-0000-0000-0000-000000000001/investigations", "", nil, 401},
+		{"anonymous attempt", "GET", "/api/v1/incidents/00000000-0000-0000-0000-000000000001/investigations/00000000-0000-0000-0000-000000000002", "", nil, 401},
 		{"anonymous create", "POST", "/api/v1/incidents", incidentBody, nil, 401},
 		{"forged identity", "GET", "/api/v1/incidents", "", []string{"X-Forwarded-User", "admin", "X-Auth-Request-User", "admin"}, 401},
 		{"forged proxy IP", "GET", "/api/v1/incidents", "", []string{"X-Forwarded-For", "127.0.0.1"}, 401},

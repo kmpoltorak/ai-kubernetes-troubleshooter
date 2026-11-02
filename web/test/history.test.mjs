@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import { after, test } from "node:test";
+import { createServer } from "vite";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+const vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: "custom" });
+after(() => vite.close());
+const { default: History } = await vite.ssrLoadModule("/src/components/InvestigationHistory.tsx");
+const { default: Report } = await vite.ssrLoadModule("/src/components/Report.tsx");
+const render = (Component, props) => renderToStaticMarkup(createElement(Component, props));
+const success = { id: "success", status: "completed", started_at: "2026-01-01T00:00:00Z", completed_at: "2026-01-01T00:01:00Z" };
+const failure = { id: "failure", status: "failed", started_at: "2026-01-02T00:00:00Z", completed_at: "2026-01-02T00:01:00Z", error: "provider unavailable" };
+const latestReport = { investigation: success, report: { created_at: "2026-01-01T00:01:00Z" } };
+const props = { page: { investigations: [failure, success], offset: 0, limit: 20, has_more: false }, selectedID: "failure", latestReport, busy: false, error: "", onSelect() {}, onPage() {}, onRefresh() {} };
+
+test("history distinguishes latest failed attempt from older successful report", () => {
+  const html = render(History, props);
+  assert.match(html, /Latest successful report:.*2026-01-01T00:01:00Z/);
+  assert.match(html, /failed<\/strong><span> · Latest attempt<\/span>/);
+  assert.match(html, /aria-pressed="true"[^>]*><strong>failed/);
+  assert.match(html, /aria-pressed="false"[^>]*><strong>completed/);
+  assert.match(html, /datetime="2026-01-02T00:00:00Z"/i);
+});
+
+test("empty and older pages show their pagination state", () => {
+  const html = render(History, { ...props, latestReport: null, page: { ...props.page, investigations: [], offset: 20, has_more: true } });
+  assert.match(html, /No investigations on this page/);
+  assert.match(html, /Page 2/);
+  assert.doesNotMatch(html, /Latest attempt/);
+  assert.doesNotMatch(html, /disabled=""[^>]*>Older attempts/);
+  const first = render(History, props);
+  assert.match(first, /disabled=""[^>]*>Newer attempts/);
+  assert.match(first, /disabled=""[^>]*>Older attempts/);
+});
+
+test("failed details retain evidence and error without showing a root cause report", () => {
+  const html = render(Report, { record: { investigation: failure, report: null,
+    tool_executions: [{ id: "tool", tool_name: "get_pods", duration_ms: 12 }],
+    evidence: [{ tool_execution_id: "tool", subject: "pod/api", health: "down", summary: "OOMKilled", signals: ["OOMKilled"] }],
+  } });
+  assert.match(html, /Selected investigation/);
+  assert.match(html, /provider unavailable/);
+  assert.match(html, /2026-01-02T00:01:00Z/);
+  assert.match(html, /OOMKilled/);
+  assert.doesNotMatch(html, /Root cause/);
+});
+
+test("running and legacy null collections remain readable; errors are escaped", () => {
+  const html = render(Report, { record: { investigation: { ...failure, status: "running", completed_at: undefined, error: "<script>alert(1)</script>" }, tool_executions: null, evidence: null } });
+  assert.match(html, /This investigation is running/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<script>/);
+});

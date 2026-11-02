@@ -38,6 +38,13 @@ func (f *fakeRepo) LatestReport(context.Context, string) (domain.InvestigationRe
 	return domain.InvestigationRecord{}, domain.ErrNotFound
 }
 
+func (f *fakeRepo) ListInvestigations(context.Context, string, int, int) ([]domain.Investigation, error) {
+	return nil, nil
+}
+func (f *fakeRepo) GetInvestigation(context.Context, string, string) (domain.InvestigationRecord, error) {
+	return domain.InvestigationRecord{}, domain.ErrNotFound
+}
+
 func newService() (*Service, *fakeRepo) {
 	repo := &fakeRepo{incidents: map[string]domain.Incident{}}
 	return NewService(repo, domain.TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"payments", "orders"}}), repo
