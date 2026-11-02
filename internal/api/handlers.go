@@ -44,6 +44,8 @@ func New(svc *incidents.Service, engine *investigation.Engine, checks map[string
 	mux.HandleFunc("GET /api/v1/incidents/{id}", h.getIncident)
 	mux.HandleFunc("POST /api/v1/incidents/{id}/investigate", h.investigate)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/report", h.getReport)
+	mux.HandleFunc("GET /api/v1/incidents/{id}/investigations", h.listInvestigations)
+	mux.HandleFunc("GET /api/v1/incidents/{id}/investigations/{investigationID}", h.getInvestigation)
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /ready", h.readiness)
 	mux.Handle("GET /metrics", promhttp.Handler())
@@ -84,7 +86,7 @@ func (h *handler) listIncidents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) getIncident(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
+	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -97,7 +99,7 @@ func (h *handler) getIncident(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) investigate(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
+	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -128,7 +130,7 @@ func (h *handler) investigate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) getReport(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
+	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -175,10 +177,10 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-func pathID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	id := r.PathValue("id")
+func pathID(w http.ResponseWriter, r *http.Request, key string) (string, bool) {
+	id := r.PathValue(key)
 	if !uuidPattern.MatchString(id) {
-		writeError(w, r, http.StatusBadRequest, "validation_failed", "id: must be a UUID")
+		writeError(w, r, http.StatusBadRequest, "validation_failed", key+": must be a UUID")
 		return "", false
 	}
 	return id, true
@@ -236,4 +238,40 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (h *handler) listInvestigations(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	limit, err1 := queryInt(r, "limit", 0)
+	offset, err2 := queryInt(r, "offset", 0)
+	if err := errors.Join(err1, err2); err != nil {
+		writeError(w, r, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+	page, err := h.incidents.Investigations(r.Context(), id, limit, offset)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *handler) getInvestigation(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	investigationID, ok := pathID(w, r, "investigationID")
+	if !ok {
+		return
+	}
+	rec, err := h.incidents.Investigation(r.Context(), id, investigationID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
 }

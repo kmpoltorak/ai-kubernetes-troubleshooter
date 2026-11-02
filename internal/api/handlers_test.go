@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,7 @@ type memStore struct {
 	mu        sync.Mutex
 	incidents map[string]domain.Incident
 	reports   map[string]domain.InvestigationRecord
+	records   map[string]domain.InvestigationRecord
 }
 
 func (m *memStore) CreateIncident(_ context.Context, in *domain.Incident) error {
@@ -67,17 +69,54 @@ func (m *memStore) LatestReport(_ context.Context, id string) (domain.Investigat
 }
 
 func (m *memStore) CreateInvestigation(_ context.Context, inv *domain.Investigation) error {
-	inv.ID = domain.NewID()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inv.ID, inv.StartedAt = domain.NewID(), time.Now()
+	if m.records == nil {
+		m.records = map[string]domain.InvestigationRecord{}
+	}
+	m.records[inv.ID] = domain.InvestigationRecord{Investigation: *inv, ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{}}
 	return nil
 }
 
 func (m *memStore) FinishInvestigation(_ context.Context, rec domain.InvestigationRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.records[rec.Investigation.ID] = rec
 	if rec.Report != nil {
 		m.reports[rec.Investigation.IncidentID] = rec
 	}
 	return nil
+}
+
+func (m *memStore) ListInvestigations(_ context.Context, id string, limit, offset int) ([]domain.Investigation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	list := []domain.Investigation{}
+	for _, r := range m.records {
+		if r.Investigation.IncidentID == id {
+			list = append(list, r.Investigation)
+		}
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].StartedAt.Equal(list[j].StartedAt) {
+			return list[i].ID > list[j].ID
+		}
+		return list[i].StartedAt.After(list[j].StartedAt)
+	})
+	if offset >= len(list) {
+		return []domain.Investigation{}, nil
+	}
+	return list[offset:min(len(list), offset+limit)], nil
+}
+func (m *memStore) GetInvestigation(_ context.Context, incidentID, id string) (domain.InvestigationRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.records[id]
+	if !ok || r.Investigation.IncidentID != incidentID {
+		return domain.InvestigationRecord{}, domain.ErrNotFound
+	}
+	return r, nil
 }
 
 type brokenProvider struct{}
@@ -344,5 +383,35 @@ func TestAPIErrorMasksEchoedInput(t *testing.T) {
 	raw, _ := json.Marshal(out)
 	if resp.StatusCode != 400 || strings.Contains(string(raw), "synthetic-secret") || out["error"].(map[string]any)["code"] != "invalid_json" {
 		t.Fatalf("unsafe validation error: %d %s", resp.StatusCode, raw)
+	}
+}
+
+func TestHistoryValidation(t *testing.T) {
+	srv := newServer(t, llm.RulesProvider{}, nil)
+	id := createIncident(t, srv)
+	for _, path := range []string{
+		"/bad/investigations", "/" + id + "/investigations/bad", "/" + id + "/investigations?offset=-1", "/" + id + "/investigations?limit=many", "/" + id + "/investigations?offset=9223372036854775808",
+	} {
+		resp, out := do(t, "GET", srv.URL+"/api/v1/incidents"+path, "")
+		if resp.StatusCode != 400 || out["error"].(map[string]any)["code"] != "validation_failed" {
+			t.Fatalf("%s: %d %v", path, resp.StatusCode, out)
+		}
+	}
+	if resp, _ := do(t, "GET", srv.URL+"/api/v1/incidents/"+domain.NewID()+"/investigations", ""); resp.StatusCode != 404 {
+		t.Fatalf("missing parent: %d", resp.StatusCode)
+	}
+}
+
+func TestHistoryPageLimits(t *testing.T) {
+	srv := newServer(t, llm.RulesProvider{}, nil)
+	id := createIncident(t, srv)
+	for _, tc := range []struct {
+		query string
+		want  float64
+	}{{"", 20}, {"?limit=-1", 20}, {"?limit=1000", 100}} {
+		resp, page := do(t, "GET", srv.URL+"/api/v1/incidents/"+id+"/investigations"+tc.query, "")
+		if resp.StatusCode != 200 || page["limit"] != tc.want || page["has_more"] != false || len(page["investigations"].([]any)) != 0 {
+			t.Fatalf("bad page %s: %d %v", tc.query, resp.StatusCode, page)
+		}
 	}
 }

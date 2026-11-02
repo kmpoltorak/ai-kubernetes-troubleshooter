@@ -29,6 +29,16 @@ export default function Report({ record }: { record: InvestigationRecord }) {
 
   return (
     <>
+      <section className="card" aria-label="Selected investigation">
+        <h3 className="section-title">Selected investigation</h3>
+        <p className="text-sm">Status: <strong>{record.investigation.status}</strong></p>
+        <p className="mt-1 font-mono text-xs text-zinc-500">{record.investigation.id}</p>
+        <p className="mt-2 text-sm">Started: <time dateTime={record.investigation.started_at}>{record.investigation.started_at}</time></p>
+        {record.investigation.completed_at && <p className="text-sm">Finished: <time dateTime={record.investigation.completed_at}>{record.investigation.completed_at}</time></p>}
+        {report && <p className="text-sm">Report created: <time dateTime={report.created_at}>{report.created_at}</time></p>}
+        {record.investigation.error && <p role="alert" className="mt-2 whitespace-pre-wrap text-sm text-red-600 dark:text-red-400">{record.investigation.error}</p>}
+        {record.investigation.status === "running" && <p className="mt-2 text-sm text-zinc-500">This investigation is running. Refresh history to check its status; diagnostics are saved when it finishes.</p>}
+      </section>
       {a && report && (
         <>
           <div className="card grid gap-6 md:grid-cols-[1fr_240px]">

@@ -14,6 +14,11 @@ func (i Incident) Redacted() Incident {
 	return i
 }
 
+func (i Investigation) Redacted() Investigation {
+	i.Error = redact.Text(i.Error)
+	return i
+}
+
 func (a Analysis) Redacted() Analysis {
 	a.Summary, a.RootCause = redact.Text(a.Summary), redact.Text(a.RootCause)
 	a.Evidence = slices.Clone(a.Evidence)
@@ -37,7 +42,7 @@ func redactedStrings(values []string) []string {
 
 // Redacted does not mutate a stored record or its slices, even in memory.
 func (r InvestigationRecord) Redacted() (InvestigationRecord, error) {
-	r.Investigation.Error = redact.Text(r.Investigation.Error)
+	r.Investigation = r.Investigation.Redacted()
 	r.ToolExecutions = slices.Clone(r.ToolExecutions)
 	for i := range r.ToolExecutions {
 		te := &r.ToolExecutions[i]
