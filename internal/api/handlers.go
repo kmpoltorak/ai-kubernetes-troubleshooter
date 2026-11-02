@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 
@@ -18,17 +17,22 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/jobs"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
 const maxBodyBytes = 1 << 20
 
-var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+type JobService interface {
+	Submit(context.Context, string, string, investigation.Options) (domain.JobRecord, error)
+	Get(context.Context, string, string) (domain.JobRecord, error)
+	Wait(context.Context, string, string) (domain.JobRecord, error)
+}
 
 type handler struct {
 	incidents *incidents.Service
-	engine    *investigation.Engine
+	jobs      JobService
 	checks    map[string]func(context.Context) error
 	log       *slog.Logger
 }
@@ -36,8 +40,8 @@ type handler struct {
 // New returns the fully wired HTTP handler. checks are the readiness checks
 // by dependency name (database, kubernetes). API routes are rate limited per
 // client IP at rps requests per second; auth also limits other non-probe routes.
-func New(svc *incidents.Service, engine *investigation.Engine, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth) http.Handler {
-	h := &handler{incidents: svc, engine: engine, checks: checks, log: log}
+func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth) http.Handler {
+	h := &handler{incidents: svc, jobs: jobService, checks: checks, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/incidents", h.createIncident)
 	mux.HandleFunc("GET /api/v1/incidents", h.listIncidents)
@@ -45,6 +49,8 @@ func New(svc *incidents.Service, engine *investigation.Engine, checks map[string
 	mux.HandleFunc("POST /api/v1/incidents/{id}/investigate", h.investigate)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/report", h.getReport)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/investigations", h.listInvestigations)
+	mux.HandleFunc("POST /api/v1/incidents/{id}/jobs", h.submitJob)
+	mux.HandleFunc("GET /api/v1/incidents/{id}/jobs/{jobID}", h.getJob)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/investigations/{investigationID}", h.getInvestigation)
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /ready", h.readiness)
@@ -107,26 +113,27 @@ func (h *handler) investigate(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &opts, true) {
 		return
 	}
-	rec, err := h.engine.Investigate(r.Context(), id, opts)
-	switch {
-	case errors.Is(err, investigation.ErrBusy):
-		w.Header().Set("Retry-After", "10")
-		writeError(w, r, http.StatusTooManyRequests, "busy", "too many concurrent investigations, retry later")
-	case errors.Is(err, investigation.ErrInvalidOptions):
-		writeError(w, r, http.StatusBadRequest, "validation_failed", err.Error())
-	case errors.Is(err, investigation.ErrAnalysisFailed):
-		// The investigation ran and was stored; return it so the caller can
-		// inspect the evidence, with a gateway error for the failed analysis.
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error":      errorBody{Code: "analysis_failed", Message: rec.Investigation.Error},
-			"request_id": observability.RequestID(r.Context()),
-			"result":     rec,
-		})
-	case err != nil:
-		h.fail(w, r, err)
-	default:
-		writeJSON(w, http.StatusCreated, rec)
+
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		key = domain.NewID()
 	}
+	accepted, err := h.jobs.Submit(r.Context(), id, key, opts)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Location", jobLocation(id, accepted.Job.ID))
+	finished, err := h.jobs.Wait(r.Context(), id, accepted.Job.ID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if finished.Job.Status == domain.InvestigationFailed {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": errorBody{Code: "analysis_failed", Message: finished.Job.Error}, "request_id": observability.RequestID(r.Context()), "result": finished.Result})
+		return
+	}
+	writeJSON(w, http.StatusCreated, finished.Result)
 }
 
 func (h *handler) getReport(w http.ResponseWriter, r *http.Request) {
@@ -165,8 +172,21 @@ func (h *handler) readiness(w http.ResponseWriter, r *http.Request) {
 // fail maps service errors to HTTP responses. Unexpected errors are logged
 // and hidden from the client.
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
+	if r.Context().Err() != nil {
+		return
+	}
 	var ve *incidents.ValidationError
 	switch {
+	case errors.Is(err, domain.ErrQueueFull) || errors.Is(err, investigation.ErrBusy):
+		w.Header().Set("Retry-After", "10")
+		writeError(w, r, http.StatusTooManyRequests, "busy", "investigation queue is full, retry later")
+	case errors.Is(err, domain.ErrIdempotencyConflict):
+		writeError(w, r, http.StatusConflict, "idempotency_conflict", err.Error())
+	case errors.Is(err, jobs.ErrUnavailable):
+		h.log.ErrorContext(r.Context(), "job storage unavailable", "error", err)
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "job storage unavailable")
+	case errors.Is(err, investigation.ErrInvalidOptions):
+		writeError(w, r, http.StatusBadRequest, "validation_failed", err.Error())
 	case errors.As(err, &ve):
 		writeError(w, r, http.StatusBadRequest, "validation_failed", ve.Error())
 	case errors.Is(err, domain.ErrNotFound):
@@ -179,7 +199,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func pathID(w http.ResponseWriter, r *http.Request, key string) (string, bool) {
 	id := r.PathValue(key)
-	if !uuidPattern.MatchString(id) {
+	if !domain.IsUUID(id) {
 		writeError(w, r, http.StatusBadRequest, "validation_failed", key+": must be a UUID")
 		return "", false
 	}
@@ -269,6 +289,49 @@ func (h *handler) getInvestigation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec, err := h.incidents.Investigation(r.Context(), id, investigationID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
+}
+
+func jobLocation(incidentID, jobID string) string {
+	return "/api/v1/incidents/" + incidentID + "/jobs/" + jobID
+}
+
+func (h *handler) submitJob(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var opts investigation.Options
+	if !decodeBody(w, r, &opts, true) {
+		return
+	}
+	rec, err := h.jobs.Submit(r.Context(), id, r.Header.Get("Idempotency-Key"), opts)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Location", jobLocation(id, rec.Job.ID))
+	status := http.StatusAccepted
+	if rec.Replayed && (rec.Job.Status == domain.InvestigationCompleted || rec.Job.Status == domain.InvestigationFailed) {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, rec)
+}
+
+func (h *handler) getJob(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	jobID, ok := pathID(w, r, "jobID")
+	if !ok {
+		return
+	}
+	rec, err := h.jobs.Get(r.Context(), id, jobID)
 	if err != nil {
 		h.fail(w, r, err)
 		return

@@ -36,6 +36,7 @@ func (o PurgeOptions) Validate() error {
 }
 
 type PurgeCandidate struct {
+	Jobs               int       `json:"jobs"`
 	ID                 string    `json:"id"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -58,7 +59,7 @@ var ErrPurgeChanged = errors.New("purge selection changed or confirmation is inv
 
 const purgeEligible = `i.created_at < $1 AND i.updated_at < $1 AND NOT EXISTS (
  SELECT 1 FROM investigations v WHERE v.incident_id=i.id AND
- (v.status='running' OR v.completed_at IS NULL OR v.started_at >= $1 OR v.completed_at >= $1))`
+ (v.status IN ('queued','running') OR v.completed_at IS NULL OR v.started_at >= $1 OR v.completed_at >= $1)) AND NOT EXISTS (SELECT 1 FROM investigation_jobs j WHERE j.incident_id=i.id AND (j.status IN ('queued','running') OR j.created_at >= $1 OR j.completed_at IS NULL OR j.completed_at >= $1))`
 
 // Purge atomically removes an explicitly confirmed, bounded set of incidents.
 // Parent row locks prevent a new investigation's foreign-key check from racing
@@ -82,14 +83,15 @@ func (s *Store) Purge(ctx context.Context, o PurgeOptions) (PurgeResult, error) 
    (SELECT count(*) FROM tool_executions t JOIN investigations v ON v.id=t.investigation_id WHERE v.incident_id=i.id),
    (SELECT count(*) FROM evidence e JOIN investigations v ON v.id=e.investigation_id WHERE v.incident_id=i.id),
    (SELECT count(*) FROM reports r JOIN investigations v ON v.id=r.investigation_id WHERE v.incident_id=i.id),
-   (SELECT count(*) FROM remediation_actions a JOIN reports r ON r.id=a.report_id JOIN investigations v ON v.id=r.investigation_id WHERE v.incident_id=i.id)
+   (SELECT count(*) FROM remediation_actions a JOIN reports r ON r.id=a.report_id JOIN investigations v ON v.id=r.investigation_id WHERE v.incident_id=i.id),
+ (SELECT count(*) FROM investigation_jobs j WHERE j.incident_id=i.id)
    FROM incidents i WHERE i.id=ANY($2::uuid[]) AND `+purgeEligible+` ORDER BY i.created_at,i.id`, o.Before, ids)
 		if err != nil {
 			return err
 		}
 		candidates, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PurgeCandidate, error) {
 			var c PurgeCandidate
-			err := row.Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt, &c.Investigations, &c.ToolExecutions, &c.Evidence, &c.Reports, &c.RemediationActions)
+			err := row.Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt, &c.Investigations, &c.ToolExecutions, &c.Evidence, &c.Reports, &c.RemediationActions, &c.Jobs)
 			c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
 			return c, err
 		})

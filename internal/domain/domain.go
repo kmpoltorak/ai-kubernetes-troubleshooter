@@ -33,19 +33,22 @@ type Incident struct {
 type InvestigationStatus string
 
 const (
+	InvestigationQueued    InvestigationStatus = "queued"
 	InvestigationRunning   InvestigationStatus = "running"
 	InvestigationCompleted InvestigationStatus = "completed"
 	InvestigationFailed    InvestigationStatus = "failed"
 )
 
 type Investigation struct {
-	ID          string              `json:"id"`
-	IncidentID  string              `json:"incident_id"`
-	Status      InvestigationStatus `json:"status"`
-	Scenario    string              `json:"scenario,omitempty"`
-	Error       string              `json:"error,omitempty"`
-	StartedAt   time.Time           `json:"started_at"`
-	CompletedAt *time.Time          `json:"completed_at,omitempty"`
+	JobID            string              `json:"job_id,omitempty"`
+	ExecutionAttempt int                 `json:"execution_attempt,omitempty"`
+	ID               string              `json:"id"`
+	IncidentID       string              `json:"incident_id"`
+	Status           InvestigationStatus `json:"status"`
+	Scenario         string              `json:"scenario,omitempty"`
+	Error            string              `json:"error,omitempty"`
+	StartedAt        time.Time           `json:"started_at"`
+	CompletedAt      *time.Time          `json:"completed_at,omitempty"`
 }
 
 type ToolExecutionStatus string

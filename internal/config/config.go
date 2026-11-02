@@ -47,6 +47,8 @@ type Config struct {
 	SimulationEnabled  bool
 	SimulationScenario string
 
+	JobTimeout                  time.Duration
+	JobQueueCapacity            int
 	InvestigationTimeout        time.Duration
 	MaxConcurrentInvestigations int
 	RateLimitRPS                float64
@@ -88,6 +90,8 @@ func Load(getenv func(string) string) (Config, error) {
 		OllamaBaseURL:               strings.TrimRight(p.str("OLLAMA_BASE_URL", "http://localhost:11434"), "/"),
 		SimulationEnabled:           p.bool("SIMULATION_ENABLED", true),
 		SimulationScenario:          p.str("SIMULATION_SCENARIO", "healthy"),
+		JobTimeout:                  p.duration("JOB_TIMEOUT", 15*time.Minute),
+		JobQueueCapacity:            p.int("JOB_QUEUE_CAPACITY", 100),
 		InvestigationTimeout:        p.duration("INVESTIGATION_TIMEOUT", 90*time.Second),
 		MaxConcurrentInvestigations: p.int("MAX_CONCURRENT_INVESTIGATIONS", 4),
 		RateLimitRPS:                p.float("RATE_LIMIT_RPS", 5),
@@ -128,6 +132,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.LLMTimeout <= 0 {
 		p.fail("LLM_TIMEOUT", "must be positive")
+	}
+	if c.JobTimeout <= 0 {
+		p.fail("JOB_TIMEOUT", "must be positive")
+	}
+	if c.JobQueueCapacity < 1 {
+		p.fail("JOB_QUEUE_CAPACITY", "must be at least 1")
 	}
 	if c.InvestigationTimeout <= 0 {
 		p.fail("INVESTIGATION_TIMEOUT", "must be positive")

@@ -23,8 +23,9 @@ An incident with no attempts returns `200`:
 ```
 
 Each entry is an investigation header: `id`, `incident_id`, `status`,
-`started_at`, optional `scenario`, `completed_at` and `error`. The list includes
-`running`, `completed` and `failed` attempts. It does not include diagnostic
+`started_at`, optional `scenario`, `completed_at` and `error`. Durable attempts also
+have `job_id` and `execution_attempt` (1–3). The list includes `queued`, `running`,
+`completed` and `failed` attempts. It does not include diagnostic
 bodies or report contents; use the detail endpoint for those.
 
 | Parameter | Behavior |
@@ -44,7 +45,7 @@ curl -s "http://localhost:8080/api/v1/incidents/$ID/investigations/$INVESTIGATIO
 ```
 
 The result has `investigation`, `tool_executions`, `evidence` and, when present,
-`report`. Failed and running attempts return `200` without a report. A failed
+`report`. Queued, failed and running attempts return `200` without a report. A failed
 attempt retains collected evidence and a masked error message. Collections are
 arrays, including empty arrays. Legacy completed attempts without a report are
 also readable. The record is read from one database snapshot, so finishing an
@@ -64,8 +65,11 @@ even if failed or running attempts exist. Use history for the latest attempt
 regardless of its outcome.
 
 `POST /api/v1/incidents/{id}/investigate` remains synchronous: `201` on success,
-`502 analysis_failed` with the stored record on analysis failure. History does
-not start, resume or retry an investigation. Diagnostics are saved when an
-attempt finishes; an in-progress attempt can therefore have empty diagnostics.
-An interrupted process may leave an old `running` row, which remains visible.
+`502 analysis_failed` with the stored record on failure. It waits for the
+[durable queue](durable-jobs.md); disconnecting the client does not stop accepted work.
+History does not start, resume or retry an investigation. Each diagnostic step is
+saved before the next step; a running attempt may show partial results. Queued
+attempts have no diagnostics. Their `started_at` initially records enqueue time
+and is replaced by execution start time when claimed. An interrupted legacy
+attempt without `job_id` can remain `running`; it is not adopted by the queue.
 The UI refreshes history on demand; it does not automatically poll attempts.

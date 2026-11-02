@@ -147,7 +147,7 @@ func newHandler(t *testing.T, provider llm.Provider, ready error, rps float64, a
 	policy := domain.TargetPolicy{ClusterName: "local"}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 2, Policy: policy})
 	checks := map[string]func(context.Context) error{"database": func(context.Context) error { return ready }}
-	return New(incidents.NewService(store, policy), engine, checks, log, rps, auth)
+	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth)
 }
 
 func do(t *testing.T, method, url, body string, headers ...string) (*http.Response, map[string]any) {
@@ -414,4 +414,40 @@ func TestHistoryPageLimits(t *testing.T) {
 			t.Fatalf("bad page %s: %d %v", tc.query, resp.StatusCode, page)
 		}
 	}
+}
+
+// Unit router tests run the synchronous in-memory runner. PostgreSQL integration
+// tests exercise the actual durable service and workers.
+type syncTestJobs struct {
+	engine  *investigation.Engine
+	mu      sync.Mutex
+	records map[string]domain.JobRecord
+}
+
+func (s *syncTestJobs) Submit(ctx context.Context, id, _ string, opts investigation.Options) (domain.JobRecord, error) {
+	rec, err := s.engine.Investigate(ctx, id, opts)
+	if err != nil && !errors.Is(err, investigation.ErrAnalysisFailed) {
+		return domain.JobRecord{}, err
+	}
+	job := domain.Job{ID: domain.NewID(), IncidentID: id, Status: rec.Investigation.Status, Error: rec.Investigation.Error}
+	r := domain.JobRecord{Job: job, Result: rec}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.records == nil {
+		s.records = map[string]domain.JobRecord{}
+	}
+	s.records[job.ID] = r
+	return r, nil
+}
+func (s *syncTestJobs) Get(_ context.Context, incidentID, id string) (domain.JobRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.records[id]
+	if !ok || r.Job.IncidentID != incidentID {
+		return domain.JobRecord{}, domain.ErrNotFound
+	}
+	return r, nil
+}
+func (s *syncTestJobs) Wait(ctx context.Context, incidentID, id string) (domain.JobRecord, error) {
+	return s.Get(ctx, incidentID, id)
 }
