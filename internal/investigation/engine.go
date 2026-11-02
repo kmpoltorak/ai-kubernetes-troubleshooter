@@ -27,7 +27,8 @@ import (
 
 var (
 	// ErrBusy means all investigation slots are in use; retry later.
-	ErrBusy = errors.New("too many concurrent investigations")
+	ErrBusy     = errors.New("too many concurrent investigations")
+	ErrProgress = errors.New("could not persist investigation progress")
 	// ErrInvalidOptions wraps problems with the caller's options or target.
 	ErrInvalidOptions = errors.New("invalid investigation options")
 	// ErrAnalysisFailed wraps failures after the investigation started. The
@@ -87,8 +88,45 @@ type Options struct {
 	Scenario string `json:"scenario"`
 }
 
-// Investigate runs the full workflow for one incident and returns everything
-// it produced. On ErrAnalysisFailed the record is still returned.
+func (e *Engine) prepare(ctx context.Context, incidentID string, opts Options) (domain.Incident, kube.Cluster, string, error) {
+	inc, err := e.store.GetIncident(ctx, incidentID)
+	if err != nil {
+		return inc, kube.Cluster{}, "", fmt.Errorf("load incident: %w", err)
+	}
+	inc = inc.Redacted()
+	if err := e.cfg.Policy.Check(inc.Target); err != nil {
+		return inc, kube.Cluster{}, "", fmt.Errorf("%w: %w", ErrInvalidOptions, err)
+	}
+	cluster, scenario, err := e.clusters.For(inc.Target, opts.Scenario)
+	if err != nil {
+		return inc, cluster, "", fmt.Errorf("%w: %w", ErrInvalidOptions, err)
+	}
+	return inc, cluster, scenario, nil
+}
+
+func (e *Engine) Validate(ctx context.Context, incidentID string, opts Options) (string, error) {
+	_, _, scenario, err := e.prepare(ctx, incidentID, opts)
+	return scenario, err
+}
+
+type Progress func(context.Context, domain.InvestigationRecord, string) error
+
+// Execute runs one pre-created attempt. The owner persists every completed step
+// and must fence the final write; this function never creates a second attempt.
+func (e *Engine) Execute(ctx context.Context, inv domain.Investigation, progress Progress) (domain.InvestigationRecord, error) {
+	inc, cluster, _, err := e.prepare(ctx, inv.IncidentID, Options{Scenario: inv.Scenario})
+	if err != nil {
+		now := time.Now().UTC()
+		inv.Status = domain.InvestigationFailed
+		inv.CompletedAt = &now
+		inv.Error = redact.Text(err.Error())
+		return domain.InvestigationRecord{Investigation: inv, ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{}}, err
+	}
+	return e.execute(ctx, inc, cluster, inv, progress)
+}
+
+// Investigate is the synchronous runner used by rules evaluations and unit tests.
+// The HTTP server submits durable jobs instead of calling it directly.
 func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Options) (domain.InvestigationRecord, error) {
 	select {
 	case e.slots <- struct{}{}:
@@ -96,42 +134,44 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 	default:
 		return domain.InvestigationRecord{}, ErrBusy
 	}
-
-	inc, err := e.store.GetIncident(ctx, incidentID)
+	inc, cluster, scenario, err := e.prepare(ctx, incidentID, opts)
 	if err != nil {
-		return domain.InvestigationRecord{}, fmt.Errorf("load incident: %w", err)
+		return domain.InvestigationRecord{}, err
 	}
-	inc = inc.Redacted()
-	// Re-checked here: the policy may have changed since the incident was filed.
-	if err := e.cfg.Policy.Check(inc.Target); err != nil {
-		return domain.InvestigationRecord{}, fmt.Errorf("%w: %w", ErrInvalidOptions, err)
-	}
-	cluster, scenario, err := e.clusters.For(inc.Target, opts.Scenario)
-	if err != nil {
-		return domain.InvestigationRecord{}, fmt.Errorf("%w: %w", ErrInvalidOptions, err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
-	defer cancel()
-	start := time.Now()
-
-	rec := domain.InvestigationRecord{
-		Investigation: domain.Investigation{IncidentID: inc.ID, Status: domain.InvestigationRunning, Scenario: scenario},
-		// Empty, not nil: the API contract has arrays, never null.
-		ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{},
-	}
-	if err := e.store.CreateInvestigation(ctx, &rec.Investigation); err != nil {
+	inv := domain.Investigation{IncidentID: inc.ID, Status: domain.InvestigationRunning, Scenario: scenario}
+	if err := e.store.CreateInvestigation(ctx, &inv); err != nil {
 		return domain.InvestigationRecord{}, fmt.Errorf("create investigation: %w", err)
 	}
-	log := e.log.With("incident_id", inc.ID, "investigation_id", rec.Investigation.ID)
-	log.InfoContext(ctx, "investigation started", "scenario", scenario, "target", inc.Ref(), "namespace", inc.Namespace)
+	rec, analysisErr := e.execute(ctx, inc, cluster, inv, nil)
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := e.store.FinishInvestigation(saveCtx, rec); err != nil {
+		return rec, fmt.Errorf("persist investigation: %w", err)
+	}
+	observability.InvestigationsTotal.WithLabelValues(string(rec.Investigation.Status)).Inc()
+	observability.InvestigationDuration.Observe(time.Since(inv.StartedAt).Seconds())
+	return rec, analysisErr
+}
 
-	r := &runner{engine: e, log: log, cluster: cluster, ns: inc.Namespace, rec: &rec}
+func (e *Engine) execute(ctx context.Context, inc domain.Incident, cluster kube.Cluster, inv domain.Investigation, progress Progress) (domain.InvestigationRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
+	defer cancel()
+	rec := domain.InvestigationRecord{Investigation: inv, ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{}}
+	log := e.log.With("incident_id", inc.ID, "investigation_id", inv.ID)
+	log.InfoContext(ctx, "investigation started", "scenario", inv.Scenario, "target", inc.Ref(), "namespace", inc.Namespace)
+	r := &runner{engine: e, log: log, cluster: cluster, ns: inc.Namespace, rec: &rec, progress: progress}
 	analysisErr := r.collect(ctx, inc.Target)
+	if r.progressErr != nil {
+		analysisErr = r.progressErr
+	}
+	if analysisErr == nil && progress != nil {
+		if err := progress(ctx, domain.InvestigationRecord{Investigation: inv}, "analyzing"); err != nil {
+			analysisErr = fmt.Errorf("%w: %w", ErrProgress, err)
+		}
+	}
 	if analysisErr == nil {
 		analysisErr = e.analyze(ctx, log, inc, &rec)
 	}
-
 	now := time.Now().UTC()
 	rec.Investigation.CompletedAt = &now
 	rec.Investigation.Status = domain.InvestigationCompleted
@@ -139,22 +179,7 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 		rec.Investigation.Status = domain.InvestigationFailed
 		rec.Investigation.Error = redact.Text(analysisErr.Error())
 	}
-
-	// Persist even if the caller went away or the deadline passed, so an
-	// investigation never stays "running".
-	saveCtx, saveCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer saveCancel()
-	if err := e.store.FinishInvestigation(saveCtx, rec); err != nil {
-		log.ErrorContext(ctx, "persist investigation", "error", err)
-		return rec, fmt.Errorf("persist investigation: %w", err)
-	}
-
-	duration := time.Since(start)
-	observability.InvestigationsTotal.WithLabelValues(string(rec.Investigation.Status)).Inc()
-	observability.InvestigationDuration.Observe(duration.Seconds())
-	log.InfoContext(ctx, "investigation finished", "status", rec.Investigation.Status, "duration_ms", duration.Milliseconds(),
-		"tool_executions", len(rec.ToolExecutions), "evidence", len(rec.Evidence))
-
+	log.InfoContext(ctx, "investigation finished", "status", rec.Investigation.Status, "tool_executions", len(rec.ToolExecutions), "evidence", len(rec.Evidence))
 	if analysisErr != nil {
 		return rec, fmt.Errorf("%w: %w", ErrAnalysisFailed, redact.Error(analysisErr))
 	}
@@ -163,11 +188,14 @@ func (e *Engine) Investigate(ctx context.Context, incidentID string, opts Option
 
 // runner executes one investigation's plan and accumulates the record.
 type runner struct {
-	engine  *Engine
-	log     *slog.Logger
-	cluster kube.Cluster
-	ns      string
-	rec     *domain.InvestigationRecord
+	engine      *Engine
+	log         *slog.Logger
+	cluster     kube.Cluster
+	ns          string
+	rec         *domain.InvestigationRecord
+	progress    Progress
+	progressErr error
+	lastToolErr error
 }
 
 // collect is the diagnostic plan. Each step's input is derived from earlier
@@ -265,8 +293,11 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 
 // unobserved reports the error of the last, failed, target read.
 func (r *runner) unobserved(t domain.Target) error {
+	if r.progressErr != nil {
+		return r.progressErr
+	}
 	te := r.rec.ToolExecutions[len(r.rec.ToolExecutions)-1]
-	return fmt.Errorf("could not read %s (%s): %s", t.Ref(), te.ToolName, te.Error)
+	return fmt.Errorf("could not read %s (%s): %w", t.Ref(), te.ToolName, r.lastToolErr)
 }
 
 // logPods picks the pods whose logs are read: pods with findings first,
@@ -294,6 +325,9 @@ func logContainers(p diagnostics.PodInfo) []string {
 // run executes one allowlisted tool, records the execution and, on success,
 // the evidence. ok is false when the tool could not observe anything.
 func (r *runner) run(ctx context.Context, tool string, in diagnostics.Input) (diagnostics.Result, bool) {
+	if r.progressErr != nil {
+		return diagnostics.Result{}, false
+	}
 	in.Namespace = r.ns
 	input, _ := json.Marshal(in)  // Input always marshals
 	input, _ = redact.JSON(input) // marshaled Input is valid JSON
@@ -312,8 +346,10 @@ func (r *runner) run(ctx context.Context, tool string, in diagnostics.Input) (di
 		}
 	}
 	if err != nil {
+		r.lastToolErr = err
 		te.Status, te.Error = domain.ToolFailed, redact.Text(err.Error())
 		r.rec.ToolExecutions = append(r.rec.ToolExecutions, te)
+		r.save(ctx, te, nil)
 		observability.ToolFailuresTotal.WithLabelValues(tool).Inc()
 		r.log.WarnContext(ctx, "diagnostic failed", "tool_name", tool, "duration_ms", te.DurationMs, "error", err)
 		return diagnostics.Result{}, false
@@ -324,10 +360,24 @@ func (r *runner) run(ctx context.Context, tool string, in diagnostics.Input) (di
 		ID: domain.NewID(), ToolExecutionID: te.ID, Source: tool, Subject: redact.Text(res.Subject),
 		Health: res.Health, Summary: redact.Text(res.Summary), Signals: append([]string{}, res.Signals...), Data: output,
 	})
+	r.save(ctx, te, r.rec.Evidence[len(r.rec.Evidence)-1:])
+	if r.progressErr != nil {
+		return res, false
+	}
 	observability.ToolExecutionsTotal.WithLabelValues(tool, string(res.Health)).Inc()
 	r.log.InfoContext(ctx, "diagnostic completed", "tool_name", tool, "duration_ms", te.DurationMs,
 		"health", res.Health, "signals", res.Signals)
 	return res, true
+}
+
+func (r *runner) save(ctx context.Context, te domain.ToolExecution, evidence []domain.Evidence) {
+	if r.progress == nil {
+		return
+	}
+	step := domain.InvestigationRecord{Investigation: r.rec.Investigation, ToolExecutions: []domain.ToolExecution{te}, Evidence: evidence}
+	if err := r.progress(ctx, step, "diagnostics"); err != nil {
+		r.progressErr = fmt.Errorf("%w: %w", ErrProgress, err)
+	}
 }
 
 // analyze calls the provider and validates its output. Only a valid analysis

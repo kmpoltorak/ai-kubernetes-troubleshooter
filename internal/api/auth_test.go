@@ -66,6 +66,8 @@ func TestAuthenticationProtectsBackend(t *testing.T) {
 		want                     int
 	}{
 		{"anonymous read", "GET", "/api/v1/incidents", "", nil, 401},
+		{"anonymous job create", "POST", "/api/v1/incidents/00000000-0000-0000-0000-000000000001/jobs", "", nil, 401},
+		{"anonymous job read", "GET", "/api/v1/incidents/00000000-0000-0000-0000-000000000001/jobs/00000000-0000-0000-0000-000000000002", "", nil, 401},
 		{"anonymous history", "GET", "/api/v1/incidents/00000000-0000-0000-0000-000000000001/investigations", "", nil, 401},
 		{"anonymous attempt", "GET", "/api/v1/incidents/00000000-0000-0000-0000-000000000001/investigations/00000000-0000-0000-0000-000000000002", "", nil, 401},
 		{"anonymous create", "POST", "/api/v1/incidents", incidentBody, nil, 401},

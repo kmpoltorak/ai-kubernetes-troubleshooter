@@ -138,3 +138,15 @@ func TestLLMInputBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestDurableJobConfiguration(t *testing.T) {
+	defaults, err := Load(env(map[string]string{"DATABASE_URL": "x"}))
+	if err != nil || defaults.JobTimeout != 15*time.Minute || defaults.JobQueueCapacity != 100 {
+		t.Fatalf("defaults: %+v %v", defaults, err)
+	}
+	for _, tc := range []struct{ key, value string }{{"JOB_TIMEOUT", "0s"}, {"JOB_TIMEOUT", "-1s"}, {"JOB_TIMEOUT", "bad"}, {"JOB_QUEUE_CAPACITY", "0"}, {"JOB_QUEUE_CAPACITY", "-1"}, {"JOB_QUEUE_CAPACITY", "bad"}} {
+		if _, err := Load(env(map[string]string{"DATABASE_URL": "x", tc.key: tc.value})); err == nil || !strings.Contains(err.Error(), tc.key) {
+			t.Fatalf("accepted %s=%s: %v", tc.key, tc.value, err)
+		}
+	}
+}

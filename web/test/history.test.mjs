@@ -49,6 +49,13 @@ test("failed details retain evidence and error without showing a root cause repo
 test("running and legacy null collections remain readable; errors are escaped", () => {
   const html = render(Report, { record: { investigation: { ...failure, status: "running", completed_at: undefined, error: "<script>alert(1)</script>" }, tool_executions: null, evidence: null } });
   assert.match(html, /This investigation is running/);
+  assert.match(html, /saved diagnostic results/);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>/);
+});
+
+test("queued attempts remain readable before a worker starts", () => {
+  const html = render(Report, { record: { investigation: { ...failure, status: "queued", error: undefined, completed_at: undefined }, tool_executions: [], evidence: [] } });
+  assert.match(html, /This investigation is queued/);
+  assert.doesNotMatch(html, /Root cause/);
 });

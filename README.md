@@ -27,7 +27,7 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
 - The LLM gets data only: no tools, shell or Kubernetes client. The 10 diagnostics are a fixed allowlist calling only `Get`, `List` and `GetLogs`, and every tool input comes from earlier results, never from model output.
 - Secret values are never read: Secrets are fetched as metadata only, env vars are reported as names and source kinds, ConfigMaps as key names and sizes.
 - Passwords, tokens, JWTs, API keys, URL credentials and private keys are masked in incident text, diagnostic data, reports and errors before storage, API responses and LLM requests, including multi-line PEM blocks.
-- A report may cite only evidence that was collected and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation with `502` and keeps the evidence.
+- A report may cite only evidence that was collected and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation and keeps the evidence (`502` on the waiting endpoint).
 - A diagnostic that fails is passed to the analyzer as failed; the rules engine never calls a workload healthy when pods, events or logs could not be read.
 
 ## Install
@@ -79,8 +79,9 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 | `LLM_TIMEOUT` | `60s` | per LLM request |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | |
-| `INVESTIGATION_TIMEOUT` | `90s` | |
-| `MAX_CONCURRENT_INVESTIGATIONS` | `4` | more get `429 busy` |
+| `INVESTIGATION_TIMEOUT` | `90s` | per execution attempt |
+| `JOB_TIMEOUT`, `JOB_QUEUE_CAPACITY` | `15m`, `100` | total time from acceptance; maximum waiting jobs |
+| `MAX_CONCURRENT_INVESTIGATIONS` | `4` | valid active leases across replicas sharing the database |
 | `RATE_LIMIT_RPS` | `5` | per-IP rate limit |
 | `GRAFANA_ADMIN_PASSWORD` | `admin` | `monitoring` profile only |
 
@@ -123,7 +124,9 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 | `POST` | `/api/v1/incidents` | `cluster`, `namespace`, `resource_type` (`deployment`, `service`, `pod`), `resource_name`, `description`, optional `title` |
 | `GET` | `/api/v1/incidents?limit=&offset=` | newest first, max 100 |
 | `GET` | `/api/v1/incidents/{id}` | one incident |
-| `POST` | `/api/v1/incidents/{id}/investigate` | optional `{"scenario": "..."}` |
+| `POST` | `/api/v1/incidents/{id}/jobs` | optional `{"scenario": "..."}`; UUID `Idempotency-Key` required; `202` + `Location` |
+| `GET` | `/api/v1/incidents/{id}/jobs/{jobID}` | job state and current attempt with saved progress |
+| `POST` | `/api/v1/incidents/{id}/investigate` | same queue, waits for `201`/`502`; optional UUID `Idempotency-Key` |
 | `GET` | `/api/v1/incidents/{id}/investigations?limit=&offset=` | all attempts, newest first, default 20/max 100, with `has_more` |
 | `GET` | `/api/v1/incidents/{id}/investigations/{investigationID}` | one attempt, including failed/running attempts without a report |
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
@@ -132,8 +135,10 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
 `validation_failed` / `invalid_json` (including a target outside the policy),
 `404` `not_found`, `413` `body_too_large` (over 1 MiB), `429` `busy` /
-`rate_limited` with `Retry-After`, `502` `analysis_failed` with the stored
-evidence. Logs are JSON with request and trace IDs. The `monitoring` profile
+`rate_limited` with `Retry-After`, `409` `idempotency_conflict`, `503` `unavailable`
+for job storage errors, `502` `analysis_failed` with stored evidence on the waiting endpoint.
+Jobs survive client disconnects. See [queue, retries and upgrade instructions](docs/durable-jobs.md).
+Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
 The UI separates attempt history from the latest successful report; see the [history contract](docs/investigation-history.md).
 
@@ -172,7 +177,8 @@ investigation fails rather than diagnose something it never saw.
 
 - Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
 - Workloads are Deployments, Services and Pods only: no StatefulSets, DaemonSets, Jobs, HPA, PVCs, Ingress or node diagnostics.
-- Investigations are synchronous, one cluster per instance; no remediation is ever executed.
+- One cluster per installation; replicas must use the same limits, target policy and analyzer. The UI uses the waiting endpoint and refreshes history on demand. No remediation is executed.
+- An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
 - Live mode was checked by hand on minikube only; CI uses no real cluster. The OpenAI and Ollama clients are tested against fake servers.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
@@ -192,7 +198,8 @@ against all 11 scenarios checking the expected signals and the absence of
 misleading ones. An evaluation runs every scenario end to end through the
 rules analyzer and checks root cause and severity. Integration tests run
 migrations and send the sample incidents through REST, the engine and
-PostgreSQL. Go tests also fail if the RBAC manifest gains a permission or a
+PostgreSQL, including killed workers, lost database connections, retries and lease fencing.
+Go tests also fail if the RBAC manifest gains a permission or a
 Grafana panel queries a metric the app does not export. CI adds govulncheck,
 `npm audit` and a Docker build. A report from a live minikube run is in
 [docs/examples/report_oom_killed_minikube.json](docs/examples/report_oom_killed_minikube.json).

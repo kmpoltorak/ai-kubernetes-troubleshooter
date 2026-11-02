@@ -358,3 +358,57 @@ func TestPurgeRollsBackSuppressedDeletion(t *testing.T) {
 		t.Fatal("partial DELETE committed")
 	}
 }
+
+func TestPurgeProtectsJobsAndDeletesTerminalKeys(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	inc, _ := purgeFixture(t, s, "")
+	key := domain.NewID()
+	j, _, err := s.EnqueueJob(ctx, inc.ID, key, "", "healthy", 100, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := mustPreview(t, s, 100); len(got.Candidates) != 0 {
+		t.Fatal("queued job selected for purge")
+	}
+	c := claimJob(t, s)
+	if got := mustPreview(t, s, 100); len(got.Candidates) != 0 {
+		t.Fatal("running job selected for purge")
+	}
+	if err := s.SaveProgress(ctx, c, jobStep(c), "diagnostics"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveProgress(ctx, c, domain.InvestigationRecord{Investigation: c.Investigation}, "analyzing"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteJob(ctx, c, completedJob(c), false, 100); err != nil {
+		t.Fatal(err)
+	}
+	// Age the incident and attempt first: recent root job metadata must still protect it.
+	if _, err := s.pool.Exec(ctx, `UPDATE incidents SET created_at='1999-01-01',updated_at='1999-01-01' WHERE id=$1`, inc.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE investigations SET started_at='1999-01-01',completed_at='1999-01-01' WHERE job_id=$1`, j.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustPreview(t, s, 100); len(got.Candidates) != 0 {
+		t.Fatal("recent job selected for purge")
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE investigation_jobs SET created_at='1999-01-01',completed_at='1999-01-01' WHERE id=$1`, j.ID); err != nil {
+		t.Fatal(err)
+	}
+	preview := mustPreview(t, s, 100)
+	if len(preview.Candidates) != 1 || preview.Candidates[0].Jobs != 1 || preview.Candidates[0].Evidence != 1 {
+		t.Fatalf("job counts: %+v", preview)
+	}
+	if _, err := s.Purge(ctx, PurgeOptions{Before: purgeBefore, Limit: 100, Confirm: preview.Confirmation}); err != nil {
+		t.Fatal(err)
+	}
+	assertIncidentExists(t, s, inc.ID, false)
+	if _, err := s.FindJob(ctx, inc.ID, key); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("idempotency key retained: %v", err)
+	}
+	if _, err := s.GetInvestigation(ctx, inc.ID, c.Investigation.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("job attempt retained: %v", err)
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/jobs"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/llm"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/simulation"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/storage"
@@ -28,6 +29,10 @@ import (
 // newIntegrationServer wires the real stack: PostgreSQL store, simulated
 // cluster (client-go fake clients) and the given provider.
 func newIntegrationServer(t *testing.T, provider llm.Provider) *httptest.Server {
+	return newQueuedIntegrationServer(t, provider, jobs.Config{MaxConcurrent: 4, Timeout: 30 * time.Second, Poll: 10 * time.Millisecond}, true)
+}
+
+func newQueuedIntegrationServer(t *testing.T, provider llm.Provider, cfg jobs.Config, workers bool) *httptest.Server {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -49,7 +54,14 @@ func newIntegrationServer(t *testing.T, provider llm.Provider) *httptest.Server 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	policy := domain.TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"payments"}}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 10 * time.Second, MaxConcurrent: 4, Policy: policy})
-	srv := httptest.NewServer(New(incidents.NewService(store, policy), engine,
+	scheduler := jobs.New(store, engine, log, cfg)
+	if workers {
+		workerCtx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { defer close(done); scheduler.Run(workerCtx) }()
+		t.Cleanup(func() { stop(); <-done })
+	}
+	srv := httptest.NewServer(New(incidents.NewService(store, policy), scheduler,
 		map[string]func(context.Context) error{"database": store.Ping}, log, 1000, config.Auth{}))
 	t.Cleanup(srv.Close)
 	return srv

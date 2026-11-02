@@ -156,11 +156,11 @@ func insertReport(ctx context.Context, tx pgx.Tx, inv domain.Investigation, r *d
 	return err
 }
 
-const investigationColumns = `id, incident_id, status, scenario, error, started_at, completed_at`
+const investigationColumns = `id, incident_id, status, scenario, error, started_at, completed_at, COALESCE(job_id::text,''), execution_attempt`
 
 func scanInvestigation(row pgx.Row) (domain.Investigation, error) {
 	var inv domain.Investigation
-	err := row.Scan(&inv.ID, &inv.IncidentID, &inv.Status, &inv.Scenario, &inv.Error, &inv.StartedAt, &inv.CompletedAt)
+	err := row.Scan(&inv.ID, &inv.IncidentID, &inv.Status, &inv.Scenario, &inv.Error, &inv.StartedAt, &inv.CompletedAt, &inv.JobID, &inv.ExecutionAttempt)
 	return inv, err
 }
 
@@ -188,52 +188,59 @@ func (s *Store) GetInvestigation(ctx context.Context, incidentID, id string) (do
 	rec := domain.InvestigationRecord{ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{}}
 	err := pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		var err error
-		rec.Investigation, err = scanInvestigation(tx.QueryRow(ctx, `SELECT `+investigationColumns+` FROM investigations WHERE incident_id=$1 AND id=$2`, incidentID, id))
-		if err != nil {
-			return notFound(err)
-		}
-		inv := &rec.Investigation
-		rows, err := tx.Query(ctx, `
-		SELECT id, tool_name, status, input, COALESCE(output, 'null'::jsonb), error, duration_ms, started_at
-		FROM tool_executions WHERE investigation_id = $1 ORDER BY started_at, id`, inv.ID)
-		if err != nil {
-			return err
-		}
-		rec.ToolExecutions, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ToolExecution, error) {
-			var te domain.ToolExecution
-			err := r.Scan(&te.ID, &te.ToolName, &te.Status, &te.Input, &te.Output, &te.Error, &te.DurationMs, &te.StartedAt)
-			return te, err
-		})
-		if err != nil {
-			return err
-		}
-
-		rows, err = tx.Query(ctx, `
-		SELECT id, tool_execution_id, source, subject, health, summary, signals, data
-		FROM evidence WHERE investigation_id = $1 ORDER BY position`, inv.ID)
-		if err != nil {
-			return err
-		}
-		rec.Evidence, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.Evidence, error) {
-			var ev domain.Evidence
-			err := r.Scan(&ev.ID, &ev.ToolExecutionID, &ev.Source, &ev.Subject, &ev.Health, &ev.Summary, &ev.Signals, &ev.Data)
-			return ev, err
-		})
-		if err != nil {
-			return err
-		}
-
-		rep, err := readReport(ctx, tx, inv.ID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		rec.Report = &rep
-		return nil
+		rec, err = readInvestigation(ctx, tx, incidentID, id)
+		return err
 	})
 	return rec, err
+}
+
+func readInvestigation(ctx context.Context, tx pgx.Tx, incidentID, id string) (domain.InvestigationRecord, error) {
+	rec := domain.InvestigationRecord{ToolExecutions: []domain.ToolExecution{}, Evidence: []domain.Evidence{}}
+	var err error
+	rec.Investigation, err = scanInvestigation(tx.QueryRow(ctx, `SELECT `+investigationColumns+` FROM investigations WHERE incident_id=$1 AND id=$2`, incidentID, id))
+	if err != nil {
+		return rec, notFound(err)
+	}
+	inv := &rec.Investigation
+	rows, err := tx.Query(ctx, `
+		SELECT id, tool_name, status, input, COALESCE(output, 'null'::jsonb), error, duration_ms, started_at
+		FROM tool_executions WHERE investigation_id = $1 ORDER BY started_at, id`, inv.ID)
+	if err != nil {
+		return rec, err
+	}
+	rec.ToolExecutions, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ToolExecution, error) {
+		var te domain.ToolExecution
+		err := r.Scan(&te.ID, &te.ToolName, &te.Status, &te.Input, &te.Output, &te.Error, &te.DurationMs, &te.StartedAt)
+		return te, err
+	})
+	if err != nil {
+		return rec, err
+	}
+
+	rows, err = tx.Query(ctx, `
+		SELECT id, tool_execution_id, source, subject, health, summary, signals, data
+		FROM evidence WHERE investigation_id = $1 ORDER BY position`, inv.ID)
+	if err != nil {
+		return rec, err
+	}
+	rec.Evidence, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.Evidence, error) {
+		var ev domain.Evidence
+		err := r.Scan(&ev.ID, &ev.ToolExecutionID, &ev.Source, &ev.Subject, &ev.Health, &ev.Summary, &ev.Signals, &ev.Data)
+		return ev, err
+	})
+	if err != nil {
+		return rec, err
+	}
+
+	rep, err := readReport(ctx, tx, inv.ID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return rec, nil
+	}
+	if err != nil {
+		return rec, err
+	}
+	rec.Report = &rep
+	return rec, nil
 }
 
 func readReport(ctx context.Context, tx pgx.Tx, investigationID string) (domain.Report, error) {

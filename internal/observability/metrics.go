@@ -8,6 +8,12 @@ import (
 // Metrics are registered on the default Prometheus registry, which is what
 // promhttp.Handler serves.
 var (
+	JobQueueDepth      = promauto.NewGauge(prometheus.GaugeOpts{Name: "jobs_queue_depth", Help: "Queued jobs across the installation; aggregate replicas with max."})
+	JobsActive         = promauto.NewGauge(prometheus.GaugeOpts{Name: "jobs_active", Help: "Jobs with valid leases across the installation; aggregate replicas with max."})
+	JobWaitDuration    = promauto.NewHistogram(prometheus.HistogramOpts{Name: "job_wait_seconds", Help: "Time from acceptance to a worker claim.", Buckets: []float64{0.1, 1, 5, 15, 30, 60, 120, 300, 900}})
+	JobRecoveriesTotal = promauto.NewCounterVec(prometheus.CounterOpts{Name: "job_recoveries_total", Help: "Interrupted or retryable attempts rescheduled or ended."}, []string{"outcome"})
+	JobsFinishedTotal  = promauto.NewCounterVec(prometheus.CounterOpts{Name: "jobs_finished_total", Help: "Terminal durable jobs by final status."}, []string{"status"})
+
 	HTTPRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "http_requests_total", Help: "HTTP requests by method, route pattern and status code.",
 	}, []string{"method", "route", "status"})

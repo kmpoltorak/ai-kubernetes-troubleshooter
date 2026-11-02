@@ -20,7 +20,7 @@ or secret manager. Choose a cutoff, then preview:
 
 The JSON output contains `before`, `limit`, `candidates`, `confirmation` and
 `deleted`. Each candidate shows its ID, creation/update times and counts of
-investigations, tool executions, evidence, reports and remediation actions.
+jobs, investigations, tool executions, evidence, reports and remediation actions.
 Incident descriptions and diagnostic contents are not printed. `deleted` is
 `false` for a preview.
 
@@ -54,12 +54,14 @@ docker compose exec -T app /api purge --before 2026-01-01T00:00:00Z --limit 100 
 
 Both the incident's creation and update times must be strictly before the
 cutoff. Every investigation must have finished before that cutoff and started
-before it. Running investigations and investigations without a completion time
+before it. Queued/running investigations and investigations without a completion time
 exclude the entire incident. This also preserves old incidents that were
-recently reinvestigated. An incident with no investigations can be deleted.
+recently reinvestigated. Every job must also be terminal, created before the
+cutoff and completed before it. Waiting jobs, including retries, protect the
+entire incident. An incident with no investigations or jobs can be deleted.
 
 Old completed and failed investigations are removed together with their incident,
-tool executions, evidence, reports and remediation actions. The batch is one
+jobs (including their idempotency keys), tool executions, evidence, reports and remediation actions. The batch is one
 transaction: a database error or cancellation before commit rolls it back.
 The command has a 30-second deadline and database statements have a 10-second
 timeout. Row locks protect concurrent investigation creation; locked incidents

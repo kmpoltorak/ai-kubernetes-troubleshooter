@@ -25,6 +25,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/jobs"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/llm"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
@@ -97,14 +98,26 @@ func run(args []string) error {
 		Policy:        policy,
 	})
 
+	scheduler := jobs.New(store, engine, log, jobs.Config{MaxConcurrent: cfg.MaxConcurrentInvestigations, Capacity: cfg.JobQueueCapacity, Timeout: cfg.JobTimeout})
+	workerCtx, stopWorkers := context.WithCancel(ctx)
+	workersDone := make(chan struct{})
+	go func() { defer close(workersDone); scheduler.Run(workerCtx) }()
+	defer func() {
+		stopWorkers()
+		select {
+		case <-workersDone:
+		case <-time.After(15 * time.Second):
+			log.Error("worker shutdown timed out; leases will expire")
+		}
+	}()
+
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),
-		Handler:           api.New(incidents.NewService(store, policy), engine, checks, log, cfg.RateLimitRPS, cfg.Auth),
+		Handler:           api.New(incidents.NewService(store, policy), scheduler, checks, log, cfg.RateLimitRPS, cfg.Auth),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		// Investigations run synchronously, so writes may take up to the
-		// investigation timeout.
-		WriteTimeout:   cfg.InvestigationTimeout + 15*time.Second,
+		// The compatibility endpoint waits through queueing and execution.
+		WriteTimeout:   cfg.JobTimeout + 15*time.Second,
 		IdleTimeout:    60 * time.Second,
 		MaxHeaderBytes: 64 << 10,
 		ErrorLog:       slog.NewLogLogger(log.Handler(), slog.LevelWarn),

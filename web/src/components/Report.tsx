@@ -37,7 +37,8 @@ export default function Report({ record }: { record: InvestigationRecord }) {
         {record.investigation.completed_at && <p className="text-sm">Finished: <time dateTime={record.investigation.completed_at}>{record.investigation.completed_at}</time></p>}
         {report && <p className="text-sm">Report created: <time dateTime={report.created_at}>{report.created_at}</time></p>}
         {record.investigation.error && <p role="alert" className="mt-2 whitespace-pre-wrap text-sm text-red-600 dark:text-red-400">{record.investigation.error}</p>}
-        {record.investigation.status === "running" && <p className="mt-2 text-sm text-zinc-500">This investigation is running. Refresh history to check its status; diagnostics are saved when it finishes.</p>}
+        {record.investigation.status === "queued" && <p className="mt-2 text-sm text-zinc-500">This investigation is queued. Refresh history to check its status.</p>}
+        {record.investigation.status === "running" && <p className="mt-2 text-sm text-zinc-500">This investigation is running. Refresh history for its status and saved diagnostic results.</p>}
       </section>
       {a && report && (
         <>

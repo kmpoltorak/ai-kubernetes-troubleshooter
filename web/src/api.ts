@@ -59,7 +59,7 @@ export interface RemediationAction {
 export interface Investigation {
   id: string;
   incident_id: string;
-  status: "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed";
   scenario?: string;
   error?: string;
   started_at: string;
