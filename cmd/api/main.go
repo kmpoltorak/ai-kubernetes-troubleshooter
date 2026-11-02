@@ -5,6 +5,7 @@
 //	api                 start the server (applies pending migrations first)
 //	api migrate up      apply pending migrations
 //	api migrate down    roll back the latest migration
+//	api purge --before RFC3339 [--limit 100] [--confirm TOKEN]
 package main
 
 import (
@@ -40,6 +41,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "purge" {
+		return purgeCommand(args[1:], os.Getenv("DATABASE_URL"), os.Stdout)
+	}
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
