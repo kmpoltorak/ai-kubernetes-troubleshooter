@@ -134,6 +134,12 @@ API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
 evidence. Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
 
+## Data deletion
+
+`./bin/api purge --before 2026-01-01T00:00:00Z` previews old incidents. Deletion
+requires the preview token; active investigations are skipped. Nothing is deleted
+automatically. See [operator commands and backup limits](docs/data-deletion.md).
+
 ## Kubernetes deployment
 
 ```bash
