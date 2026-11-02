@@ -1,7 +1,8 @@
 # Investigation history
 
-Each investigation is a separate attempt. The UI opens the latest attempt when
-an incident is loaded or history is refreshed. Its status, start/finish times,
+Each investigation is a separate attempt. The UI resumes this tab's saved job or
+opens an active durable attempt from the loaded history page; otherwise it opens
+the latest attempt. Its status, start/finish times,
 diagnostic results and failure message remain available after a reload. Choose
 an older attempt from the history to inspect it.
 
@@ -72,4 +73,6 @@ saved before the next step; a running attempt may show partial results. Queued
 attempts have no diagnostics. Their `started_at` initially records enqueue time
 and is replaced by execution start time when claimed. An interrupted legacy
 attempt without `job_id` can remain `running`; it is not adopted by the queue.
-The UI refreshes history on demand; it does not automatically poll attempts.
+The UI polls the observed job every two seconds and refreshes history when its
+attempt changes or it finishes. Older terminal attempts stay selected until the
+user chooses another attempt. See [browser observation and retry behavior](durable-jobs.md#browser-ui).

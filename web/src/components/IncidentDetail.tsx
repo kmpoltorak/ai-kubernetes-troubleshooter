@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, SCENARIOS, type Incident, type InvestigationPage, type InvestigationRecord } from "../api";
+import { api, ApiError, SCENARIOS, type Incident, type InvestigationPage, type InvestigationRecord, type JobRecord } from "../api";
+import { activeJob, followJob, readSession, saveSession, submitInvestigation, type JobSession } from "../jobs";
 import { target } from "../format";
 import Report from "./Report";
 import InvestigationHistory from "./InvestigationHistory";
+import JobStatus from "./JobStatus";
 
 interface Props {
   id: string;
@@ -15,7 +17,26 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
   const [record, setRecord] = useState<InvestigationRecord | null>(null);
   const [scenario, setScenario] = useState(initialScenario);
   const [error, setError] = useState("");
-  const [running, setRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [session, setSession] = useState<JobSession | null>(null);
+  const sessionRef = useRef<JobSession | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [storageError, setStorageError] = useState("");
+  const [job, setJob] = useState<JobRecord | null>(null);
+  const [watchError, setWatchError] = useState("");
+  const [watchVersion, setWatchVersion] = useState(0);
+  const selectedJobID = useRef<string | undefined>(undefined);
+  const submitController = useRef<AbortController | null>(null);
+  const jobID = session && "jobID" in session ? session.jobID : undefined;
+  const pending = session && "key" in session ? session : null;
+  const running = !!jobID && (!job || job.job.id !== jobID || activeJob(job));
+
+  function remember(value: JobSession | null, persist = true) {
+    if (persist) saveSession(id, value);
+    if (value && "jobID" in value && !(sessionRef.current && "jobID" in sessionRef.current && sessionRef.current.jobID === value.jobID)) setJob(null);
+    sessionRef.current = value;
+    setSession(value);
+  }
 
   const [page, setPage] = useState<InvestigationPage | null>(null);
   const [latestReport, setLatestReport] = useState<InvestigationRecord | null>(null);
@@ -30,9 +51,17 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
     setLoadingRecord(true);
     setHistoryError("");
     setRecord(null);
+    selectedJobID.current = undefined;
     try {
       const result = await api.investigation(id, attemptID);
-      if (version === recordVersion.current) setRecord(result);
+      if (version === recordVersion.current) {
+        selectedJobID.current = ["queued", "running"].includes(result.investigation.status) ? result.investigation.job_id : undefined;
+        setRecord(result);
+        const attempt = result.investigation;
+        if (!storageError && attempt.job_id && (attempt.status === "queued" || attempt.status === "running") && !(sessionRef.current && "key" in sessionRef.current)) {
+          try { remember({ jobID: attempt.job_id }); } catch (e) { setStorageError((e as Error).message); }
+        }
+      }
     } catch (e) {
       if (version === recordVersion.current) setHistoryError((e as Error).message);
     } finally {
@@ -57,7 +86,9 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
       setPage(attempts);
       setLatestReport(lastReport);
       if (selectNewest) {
-        if (attempts.investigations[0]) await selectAttempt(attempts.investigations[0].id);
+        // ponytail: discover other sessions' active work on the loaded page; older pages remain selectable.
+        const current = attempts.investigations.find((attempt) => attempt.job_id && ["queued", "running"].includes(attempt.status)) ?? attempts.investigations[0];
+        if (current) await selectAttempt(current.id);
         else setRecord(null);
       }
     } catch (e) {
@@ -68,24 +99,57 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
   }
 
   useEffect(() => {
-    loadHistory(0, true);
-    return () => { ++historyVersion.current; ++recordVersion.current; };
+    let saved: JobSession | null = null;
+    let restoreFailed = false;
+    try {
+      saved = readSession(id);
+      remember(saved, false);
+      if (saved && "jobID" in saved) selectedJobID.current = saved.jobID;
+    } catch (e) { restoreFailed = true; setStorageError((e as Error).message); }
+    setSessionReady(true);
+    loadHistory(0, !restoreFailed && !(saved && "jobID" in saved));
+    return () => { ++historyVersion.current; ++recordVersion.current; submitController.current?.abort(); };
   }, [id]);
 
+  useEffect(() => {
+    if (!jobID) return;
+    const controller = new AbortController();
+    let previousAttempt = "";
+    setWatchError("");
+    followJob(id, jobID, controller.signal, (result) => {
+      setJob(result);
+      setWatchError("");
+      if (selectedJobID.current === jobID) setRecord(result.result);
+      if (!previousAttempt || previousAttempt !== result.result.investigation.id || !activeJob(result)) {
+        loadHistory();
+        if (!activeJob(result)) onChanged();
+      }
+      previousAttempt = result.result.investigation.id;
+    }, (e) => setWatchError(e.message));
+    return () => controller.abort();
+  }, [id, jobID, watchVersion]);
+
   async function investigate() {
-    setRunning(true);
+    if (submitting || running || storageError) return;
+    const controller = new AbortController();
+    submitController.current = controller;
+    setSubmitting(true);
     setError("");
     try {
-      setRecord(await api.investigate(id, scenario));
-      setIncident((inc) => inc && { ...inc, status: "analyzed" });
-      onChanged();
+      const accepted = await submitInvestigation(id, scenario, controller.signal);
+      if (controller.signal.aborted) return;
+      remember({ jobID: accepted.job.id }, false);
+      selectedJobID.current = accepted.job.id;
+      ++recordVersion.current;
+      setJob(accepted);
+      setRecord(accepted.result);
     } catch (e) {
-      setError((e as Error).message);
-      // A failed analysis still returns the collected evidence.
-      if (e instanceof ApiError && e.body.result) setRecord(e.body.result);
+      if (!controller.signal.aborted) setError((e as Error).message);
     } finally {
-      await loadHistory();
-      setRunning(false);
+      if (!controller.signal.aborted) {
+        try { remember(readSession(id), false); } catch (e) { setStorageError((e as Error).message); }
+        setSubmitting(false);
+      }
     }
   }
 
@@ -118,7 +182,7 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
         <div className="mt-5 flex flex-wrap items-end gap-3">
           <label className="label w-60">
             Scenario
-            <select className="field" value={scenario} onChange={(e) => setScenario(e.target.value)}>
+            <select className="field" value={pending?.scenario ?? scenario} disabled={submitting || running || !!pending} onChange={(e) => setScenario(e.target.value)}>
               <option value="">Default</option>
               {SCENARIOS.map((s) => (
                 <option key={s} value={s}>
@@ -127,20 +191,22 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
               ))}
             </select>
           </label>
-          <button type="button" className="btn-primary" onClick={investigate} disabled={running || loadingHistory || loadingRecord}>
-            {running && <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-            {running ? "Investigating…" : "Run investigation"}
+          <button type="button" className="btn-primary" onClick={investigate} disabled={!sessionReady || !!storageError || submitting || running || loadingHistory || loadingRecord}>
+            {(running || submitting) && <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+            {submitting ? "Submitting…" : running ? "Investigation active" : pending ? "Retry submission" : "Run investigation"}
           </button>
           <span className="pb-2 text-xs text-zinc-500">Scenarios apply in simulation mode only.</span>
         </div>
-        {running && (
-          <p className="mt-3 text-sm text-zinc-500">Running diagnostics and analysis. With a local LLM this can take a minute.</p>
-        )}
-        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {running && !job && <p role="status" className="mt-3 text-sm text-zinc-500">Resuming investigation status…</p>}
+        {pending && <p className="mt-3 text-sm text-zinc-500">Submission is unconfirmed. Retry uses the same request and does not start a duplicate investigation.</p>}
+        {(error || storageError) && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{storageError || error}</p>}
+        {(job || watchError) && <JobStatus record={job} error={watchError} onRetry={() => setWatchVersion((v) => v + 1)} onView={() => {
+          if (job) { ++recordVersion.current; selectedJobID.current = job.job.id; setRecord(job.result); setLoadingRecord(false); }
+        }} />}
       </div>
 
       <InvestigationHistory page={page} selectedID={record?.investigation.id} latestReport={latestReport}
-        busy={running || loadingHistory || loadingRecord} error={historyError}
+        busy={submitting || loadingHistory || loadingRecord} error={historyError}
         onSelect={selectAttempt} onPage={(offset) => loadHistory(offset)} onRefresh={() => loadHistory(0, true)} />
       {loadingRecord && <p role="status" className="text-sm text-zinc-500">Loading investigation…</p>}
       {record && <Report record={record} />}
