@@ -202,7 +202,9 @@ Each tool is tested against client-go fake clients, and all 10 tools run
 against all 11 scenarios checking the expected signals and the absence of
 misleading ones. An [offline evaluation](docs/evaluation.md) runs every scenario
 and adversarial fixtures through the engine, checking assessments, verdict/support,
-citations, missing data and read-only behavior. Integration tests run
+citations, missing data and read-only behavior. The same guide documents an
+opt-in, bounded OpenAI/Ollama evaluation with per-attempt usage and human review;
+ordinary tests use local fake servers only. Integration tests run
 migrations and send the sample incidents through REST, the engine and
 PostgreSQL, including killed workers, lost database connections, retries and lease fencing.
 Go tests also fail if the RBAC manifest gains a permission or a
