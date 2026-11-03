@@ -21,6 +21,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/jobs"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/simulation"
 )
 
 const maxBodyBytes = 1 << 20
@@ -39,10 +40,35 @@ type handler struct {
 	build     buildinfo.Info
 }
 
+// Runtime is what the UI needs to know about this installation. It is served
+// behind authentication and never holds URLs, keys, contexts or credentials.
+type Runtime struct {
+	Mode              string   `json:"mode"`
+	ClusterName       string   `json:"cluster_name"`
+	AllowedNamespaces []string `json:"allowed_namespaces"`
+	Analyzer          Analyzer `json:"analyzer"`
+	Scenarios         []string `json:"scenarios"`
+}
+
+type Analyzer struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+// RuntimeFrom selects the UI-relevant settings; empty namespaces mean all readable ones.
+func RuntimeFrom(cfg config.Config) Runtime {
+	rt := Runtime{Mode: "live", ClusterName: cfg.ClusterName, AllowedNamespaces: append([]string{}, cfg.AllowedNamespaces...),
+		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel}, Scenarios: []string{}}
+	if cfg.SimulationEnabled {
+		rt.Mode, rt.Scenarios = "simulation", simulation.Scenarios
+	}
+	return rt
+}
+
 // New returns the fully wired HTTP handler. checks are the readiness checks
 // by dependency name (database, kubernetes). API routes are rate limited per
 // client IP at rps requests per second; auth also limits other non-probe routes.
-func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth) http.Handler {
+func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth, runtime Runtime) http.Handler {
 	h := &handler{incidents: svc, jobs: jobService, checks: checks, log: log, build: buildinfo.Current()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/incidents", h.createIncident)
@@ -54,6 +80,7 @@ func New(svc *incidents.Service, jobService JobService, checks map[string]func(c
 	mux.HandleFunc("POST /api/v1/incidents/{id}/jobs", h.submitJob)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/jobs/{jobID}", h.getJob)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/investigations/{investigationID}", h.getInvestigation)
+	mux.HandleFunc("GET /api/v1/runtime", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, runtime) })
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /ready", h.readiness)
 	mux.Handle("GET /metrics", promhttp.Handler())

@@ -53,7 +53,8 @@ docker compose --profile ollama up --build         # plus a local Ollama with a 
 ```
 
 The UI's sample buttons fill in an incident and pick the matching simulation
-scenario. Outside Docker:
+scenario. The header shows the mode, cluster name and analyzer; live mode has no
+samples or scenario choice, and the form pre-fills the configured cluster. Outside Docker:
 
 ```bash
 docker compose up -d postgres
@@ -133,6 +134,7 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 | `GET` | `/api/v1/incidents/{id}/investigations?limit=&offset=` | all attempts, newest first, default 20/max 100, with `has_more` |
 | `GET` | `/api/v1/incidents/{id}/investigations/{investigationID}` | one attempt, including failed/running attempts without a report |
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
+| `GET` | `/api/v1/runtime` | `mode`, `cluster_name`, `allowed_namespaces`, `analyzer` (`provider`, `model`), `scenarios` (simulation only); no URLs or keys; requires login when auth is on |
 | `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`), Prometheus |
 
 API errors are `{"error": {"code", "message"}, "request_id"}`: `400`

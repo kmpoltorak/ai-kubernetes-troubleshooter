@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Runs the Playwright suite against the real binary with the embedded UI: one
-# server with the rules analyzer and one whose OpenAI-compatible provider fails
-# after a delay, each on its own database in a disposable PostgreSQL container.
+# Runs the Playwright suite against the real binary with the embedded UI: a
+# simulation server with the rules analyzer, one whose OpenAI-compatible provider
+# fails after a delay, and a live-mode server with an unreachable cluster, each
+# on its own database in a disposable PostgreSQL container.
 set -Eeuo pipefail
 umask 077
 
@@ -24,6 +25,15 @@ start() { # port database VAR=value...
 
 pg_port=$(pg_start)
 docker exec "$db" createdb -U akt failing
+docker exec "$db" createdb -U akt live
+cat > "$work/kubeconfig" <<'EOF'
+apiVersion: v1
+kind: Config
+clusters: [{name: none, cluster: {server: "https://127.0.0.1:9"}}]
+users: [{name: none, user: {token: browser-test}}]
+contexts: [{name: none, context: {cluster: none, user: none}}]
+current-context: none
+EOF
 
 (cd web && npm run build)
 CGO_ENABLED=0 go build -o "$work/api" ./cmd/api
@@ -38,7 +48,12 @@ pids="$pids $!"
 # A low limit makes the UI's normal request bursts hit 429 rate_limited on every run.
 start "$port" akt LLM_PROVIDER=rules RATE_LIMIT_RPS=2
 start $((port + 1)) failing LLM_PROVIDER=openai OPENAI_API_KEY=browser-test OPENAI_BASE_URL="http://127.0.0.1:$((port + 2))/v1"
+# Live mode: readiness fails on the unreachable cluster, so wait for /health.
+start $((port + 3)) live SIMULATION_ENABLED=false KUBECONFIG="$work/kubeconfig" \
+  KUBERNETES_CLUSTER_NAME=browser-live KUBERNETES_ALLOWED_NAMESPACES=payments,checkout
 ready "$port"
 ready $((port + 1))
+ready $((port + 3)) /health
 
-(cd web && BROWSER_RULES_URL="http://127.0.0.1:$port" BROWSER_FAILING_URL="http://127.0.0.1:$((port + 1))" npx playwright test "$@")
+(cd web && BROWSER_RULES_URL="http://127.0.0.1:$port" BROWSER_FAILING_URL="http://127.0.0.1:$((port + 1))" \
+  BROWSER_LIVE_URL="http://127.0.0.1:$((port + 3))" npx playwright test "$@")

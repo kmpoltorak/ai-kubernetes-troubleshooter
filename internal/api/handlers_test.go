@@ -147,7 +147,7 @@ func newHandler(t *testing.T, provider llm.Provider, ready error, rps float64, a
 	policy := domain.TargetPolicy{ClusterName: "local"}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 2, Policy: policy})
 	checks := map[string]func(context.Context) error{"database": func(context.Context) error { return ready }}
-	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth)
+	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth, RuntimeFrom(config.Config{SimulationEnabled: true, ClusterName: "local", LLMProvider: "rules", LLMModel: "rules-v1"}))
 }
 
 func do(t *testing.T, method, url, body string, headers ...string) (*http.Response, map[string]any) {
@@ -311,6 +311,47 @@ func TestHealthReadyMetrics(t *testing.T) {
 	}
 	if strings.Contains(string(body), "/api/v1/incidents/"+"0") {
 		t.Error("raw path leaked into metric labels")
+	}
+}
+
+func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
+	secret := map[string]string{
+		"DATABASE_URL": "postgres://app:db-secret@db.example.com/app", "OPENAI_API_KEY": "sk-runtime-secret",
+		"OPENAI_BASE_URL": "https://llm.example.net/v1", "KUBECONFIG": "/var/run/secret-kubeconfig",
+		"KUBERNETES_CONTEXT": "admin-context", "KUBERNETES_CLUSTER_NAME": "prod",
+	}
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout"},
+			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[]}`},
+		{"simulation", map[string]string{},
+			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"analyzer":{"provider":"rules","model":"rules-v1"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := config.Load(func(k string) string {
+				if v, ok := tc.env[k]; ok {
+					return v
+				}
+				return secret[k]
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv := httptest.NewServer(New(nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), 1000, config.Auth{}, RuntimeFrom(cfg)))
+			t.Cleanup(srv.Close)
+			resp, err := http.Get(srv.URL + "/api/v1/runtime")
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode != 200 || strings.TrimSpace(string(body)) != tc.want {
+				t.Fatalf("runtime %d:\n got %s\nwant %s", resp.StatusCode, body, tc.want)
+			}
+		})
 	}
 }
 

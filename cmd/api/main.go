@@ -113,7 +113,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),
-		Handler:           api.New(incidents.NewService(store, policy), scheduler, checks, log, cfg.RateLimitRPS, cfg.Auth),
+		Handler:           api.New(incidents.NewService(store, policy), scheduler, checks, log, cfg.RateLimitRPS, cfg.Auth, api.RuntimeFrom(cfg)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		// The compatibility endpoint waits through queueing and execution.

@@ -32,6 +32,15 @@ async function readiness(signal: AbortSignal): Promise<Readiness> {
   return { checks, build };
 }
 
+// Served behind authentication; no URLs, keys or credentials.
+export interface Runtime {
+  mode: "simulation" | "live";
+  cluster_name: string;
+  allowed_namespaces: string[];
+  analyzer: { provider: string; model: string };
+  scenarios: string[];
+}
+
 export interface Incident {
   id: string;
   title: string;
@@ -185,6 +194,7 @@ async function request<T>(method: string, path: string, body?: unknown, options:
 
 export const api = {
   readiness,
+  runtime: () => request<Runtime>("GET", "/api/v1/runtime"),
   listIncidents: () => request<{ incidents: Incident[] }>("GET", "/api/v1/incidents?limit=100").then((r) => r.incidents),
   getIncident: (id: string) => request<Incident>("GET", `/api/v1/incidents/${id}`),
   createIncident: (body: CreateIncident) => request<Incident>("POST", "/api/v1/incidents", body),
@@ -198,18 +208,3 @@ export const api = {
     request<InvestigationRecord>("GET", `/api/v1/incidents/${id}/investigations/${investigationID}`),
   report: (id: string) => request<InvestigationRecord>("GET", `/api/v1/incidents/${id}/report`),
 };
-
-// Mirrors internal/simulation.Scenarios.
-export const SCENARIOS = [
-  "healthy",
-  "crash_loop_backoff",
-  "image_pull_error",
-  "oom_killed",
-  "readiness_probe_failure",
-  "liveness_probe_failure",
-  "missing_configmap",
-  "service_selector_mismatch",
-  "dns_failure",
-  "resource_pressure",
-  "network_policy_block",
-] as const;
