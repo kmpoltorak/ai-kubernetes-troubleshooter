@@ -146,24 +146,41 @@ export class ApiError extends Error {
   }
 }
 
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+  });
+}
+
+// The server rejects rate_limited requests before handling them, so any method can be resent.
+// Other 429s (a full job queue) reach the caller. The 15s timeout covers every attempt.
+const rateLimitRetries = 3;
+
 async function request<T>(method: string, path: string, body?: unknown, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (body !== undefined) headers.set("Content-Type", "application/json");
   const timeout = AbortSignal.timeout(15_000);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
-  const res = await fetch(path, {
-    ...options,
-    method,
-    headers,
-    signal,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await res.json().catch((e) => {
-    if (signal.aborted || res.ok) throw e;
-    return {};
-  });
-  if (!res.ok) throw new ApiError(data.error?.message ?? `HTTP ${res.status}`, res.status);
-  return data as T;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(path, {
+      ...options,
+      method,
+      headers,
+      signal,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch((e) => {
+      if (signal.aborted || res.ok) throw e;
+      return {};
+    });
+    if (res.status === 429 && data.error?.code === "rate_limited" && attempt < rateLimitRetries) {
+      await pause(Math.min(Number(res.headers.get("Retry-After")) || 1, 5) * 1000, signal);
+      continue;
+    }
+    if (!res.ok) throw new ApiError(data.error?.message ?? `HTTP ${res.status}`, res.status);
+    return data as T;
+  }
 }
 
 export const api = {

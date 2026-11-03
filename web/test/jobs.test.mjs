@@ -171,3 +171,32 @@ test("an unreadable successful response remains an uncertain submission", async 
   await assert.rejects(jobs.submitInvestigation(id, "healthy", controller(t).signal));
   assert.equal(jobs.readSession(id).key, requests[0].key);
 });
+
+test("rate-limited requests are resent after Retry-After, including submissions", async (t) => {
+  const requests = await fixture(t, (req, res, count) => {
+    if (count === 1) {
+      res.statusCode = 429;
+      res.setHeader("Retry-After", "1");
+      res.end(JSON.stringify({ error: { code: "rate_limited", message: "too many requests, slow down" } }));
+      return;
+    }
+    res.statusCode = 202;
+    res.end(JSON.stringify(record("queued")));
+  });
+  const result = await jobs.submitInvestigation(id, "oom_killed", controller(t).signal);
+  assert.equal(result.job.id, jobID);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].key, requests[0].key);
+  assert.equal(requests[1].body, requests[0].body);
+  assert.ok(requests[1].at - requests[0].at >= 900, "waits for Retry-After");
+});
+
+test("a full queue is reported, not resent", async (t) => {
+  const requests = await fixture(t, (req, res) => {
+    res.statusCode = 429;
+    res.setHeader("Retry-After", "10");
+    res.end(JSON.stringify({ error: { code: "busy", message: "investigation queue is full, retry later" } }));
+  });
+  await assert.rejects(jobs.submitInvestigation(id, "oom_killed", controller(t).signal), /queue is full/);
+  assert.equal(requests.length, 1);
+});
