@@ -110,7 +110,7 @@ are stopped. Legacy `running` rows without `job_id` remain unchanged.
 ## Upgrade and rollback
 
 Drain requests using the old application version, then stop **all** old processes
-before starting this version. Back up PostgreSQL first. Startup applies the
+before starting this version. Back up PostgreSQL first ([backup and restore](operations.md#backup-and-restore)). Startup applies the
 additive migration; existing reports and legacy attempts remain readable. Do not
 mix old and new workers during this upgrade: the old version has only a local
 concurrency limit and cannot participate in lease ownership. This applies to

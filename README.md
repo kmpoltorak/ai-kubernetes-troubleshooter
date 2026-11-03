@@ -180,6 +180,9 @@ without it, or without metrics-server, that diagnostic is recorded as failed and
 the investigation continues. If the target itself cannot be read, the
 investigation fails rather than diagnose something it never saw.
 
+Before upgrading, read [operations](docs/operations.md): stopping replicas across
+schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failures.
+
 ## Limitations
 
 - Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
@@ -190,6 +193,7 @@ investigation fails rather than diagnose something it never saw.
 - Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0, Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
+- Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application does not refuse a newer database schema; roll back by restoring the pre-upgrade backup.
 - Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).
 
 ## Development
@@ -199,12 +203,14 @@ make test               # unit tests with the race detector
 make test-auth          # real OAuth2 Proxy + disposable OIDC provider; requires Docker
 make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
 make test-e2e           # disposable kind: live diagnostics, RBAC and NetworkPolicy
+make test-upgrade       # baseline upgrade, two-replica migration, pg_dump/pg_restore; requires Docker
 make lint               # gofmt, go vet, golangci-lint
 cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck and build (Node 22)
 ```
 
 Unit tests use synthetic clusters and model responses; integration tests exercise
-PostgreSQL, API requests and worker recovery. See [evaluation commands](docs/evaluation.md)
+PostgreSQL, API requests and worker recovery. The upgrade test compares API reads
+before and after a real backup and restore. See [evaluation commands](docs/evaluation.md)
 for offline checks and the opt-in OpenAI/Ollama tool. The [kind tests](docs/kubernetes-testing.md)
 deploy two API replicas and check live diagnostics, RBAC and NetworkPolicy using
 one shared image in CI. CI also runs govulncheck and `npm audit`.
