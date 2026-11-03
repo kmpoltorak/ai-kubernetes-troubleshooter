@@ -58,11 +58,13 @@ backup brings deleted incidents back and loses anything written after it.
 
 ## Rollback
 
-The application does not refuse a database schema newer than itself. After a
-schema change, the safe rollback is to stop every replica, restore the backup
-taken before the upgrade, and start the previous version. This loses data written
-since the backup. `api migrate down` exists for the documented reversible cases
-only; it refuses when active jobs or v2 reports exist.
+Startup, `api migrate up` and `api migrate down` refuse a database schema newer
+than the binary's migrations and change nothing. Versions released before this
+check do not have it. After a schema change, the safe rollback is to stop every
+replica, restore the backup taken before the upgrade, and start the previous
+version. This loses data written since the backup. For the documented reversible
+cases, run `api migrate down` with the **newer** binary first; it refuses when
+active jobs or v2 reports exist.
 
 ## Runbook
 
