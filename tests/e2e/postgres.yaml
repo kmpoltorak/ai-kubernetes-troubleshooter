@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: troubleshooter
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          env:
+            - {name: POSTGRES_USER, value: troubleshooter}
+            - {name: POSTGRES_DB, value: troubleshooter}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: troubleshooter-secrets, key: POSTGRES_PASSWORD}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, troubleshooter, -d, troubleshooter]
+            periodSeconds: 2
+            timeoutSeconds: 2
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: troubleshooter
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432}]

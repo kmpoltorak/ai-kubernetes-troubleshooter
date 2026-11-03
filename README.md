@@ -183,7 +183,7 @@ investigation fails rather than diagnose something it never saw.
 - One cluster per installation; replicas must use the same limits, target policy and analyzer. No remediation is executed.
 - The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`. It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
-- Live mode was checked by hand on minikube only; CI uses no real cluster. The OpenAI and Ollama clients are tested against fake servers.
+- Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0, Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
 - Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).
@@ -194,6 +194,7 @@ investigation fails rather than diagnose something it never saw.
 make test               # unit tests with the race detector
 make test-auth          # real OAuth2 Proxy + disposable OIDC provider; requires Docker
 make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
+make test-e2e           # disposable kind: live diagnostics, RBAC and NetworkPolicy
 make lint               # gofmt, go vet, golangci-lint
 cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck and build (Node 22)
 ```
@@ -211,6 +212,9 @@ Go tests also fail if the RBAC manifest gains a permission or a
 Grafana panel queries a metric the app does not export. CI adds govulncheck,
 `npm audit` and a Docker build. A report from a live minikube run is in
 [docs/examples/report_oom_killed_minikube.json](docs/examples/report_oom_killed_minikube.json).
+The [live Kubernetes tests](docs/kubernetes-testing.md) build the current source,
+deploy two API replicas with the base ServiceAccount, and check actual failures
+and TCP policy enforcement. They use a separate kubeconfig and remove their cluster.
 
 Built with an AI coding assistant. I wrote the spec and reviewed every change.
 
