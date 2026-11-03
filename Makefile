@@ -13,7 +13,7 @@ export
 endif
 endif
 
-.PHONY: web build test test-auth test-e2e test-integration test-upgrade test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
+.PHONY: web build test test-auth test-e2e test-integration test-upgrade test-browser test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
 
 # Builds the React UI into internal/api/ui/dist, which the binary embeds.
 web:
@@ -35,6 +35,11 @@ test-e2e:
 # Baseline-commit upgrade, two-replica migration and pg_dump/pg_restore; requires Docker.
 test-upgrade:
 	bash scripts/test-upgrade.sh
+
+# Playwright (Chromium) against the real binary; requires Docker and web deps:
+# cd web && npm ci && npx playwright install chromium
+test-browser:
+	bash scripts/test-browser.sh
 
 # Starts a disposable PostgreSQL container (port 55433) if it is not running.
 test-db:

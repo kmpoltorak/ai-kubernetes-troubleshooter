@@ -12,24 +12,8 @@ baseline=${UPGRADE_BASELINE:-06db1ed6668f6af45e20c69bbc55be1218935985}
 port=${UPGRADE_PORT_BASE:-18180}
 for tool in docker go curl jq git tar; do command -v "$tool" >/dev/null; done
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/akt-upgrade.XXXXXXXX")
-db="akt-upgrade-$(basename "$work" | tr '[:upper:]' '[:lower:]' | tr -d '.')"
-pids=
-cleanup() {
-  status=$?
-  trap - EXIT
-  for pid in $pids; do { kill "$pid" && wait "$pid"; } 2>/dev/null || :; done
-  if [ "$status" -ne 0 ]; then
-    for log in "$work"/app-*.log; do [ -f "$log" ] && { echo "== $log" >&2; tail -n 20 "$log" >&2; }; done
-  fi
-  docker rm -f "$db" >/dev/null 2>&1 || :
-  rm -rf "$work"
-  exit "$status"
-}
-trap cleanup EXIT
-trap 'echo "test-upgrade: failed at line $LINENO" >&2' ERR
-trap 'exit 130' INT
-trap 'exit 143' TERM
+# shellcheck source=scripts/harness.sh
+source "$repo/scripts/harness.sh" upgrade
 
 sql() { docker exec "$db" psql -U akt -d "$1" -v ON_ERROR_STOP=1 -Atc "$2"; }
 api() { curl -fsS --max-time 120 -H 'Content-Type: application/json' "$@"; }
@@ -38,15 +22,6 @@ start() { # binary port database
   env -i DATABASE_URL="postgres://akt:akt@127.0.0.1:$pg_port/$3?sslmode=disable" HTTP_PORT="$2" \
     SIMULATION_ENABLED=true LLM_PROVIDER=rules AUTH_ENABLED=false "$1" > "$work/app-$2.log" 2>&1 &
   pids="$pids $!"
-}
-
-ready() {
-  for _ in $(seq 60); do
-    if curl -fsS --max-time 2 "http://127.0.0.1:$1/ready" >/dev/null 2>&1; then return; fi
-    sleep 1
-  done
-  echo "replica on port $1 did not become ready" >&2
-  return 1
 }
 
 # SIGTERM is the normal shutdown; a non-zero exit fails the test.
@@ -71,15 +46,7 @@ snapshot() { # port dir
   done
 }
 
-docker run -d --rm --name "$db" -e POSTGRES_USER=akt -e POSTGRES_PASSWORD=akt -e POSTGRES_DB=akt \
-  -p 127.0.0.1::5432 postgres:17-alpine >/dev/null
-# TCP readiness: the image's temporary init server listens on the socket only.
-for _ in $(seq 60); do
-  if docker exec "$db" pg_isready -h 127.0.0.1 -U akt -d akt >/dev/null 2>&1; then break; fi
-  sleep 1
-done
-docker exec "$db" pg_isready -h 127.0.0.1 -U akt -d akt >/dev/null
-pg_port=$(docker port "$db" 5432/tcp | head -n 1 | sed 's/.*://')
+pg_port=$(pg_start)
 
 if ! git cat-file -e "$baseline^{commit}" 2>/dev/null; then git fetch -q --depth 1 origin "$baseline"; fi
 mkdir "$work/baseline"
