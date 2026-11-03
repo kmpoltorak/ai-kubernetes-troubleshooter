@@ -190,7 +190,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 - One cluster per installation; replicas must use the same limits, target policy and analyzer. No remediation is executed.
 - The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`. It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
-- Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0, Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI.
+- Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0, Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI. Browser tests run in Chromium only; Firefox and Safari are untested.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
 - Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
@@ -204,13 +204,16 @@ make test-auth          # real OAuth2 Proxy + disposable OIDC provider; requires
 make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
 make test-e2e           # disposable kind: live diagnostics, RBAC and NetworkPolicy
 make test-upgrade       # baseline upgrade, two-replica migration, pg_dump/pg_restore; requires Docker
+make test-browser       # Playwright/Chromium on the real binary; needs Docker and `npx playwright install chromium`
 make lint               # gofmt, go vet, golangci-lint
 cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck and build (Node 22)
 ```
 
 Unit tests use synthetic clusters and model responses; integration tests exercise
 PostgreSQL, API requests and worker recovery. The upgrade test compares API reads
-before and after a real backup and restore. See [evaluation commands](docs/evaluation.md)
+before and after a real backup and restore. The browser tests drive the embedded UI
+in Chromium: a report with evidence links, a reload during a failing analysis,
+keyboard-only use and status-read errors. See [evaluation commands](docs/evaluation.md)
 for offline checks and the opt-in OpenAI/Ollama tool. The [kind tests](docs/kubernetes-testing.md)
 deploy two API replicas and check live diagnostics, RBAC and NetworkPolicy using
 one shared image in CI. CI also runs govulncheck and `npm audit`.
