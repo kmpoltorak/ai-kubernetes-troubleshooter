@@ -13,7 +13,7 @@ export
 endif
 endif
 
-.PHONY: web build test test-auth test-e2e test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
+.PHONY: web build test test-auth test-e2e test-integration test-upgrade test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
 
 # Builds the React UI into internal/api/ui/dist, which the binary embeds.
 web:
@@ -31,6 +31,10 @@ test-auth:
 
 test-e2e:
 	bash scripts/test-e2e.sh
+
+# Baseline-commit upgrade, two-replica migration and pg_dump/pg_restore; requires Docker.
+test-upgrade:
+	bash scripts/test-upgrade.sh
 
 # Starts a disposable PostgreSQL container (port 55433) if it is not running.
 test-db:
