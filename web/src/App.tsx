@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Incident } from "./api";
+import { api, type Readiness, type Incident } from "./api";
+import BuildLabel from "./components/BuildLabel";
 import CreateIncidentForm from "./components/CreateIncidentForm";
 import IncidentList from "./components/IncidentList";
 import IncidentDetail from "./components/IncidentDetail";
@@ -17,7 +18,7 @@ export default function App() {
     setSelectedState(sel);
     history.replaceState(null, "", `?incident=${encodeURIComponent(sel.id)}`);
   };
-  const [ready, setReady] = useState<Record<string, string> | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -30,14 +31,16 @@ export default function App() {
 
   useEffect(() => {
     refresh();
-    // /ready answers 503 with the failing checks, so read the body either way.
+    const controller = new AbortController();
     const check = () =>
-      fetch("/ready")
-        .then((r) => r.json())
-        .then((b) => setReady(b.checks ?? {}), () => setReady({ api: "unreachable" }));
+      api.readiness(controller.signal).then((body) => {
+        if (!controller.signal.aborted) setReadiness(body);
+      }, () => {
+        if (!controller.signal.aborted) setReadiness({ checks: { api: "unreachable" } });
+      });
     check();
     const t = setInterval(check, 30_000);
-    return () => clearInterval(t);
+    return () => { clearInterval(t); controller.abort(); };
   }, [refresh]);
 
   return (
@@ -48,14 +51,14 @@ export default function App() {
             <div className="size-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-500" aria-hidden />
             <div>
               <h1 className="text-sm font-semibold">Kubernetes Troubleshooter</h1>
-              <p className="text-xs text-zinc-500">AI-assisted workload triage</p>
+              <p className="text-xs text-zinc-500">AI-assisted workload triage<BuildLabel build={readiness?.build ?? null} /></p>
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <a href="/metrics" target="_blank" rel="noopener" className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
               Metrics
             </a>
-            <StatusPill ready={ready} />
+            <StatusPill ready={readiness?.checks ?? null} />
           </div>
         </div>
       </header>

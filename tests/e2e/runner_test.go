@@ -23,9 +23,17 @@ func TestRunnerFailsClosedAndCleansOwnedCluster(t *testing.T) {
 				t.Fatal(err)
 			}
 			trace := filepath.Join(dir, "trace")
-			for _, tool := range []string{"kind", "docker", "kubectl", "go"} {
+			for _, tool := range []string{"kind", "docker", "kubectl", "go", "git"} {
 				body := `#!/bin/bash
 printf '%s %s\n' "$(basename "$0")" "$*" >> "$E2E_TRACE"
+if [ "$(basename "$0")" = git ]; then printf '%s\n' synthetic-revision; fi
+if [ "$(basename "$0")" = docker ] && [ "$1" = image ]; then
+ case "$*" in
+  *image.version*) printf '%s\n' "$E2E_BUILD_VERSION";;
+  *image.revision*) printf '%s\n' "$E2E_BUILD_REVISION";;
+  *image.created*) printf '%s\n' "$E2E_BUILD_TIME";;
+ esac
+fi
 if [ "$(basename "$0")" = kind ]; then
  if [ "$1" != version ]; then printf 'kubeconfig=%s\n' "$KUBECONFIG" >> "$E2E_TRACE"; fi
  case "$1" in

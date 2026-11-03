@@ -59,8 +59,16 @@ mkdir "$artifacts"
 existing_clusters=$(kind get clusters)
 if printf '%s\n' "$existing_clusters" | grep -Fxq "$cluster"; then echo 'cluster name already exists' >&2; exit 2; fi
 api_image="akt-e2e-api:${suffix}"
+E2E_BUILD_REVISION=$(git rev-parse HEAD)
+E2E_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+export E2E_BUILD_VERSION=e2e E2E_BUILD_REVISION E2E_BUILD_TIME
 echo "Building application and fixture for Kubernetes $version"
-docker build --tag "$api_image" .
+docker build --build-arg "BUILD_VERSION=$E2E_BUILD_VERSION" --build-arg "BUILD_REVISION=$E2E_BUILD_REVISION" --build-arg "BUILD_TIME=$E2E_BUILD_TIME" --tag "$api_image" .
+for field in version revision created; do
+  case "$field" in version) expected=$E2E_BUILD_VERSION ;; revision) expected=$E2E_BUILD_REVISION ;; created) expected=$E2E_BUILD_TIME ;; esac
+  actual=$(docker image inspect --format "{{index .Config.Labels \"org.opencontainers.image.$field\"}}" "$api_image")
+  if [ "$actual" != "$expected" ]; then echo "image build label mismatch: $field" >&2; exit 1; fi
+done
 docker build --file tests/e2e/fixture/Dockerfile --tag "$E2E_FIXTURE_IMAGE" .
 go test -c -tags e2e -o "$work/e2e.test" ./tests/e2e
 owned=1

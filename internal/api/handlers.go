@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/buildinfo"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
@@ -35,13 +36,14 @@ type handler struct {
 	jobs      JobService
 	checks    map[string]func(context.Context) error
 	log       *slog.Logger
+	build     buildinfo.Info
 }
 
 // New returns the fully wired HTTP handler. checks are the readiness checks
 // by dependency name (database, kubernetes). API routes are rate limited per
 // client IP at rps requests per second; auth also limits other non-probe routes.
 func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth) http.Handler {
-	h := &handler{incidents: svc, jobs: jobService, checks: checks, log: log}
+	h := &handler{incidents: svc, jobs: jobService, checks: checks, log: log, build: buildinfo.Current()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/incidents", h.createIncident)
 	mux.HandleFunc("GET /api/v1/incidents", h.listIncidents)
@@ -150,7 +152,7 @@ func (h *handler) getReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "build": h.build})
 }
 
 func (h *handler) readiness(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +168,7 @@ func (h *handler) readiness(w http.ResponseWriter, r *http.Request) {
 			status, code = "unavailable", http.StatusServiceUnavailable
 		}
 	}
-	writeJSON(w, code, map[string]any{"status": status, "checks": results})
+	writeJSON(w, code, map[string]any{"status": status, "checks": results, "build": h.build})
 }
 
 // fail maps service errors to HTTP responses. Unexpected errors are logged
