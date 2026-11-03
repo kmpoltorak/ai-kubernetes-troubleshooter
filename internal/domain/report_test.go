@@ -72,11 +72,17 @@ func TestAnalysisJSONKeepsLegacyAndOmitsV2Score(t *testing.T) {
 		}
 	}
 	a := validAnalysis()
+	a.SafeCommands, a.PossibleCauses, a.AffectedResources = nil, nil, nil
 	raw, err := json.Marshal(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), "confidence") || !strings.Contains(string(raw), `"schema_version":2`) || !strings.Contains(string(raw), `"missing_data":[]`) || !strings.Contains(string(raw), `"limitations":[]`) {
 		t.Fatalf("bad v2 wire: %s", raw)
+	}
+	for _, field := range []string{"safe_commands", "possible_causes", "affected_resources"} {
+		if !strings.Contains(string(raw), `"`+field+`":[]`) {
+			t.Fatalf("v2 array %s is not an array: %s", field, raw)
+		}
 	}
 }

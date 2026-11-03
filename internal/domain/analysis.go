@@ -50,10 +50,14 @@ func (a Analysis) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(struct {
 		wire
-		Confidence  *float64 `json:"confidence,omitempty"`
-		MissingData []string `json:"missing_data"`
-		Limitations []string `json:"limitations"`
-	}{wire: wire(a), MissingData: append([]string{}, a.MissingData...), Limitations: append([]string{}, a.Limitations...)})
+		Confidence        *float64 `json:"confidence,omitempty"`
+		MissingData       []string `json:"missing_data"`
+		Limitations       []string `json:"limitations"`
+		AffectedResources []string `json:"affected_resources"`
+		PossibleCauses    []string `json:"possible_causes"`
+		SafeCommands      []string `json:"safe_commands"`
+	}{wire: wire(a), MissingData: append([]string{}, a.MissingData...), Limitations: append([]string{}, a.Limitations...),
+		AffectedResources: append([]string{}, a.AffectedResources...), PossibleCauses: append([]string{}, a.PossibleCauses...), SafeCommands: append([]string{}, a.SafeCommands...)})
 }
 
 // HealthUnconfirmed checks observations, not the truth of an analyzer's prose.
