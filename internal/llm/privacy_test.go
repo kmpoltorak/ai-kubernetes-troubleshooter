@@ -33,6 +33,7 @@ func TestProvidersMaskDataAndLimitWholeRequest(t *testing.T) {
 			defer srv.Close()
 			cfg := config.Config{LLMProvider: name, LLMModel: "test", LLMTimeout: time.Second, OpenAIBaseURL: srv.URL, OllamaBaseURL: srv.URL}
 			in := sampleInput()
+			in.Limitations = []string{"password=synthetic-limitation"}
 			in.Incident.Title = "password=synthetic-title"
 			in.Incident.Description = "password=synthetic-description"
 			in.Evidence[0].Summary = "password=synthetic-summary"

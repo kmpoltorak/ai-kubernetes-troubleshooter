@@ -521,3 +521,26 @@ func TestGetPodsKeepsProblemPods(t *testing.T) {
 		t.Errorf("summary does not report the cap: %s", r.Summary)
 	}
 }
+
+func TestNetworkPolicyAllowsAreAdditive(t *testing.T) {
+	deny := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: "deny", Namespace: ns}, Spec: networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{MatchLabels: appLabels}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress, networkingv1.PolicyTypeIngress}}}
+	narrow := deny.DeepCopy()
+	narrow.Name = "narrow"
+	dns := intstrPort(53)
+	narrow.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{{Ports: []networkingv1.NetworkPolicyPort{{Port: &dns}}}}
+	allow := deny.DeepCopy()
+	allow.Name = "allow"
+	allow.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{{}}
+	allow.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{}}
+	r := run(t, cluster(t, deny, narrow, allow), GetNetworkPolicies, Input{Labels: appLabels})
+	if len(r.Signals) != 0 || r.Health != domain.Healthy || len(r.Data.(NetworkPoliciesInfo).Policies) != 3 {
+		t.Fatalf("deny overrode matching allow: %+v", r)
+	}
+	r = run(t, cluster(t, deny, narrow), GetNetworkPolicies, Input{Labels: appLabels})
+	wantSignals(t, r, SignalEgressRestricted, SignalIngressDenyAll)
+	if slices.Contains(r.Signals, SignalEgressDenyAll) {
+		t.Fatal("narrow allow became deny-all")
+	}
+	r = run(t, cluster(t, deny), GetNetworkPolicies, Input{Labels: appLabels})
+	wantSignals(t, r, SignalEgressDenyAll, SignalIngressDenyAll)
+}

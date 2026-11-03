@@ -17,7 +17,7 @@ var expected = map[string]struct {
 	severity domain.Severity
 }{
 	"healthy":                   {"no kubernetes-level fault", domain.SeverityLow},
-	"crash_loop_backoff":        {"startup failure", domain.SeverityCritical},
+	"crash_loop_backoff":        {"crashloopbackoff", domain.SeverityCritical},
 	"image_pull_error":          {"image", domain.SeverityHigh},
 	"oom_killed":                {"oomkilled", domain.SeverityHigh},
 	"readiness_probe_failure":   {"readiness", domain.SeverityHigh},
@@ -25,7 +25,7 @@ var expected = map[string]struct {
 	"missing_configmap":         {"configmap", domain.SeverityHigh},
 	"service_selector_mismatch": {"selector", domain.SeverityHigh},
 	"dns_failure":               {"dns", domain.SeverityHigh},
-	"resource_pressure":         {"insufficient cluster resources", domain.SeverityHigh},
+	"resource_pressure":         {"cannot be scheduled", domain.SeverityHigh},
 	"network_policy_block":      {"networkpolicy", domain.SeverityHigh},
 }
 

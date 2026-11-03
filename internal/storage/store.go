@@ -135,10 +135,14 @@ func insertReport(ctx context.Context, tx pgx.Tx, inv domain.Investigation, r *d
 	if err != nil {
 		return err
 	}
+	var confidence any = r.Analysis.Confidence
+	if r.Analysis.SchemaVersion == 2 {
+		confidence = nil
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO reports (id, investigation_id, summary, root_cause, confidence, severity, analysis, provider, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		r.ID, inv.ID, r.Analysis.Summary, r.Analysis.RootCause, r.Analysis.Confidence, r.Analysis.Severity,
+		r.ID, inv.ID, r.Analysis.Summary, r.Analysis.RootCause, confidence, r.Analysis.Severity,
 		analysis, r.Provider, r.CreatedAt,
 	); err != nil {
 		return fmt.Errorf("insert report: %w", err)

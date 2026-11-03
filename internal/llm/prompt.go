@@ -17,25 +17,119 @@ var systemPrompt string
 var analysisSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
-  "required": ["summary", "root_cause", "confidence", "severity", "affected_resources", "evidence", "possible_causes", "recommended_actions", "safe_commands"],
+  "required": [
+    "summary",
+    "root_cause",
+    "severity",
+    "affected_resources",
+    "evidence",
+    "possible_causes",
+    "recommended_actions",
+    "safe_commands",
+    "schema_version",
+    "verdict",
+    "support",
+    "missing_data",
+    "limitations"
+  ],
   "properties": {
-    "summary": {"type": "string"},
-    "root_cause": {"type": "string"},
-    "confidence": {"type": "number"},
-    "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
-    "affected_resources": {"type": "array", "items": {"type": "string"}},
+    "summary": {
+      "type": "string"
+    },
+    "root_cause": {
+      "type": "string"
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "affected_resources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "evidence": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["source", "description"],
-        "properties": {"source": {"type": "string"}, "description": {"type": "string"}}
+        "required": [
+          "source",
+          "description",
+          "evidence_id"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "evidence_id": {
+            "type": "string"
+          }
+        }
       }
     },
-    "possible_causes": {"type": "array", "items": {"type": "string"}},
-    "recommended_actions": {"type": "array", "items": {"type": "string"}},
-    "safe_commands": {"type": "array", "items": {"type": "string"}}
+    "possible_causes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "safe_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "enum": [
+        2
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "observed_fault",
+        "suspected_fault",
+        "no_fault_observed",
+        "inconclusive"
+      ]
+    },
+    "support": {
+      "type": "string",
+      "enum": [
+        "strong",
+        "limited",
+        "insufficient"
+      ]
+    },
+    "missing_data": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
   }
 }`)
 
@@ -51,6 +145,7 @@ type promptFailure struct {
 }
 
 type promptEvidence struct {
+	ID      string          `json:"id"`
 	Source  string          `json:"source"`
 	Subject string          `json:"subject"`
 	Health  domain.Health   `json:"health"`
@@ -60,15 +155,19 @@ type promptEvidence struct {
 }
 
 // userPrompt renders the incident and evidence as JSON. Only fields useful
-// for analysis are included; database IDs and timestamps are omitted.
+// for analysis are included; evidence IDs permit exact citations; incident IDs and timestamps are omitted.
 func userPrompt(in AnalysisInput) (string, error) {
 	in.Incident = in.Incident.Redacted()
 	msg := struct {
 		Incident          promptIncident   `json:"incident"`
 		Evidence          []promptEvidence `json:"evidence"`
 		FailedDiagnostics []promptFailure  `json:"failed_diagnostics,omitempty"`
+		Limitations       []string         `json:"limitations"`
 	}{
 		Incident: promptIncident{Title: in.Incident.Title, Description: in.Incident.Description, Target: in.Incident.Target},
+	}
+	for _, limit := range in.Limitations {
+		msg.Limitations = append(msg.Limitations, redact.Text(limit))
 	}
 	for _, e := range in.Evidence {
 		data, err := redact.JSON(e.Data)
@@ -76,7 +175,7 @@ func userPrompt(in AnalysisInput) (string, error) {
 			return "", err
 		}
 		msg.Evidence = append(msg.Evidence, promptEvidence{
-			Source: e.Source, Subject: redact.Text(e.Subject), Health: e.Health, Summary: redact.Text(e.Summary), Signals: e.Signals, Data: data,
+			ID: e.ID, Source: e.Source, Subject: redact.Text(e.Subject), Health: e.Health, Summary: redact.Text(e.Summary), Signals: e.Signals, Data: data,
 		})
 	}
 	for _, te := range in.Failed {

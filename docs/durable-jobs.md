@@ -132,10 +132,12 @@ concurrency limit and cannot participate in lease ownership. This applies to
 Compose and Kubernetes; the supplied Deployment alone does not drain old requests.
 
 To downgrade, stop accepting submissions, let the queue drain, then stop every
-worker. `api migrate down` rejects queued/running jobs and rolls back the whole
-migration transaction. With only terminal jobs, it removes job metadata and
-idempotency keys while keeping investigations, evidence and reports. Then start
-the older binary. Restoring a database backup has its usual data-loss implications.
+worker. Follow the [report v2 rollback constraints](analysis-contract.md#upgrade-and-rollback)
+first. `api migrate down` reverts one migration at a time. Reverting the durable-job
+migration rejects queued/running jobs and rolls back the whole transaction. With
+only terminal jobs, that migration removes job metadata and idempotency keys while
+keeping investigations, evidence and reports. Restoring a database backup has its
+usual data-loss implications.
 
 Operator deletion skips active jobs and removes old terminal jobs with their
 incident; see [data deletion](data-deletion.md).

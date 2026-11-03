@@ -14,8 +14,8 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 )
 
-const validJSON = `{"summary":"s","root_cause":"r","confidence":0.7,"severity":"high",
-"affected_resources":["deployment/payment-service"],"evidence":[{"source":"get_pods","description":"d"}],
+const validJSON = `{"summary":"s","root_cause":"r","schema_version":2,"verdict":"observed_fault","support":"strong","missing_data":[],"limitations":[],"severity":"high",
+"affected_resources":["deployment/payment-service"],"evidence":[{"evidence_id":"ee376713-5c52-48d9-9ded-95113daaab0c","source":"get_pods","description":"d"}],
 "possible_causes":["c"],"recommended_actions":["a"],"safe_commands":["kubectl get pods -n payments"]}`
 
 func TestDecodeAnalysis(t *testing.T) {
@@ -31,6 +31,9 @@ func TestDecodeAnalysis(t *testing.T) {
 		{"trailing object", validJSON + `{"x":1}`, true},
 		{"prose", "The root cause is DNS.", true},
 		{"empty", "", true},
+		{"legacy result", `{"confidence":0.7,"summary":"legacy"}`, true},
+		{"v2 confidence even zero", strings.Replace(validJSON, `"schema_version":2`, `"schema_version":2,"confidence":0`, 1), true},
+		{"case variant confidence", strings.Replace(validJSON, `"schema_version":2`, `"schema_version":2,"Confidence":0`, 1), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -41,7 +44,7 @@ func TestDecodeAnalysis(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || a.RootCause != "r" || a.Confidence != 0.7 {
+			if err != nil || a.RootCause != "r" || a.SchemaVersion != 2 || a.Support != "strong" {
 				t.Fatalf("a=%+v err=%v", a, err)
 			}
 		})
@@ -52,7 +55,7 @@ func sampleInput() AnalysisInput {
 	return AnalysisInput{
 		Incident: domain.Incident{ID: "secret-db-id", Title: "payment-service restarting", Description: "Pods are repeatedly restarting",
 			Target: domain.Target{Cluster: "local", Namespace: "payments", ResourceType: domain.ResourceDeployment, ResourceName: "payment-service"}},
-		Evidence: []domain.Evidence{{ID: "ev-id", Source: "get_pods", Subject: "deployment/payment-service", Health: domain.Down,
+		Evidence: []domain.Evidence{{ID: "ee376713-5c52-48d9-9ded-95113daaab0c", Source: "get_pods", Subject: "deployment/payment-service", Health: domain.Down,
 			Summary: "0/2 pods ready", Signals: []string{"OOMKilled"}, Data: json.RawMessage(`{"total":2}`)}},
 	}
 }
@@ -63,13 +66,13 @@ func TestUserPromptContainsEvidenceOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"payment-service restarting", `"namespace":"payments"`, `"resource_type":"deployment"`,
-		`"signals":["OOMKilled"]`, `"total":2`, `"health":"down"`, `"subject":"deployment/payment-service"`} {
+		`"signals":["OOMKilled"]`, `"id":"ee376713-5c52-48d9-9ded-95113daaab0c"`, `"total":2`, `"health":"down"`, `"subject":"deployment/payment-service"`} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt missing %q:\n%s", want, p)
 		}
 	}
-	if strings.Contains(p, "secret-db-id") || strings.Contains(p, "ev-id") {
-		t.Error("prompt leaks internal IDs")
+	if strings.Contains(p, "secret-db-id") {
+		t.Error("prompt leaks incident ID")
 	}
 }
 
@@ -181,7 +184,7 @@ func healthy(e domain.Evidence) domain.Evidence {
 }
 
 func ev(source, subject string, signals ...string) domain.Evidence {
-	return domain.Evidence{Source: source, Subject: subject, Health: domain.Degraded, Summary: source + " summary",
+	return domain.Evidence{ID: domain.NewID(), Source: source, Subject: subject, Health: domain.Degraded, Summary: source + " summary",
 		Signals: signals, Data: json.RawMessage("{}")}
 }
 
@@ -201,13 +204,13 @@ func TestRulesProvider(t *testing.T) {
 		{"dns beats readiness", []domain.Evidence{ev("get_events", "events/x", "ReadinessProbeFailed"), ev("get_pod_logs", "pod/payment-service-a", "DNSResolutionError")},
 			"DNS", domain.SeverityHigh, "pod/payment-service-a"},
 		{"timeout alone is not a policy block", []domain.Evidence{ev("get_pod_logs", "pod/p", "ConnectionTimeout"), ev("get_events", "events/x", "ReadinessProbeFailed")},
-			"Readiness", domain.SeverityHigh, ""},
+			"readiness", domain.SeverityHigh, ""},
 		{"policy block", []domain.Evidence{ev("get_pod_logs", "pod/p", "ConnectionTimeout"), ev("get_network_policies", "networkpolicies/payments", "EgressRestricted")},
 			"NetworkPolicy", domain.SeverityHigh, ""},
 		{"liveness beats exit error", []domain.Evidence{ev("get_pods", "pods/x", "ContainerExitError", "FrequentRestarts", "LivenessProbeFailed")}, "Liveness", domain.SeverityHigh, ""},
 		{"crash loop", []domain.Evidence{ev("get_pods", "pods/x", "CrashLoopBackOff"), ev("get_pod_logs", "pod/p", "ConfigurationError")}, "CrashLoopBackOff", domain.SeverityCritical, ""},
 		{"selector mismatch", []domain.Evidence{ev("get_service", "service/payment-service", "SelectorMismatch", "NoReadyEndpoints")}, "selector", domain.SeverityHigh, "service/payment-service"},
-		{"scheduling", []domain.Evidence{ev("get_pods", "pods/x", "Unschedulable")}, "Insufficient cluster resources", domain.SeverityHigh, ""},
+		{"scheduling", []domain.Evidence{ev("get_pods", "pods/x", "Unschedulable")}, "cannot be scheduled", domain.SeverityHigh, ""},
 		{"healthy", []domain.Evidence{healthy(ev("get_pods", "pods/x")), healthy(ev("get_events", "events/x"))}, "No Kubernetes-level fault", domain.SeverityLow, ""},
 		{"degraded without pattern", []domain.Evidence{healthy(ev("get_pods", "pods/x")), ev("get_events", "events/x")}, "Inconclusive", domain.SeverityMedium, ""},
 	}
@@ -224,11 +227,11 @@ func TestRulesProvider(t *testing.T) {
 			if tt.affected != "" && !slices.Contains(a.AffectedResources, tt.affected) {
 				t.Fatalf("affected %v missing %s", a.AffectedResources, tt.affected)
 			}
-			var sources []string
-			for _, e := range tt.evidence {
-				sources = append(sources, e.Source)
+
+			if tt.name == "policy block" && (a.Verdict != "suspected_fault" || a.Support != "limited" || strings.Contains(a.RootCause, "blocks")) {
+				t.Fatalf("unproven network cause: %+v", a)
 			}
-			if err := a.Validate(sources); err != nil {
+			if err := a.Validate(tt.evidence, nil); err != nil {
 				t.Fatalf("rules output fails validation: %v", err)
 			}
 		})
@@ -268,7 +271,7 @@ func TestRuleCommandsAreSafe(t *testing.T) {
 				t.Errorf("rule %d command %q: %v", i, c, err)
 			}
 		}
-		if f.rootCause == "" || len(f.actions) == 0 || f.confidence <= 0 || f.confidence > 1 {
+		if f.rootCause == "" || len(f.actions) == 0 || f.verdict == "" || f.support == "" {
 			t.Errorf("rule %d incomplete: %+v", i, f)
 		}
 	}

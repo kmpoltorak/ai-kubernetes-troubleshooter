@@ -354,8 +354,12 @@ func TestJobRejectsMismatchedResultAndUnstartedAnalysis(t *testing.T) {
 }
 
 func TestJobMigrationPreservesLegacyAndRejectsActiveDowngrade(t *testing.T) {
-	s := testStore(t)
+	s := isolatedStore(t)
 	ctx := context.Background()
+	// Roll back both report v2 and durable jobs to exercise the original schema.
+	if err := s.MigrateDown(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.MigrateDown(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -374,6 +378,9 @@ func TestJobMigrationPreservesLegacyAndRejectsActiveDowngrade(t *testing.T) {
 	}
 	if _, err := s.ClaimJob(ctx, 1, 100, time.Second); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("legacy adopted: %v", err)
+	}
+	if err := s.MigrateDown(ctx); err != nil {
+		t.Fatal(err)
 	}
 	j := queuedJob(t, s)
 	if err := s.MigrateDown(ctx); err == nil || !strings.Contains(err.Error(), "active jobs") {

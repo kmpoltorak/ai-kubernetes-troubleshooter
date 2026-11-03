@@ -394,15 +394,30 @@ func (e *Engine) analyze(ctx context.Context, log *slog.Logger, inc domain.Incid
 			failed = append(failed, te)
 		}
 	}
-	analysis, err := e.provider.Analyze(ctx, llm.AnalysisInput{Incident: inc, Evidence: rec.Evidence, Failed: failed})
+	limits := diagnostics.SamplingLimits()
+	limits = append(limits, fmt.Sprintf("Investigation plan: at most %d log pods, %d references per ConfigMap/Secret kind and %d event subjects; observations are not simultaneous.", maxLogPods, maxConfigRefs, maxEventSubject))
+	for _, ev := range rec.Evidence {
+		if ev.Source == diagnostics.GetNetworkPolicies {
+			limits = append(limits, "NetworkPolicies describe declarations for the supplied labels; CNI enforcement and the actual connection path are not observed.")
+		}
+		if ev.Source == diagnostics.GetPodLogs {
+			var logs diagnostics.LogsInfo
+			if err := json.Unmarshal(ev.Data, &logs); err != nil {
+				return fmt.Errorf("read log sampling metadata: %w", err)
+			}
+			if slices.ContainsFunc(logs.Streams, func(s diagnostics.LogStream) bool { return s.Truncated }) {
+				limits = append(limits, ev.ID+": retained log sample is truncated")
+			}
+		}
+	}
+	in := llm.AnalysisInput{Incident: inc, Evidence: rec.Evidence, Failed: failed, Limitations: limits}
+	analysis, err := e.provider.Analyze(ctx, in)
 	observability.LLMRequestDuration.WithLabelValues(provider).Observe(time.Since(start).Seconds())
+	analysis.MissingData = withRequiredContext(analysis.MissingData, in.MissingData())
+	analysis.Limitations = withRequiredContext(analysis.Limitations, limits)
 	analysis = analysis.Redacted()
 	if err == nil {
-		sources := make([]string, len(rec.Evidence))
-		for i, ev := range rec.Evidence {
-			sources[i] = ev.Source
-		}
-		if verr := analysis.Validate(sources); verr != nil {
+		if verr := analysis.Validate(rec.Evidence, failed); verr != nil {
 			err = fmt.Errorf("%w: %w", llm.ErrInvalidOutput, verr)
 		}
 	}
@@ -423,8 +438,17 @@ func (e *Engine) analyze(ctx context.Context, log *slog.Logger, inc domain.Incid
 	observability.LLMRequestsTotal.WithLabelValues(provider, "ok").Inc()
 	rec.Report = &domain.Report{ID: domain.NewID(), Provider: provider, Analysis: analysis,
 		RemediationActions: domain.RemediationActions(analysis), CreatedAt: time.Now().UTC()}
-	log.InfoContext(ctx, "analysis completed", "provider", provider, "root_cause", analysis.RootCause, "confidence", analysis.Confidence)
+	log.InfoContext(ctx, "analysis completed", "provider", provider, "root_cause", analysis.RootCause, "verdict", analysis.Verdict, "support", analysis.Support)
 	return nil
+}
+
+func withRequiredContext(values, required []string) []string {
+	for _, value := range required {
+		if !slices.Contains(values, value) {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 // initMetrics creates every known label combination at zero. Labeled

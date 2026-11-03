@@ -28,7 +28,16 @@ type AnalysisInput struct {
 	Evidence []domain.Evidence
 	// Failed lists diagnostics that observed nothing; their absence from
 	// Evidence is not a sign of health.
-	Failed []domain.ToolExecution
+	Failed      []domain.ToolExecution
+	Limitations []string
+}
+
+func (in AnalysisInput) MissingData() []string {
+	out := []string{}
+	for _, te := range in.Failed {
+		out = append(out, te.ToolName+": "+redact.Text(te.Error))
+	}
+	return out
 }
 
 // FromConfig builds the provider selected by LLM_PROVIDER. Config
@@ -75,6 +84,18 @@ func decodeAnalysis(content string) (domain.Analysis, error) {
 	}
 	if dec.More() {
 		return domain.Analysis{}, fmt.Errorf("%w: trailing data after JSON object", ErrInvalidOutput)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &fields); err != nil {
+		return domain.Analysis{}, fmt.Errorf("%w: %w", ErrInvalidOutput, err)
+	}
+	for field := range fields {
+		if strings.EqualFold(field, "confidence") {
+			return domain.Analysis{}, fmt.Errorf("%w: confidence is not supported in v2", ErrInvalidOutput)
+		}
+	}
+	if a.SchemaVersion != 2 {
+		return domain.Analysis{}, fmt.Errorf("%w: expected v2 without confidence", ErrInvalidOutput)
 	}
 	return a.Redacted(), nil
 }

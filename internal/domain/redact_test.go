@@ -13,7 +13,7 @@ func TestRecordRedactionDoesNotRewriteSource(t *testing.T) {
 		Investigation:  Investigation{Error: text},
 		ToolExecutions: []ToolExecution{{ToolName: "get_pods", Error: text, Input: raw, Output: raw}},
 		Evidence:       []Evidence{{Source: "get_pods", Subject: "pod/api", Summary: text, Data: raw}},
-		Report:         &Report{Analysis: Analysis{Summary: text, RootCause: text, Evidence: []EvidenceReference{{Source: "get_pods", Description: text}}, PossibleCauses: []string{text}, RecommendedActions: []string{text}, SafeCommands: []string{text}}, RemediationActions: []RemediationAction{{Description: text, Command: text}}},
+		Report:         &Report{Analysis: Analysis{Summary: text, RootCause: text, Evidence: []EvidenceReference{{Source: "get_pods", Description: text}}, MissingData: []string{text}, Limitations: []string{text}, PossibleCauses: []string{text}, RecommendedActions: []string{text}, SafeCommands: []string{text}}, RemediationActions: []RemediationAction{{Description: text, Command: text}}},
 	}
 	before, _ := json.Marshal(original)
 	got, err := original.Redacted()

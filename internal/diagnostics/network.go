@@ -40,6 +40,7 @@ func getNetworkPolicies(ctx context.Context, c kube.Cluster, in Input) (Result, 
 	subject := "networkpolicies/" + in.Namespace
 	var info NetworkPoliciesInfo
 	var signals signalSet
+	var ingressIsolated, ingressRules, egressIsolated, egressRules, egressAll bool
 	for _, np := range list.Items {
 		sel, err := metav1.LabelSelectorAsSelector(&np.Spec.PodSelector)
 		if err != nil || !sel.Matches(labels.Set(in.Labels)) {
@@ -58,19 +59,27 @@ func getNetworkPolicies(ctx context.Context, c kube.Cluster, in Input) (Result, 
 		}
 		if ingress {
 			pi.PolicyTypes = append(pi.PolicyTypes, "Ingress")
-			if len(np.Spec.Ingress) == 0 {
-				signals.add(SignalIngressDenyAll)
-			}
+			ingressIsolated = true
+			ingressRules = ingressRules || len(np.Spec.Ingress) > 0
 		}
 		if egress {
 			pi.PolicyTypes = append(pi.PolicyTypes, "Egress")
-			if len(np.Spec.Egress) == 0 {
-				signals.add(SignalEgressDenyAll)
-			} else if !allowsAllEgress(np.Spec.Egress) {
-				signals.add(SignalEgressRestricted)
-			}
+			egressIsolated = true
+			egressRules = egressRules || len(np.Spec.Egress) > 0
+			egressAll = egressAll || allowsAllEgress(np.Spec.Egress)
 		}
 		info.Policies = append(info.Policies, pi)
+	}
+	// Selecting policies add allows; an empty policy cannot override another allow.
+	if ingressIsolated && !ingressRules {
+		signals.add(SignalIngressDenyAll)
+	}
+	if egressIsolated && !egressAll {
+		if !egressRules {
+			signals.add(SignalEgressDenyAll)
+		} else {
+			signals.add(SignalEgressRestricted)
+		}
 	}
 	health := domain.Healthy
 	if len(signals) > 0 {

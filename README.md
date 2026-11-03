@@ -6,17 +6,19 @@ A Go service that investigates broken Kubernetes workloads (Deployment, Service
 or Pod). It runs a fixed, read-only diagnostic plan against the cluster, turns
 the results into structured evidence with signals such as `OOMKilled` or
 `SelectorMismatch`, and has an LLM or a built-in rules engine write a
-root-cause report, which is validated before it is stored. It runs offline
+assessment of observed faults, hypotheses and missing data, validated before storage. It runs offline
 against simulated clusters, or live with a read-only ServiceAccount.
 
 ```text
 $ ID=$(curl -s -X POST localhost:8080/api/v1/incidents -d @docs/examples/oom_killed.json | jq -r .id)
 $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario":"oom_killed"}' \
-    | jq '.report.analysis | {root_cause, severity, confidence, safe_commands}'
+    | jq '.report.analysis | {schema_version, root_cause, verdict, support, severity, safe_commands}'
 {
+  "schema_version": 2,
   "root_cause": "Container OOMKilled: memory exhaustion",
+  "verdict": "observed_fault",
+  "support": "strong",
   "severity": "high",
-  "confidence": 0.94,
   "safe_commands": [
     "kubectl top pod -n payments",
     "kubectl describe pod <pod> -n payments"
@@ -27,8 +29,8 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
 - The LLM gets data only: no tools, shell or Kubernetes client. The 10 diagnostics are a fixed allowlist calling only `Get`, `List` and `GetLogs`, and every tool input comes from earlier results, never from model output.
 - Secret values are never read: Secrets are fetched as metadata only, env vars are reported as names and source kinds, ConfigMaps as key names and sizes.
 - Passwords, tokens, JWTs, API keys, URL credentials and private keys are masked in incident text, diagnostic data, reports and errors before storage, API responses and LLM requests, including multi-line PEM blocks.
-- A report may cite only evidence that was collected and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation and keeps the evidence (`502` on the waiting endpoint).
-- A diagnostic that fails is passed to the analyzer as failed; the rules engine never calls a workload healthy when pods, events or logs could not be read.
+- New reports cite exact evidence IDs from their attempt and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation and keeps the evidence (`502` on the waiting endpoint).
+- Failed diagnostics and sampling limits remain in the report. New reports cannot claim `no_fault_observed` when core diagnostics failed or collected observations are unhealthy; support is qualitative, never a probability.
 
 ## Install
 
@@ -91,7 +93,7 @@ incident's namespace and name, and the real tools run against it.
 | Scenario | The cluster shows | Rules verdict |
 |---|---|---|
 | `healthy` | 2/2 ready, no warnings | no Kubernetes-level fault |
-| `crash_loop_backoff` | exit 1, config error in previous logs | application startup failure |
+| `crash_loop_backoff` | exit 1, config error in previous logs | container restarts with errors |
 | `image_pull_error` | ImagePullBackOff, `manifest unknown` | image cannot be pulled |
 | `oom_killed` | OOMKilled (137), memory at 98% of limit | OOMKilled: memory exhaustion |
 | `readiness_probe_failure` | running, not ready, probe 503 | readiness probe failure |
@@ -99,8 +101,8 @@ incident's namespace and name, and the real tools run against it.
 | `missing_configmap` | CreateContainerConfigError | referenced ConfigMap is missing |
 | `service_selector_mismatch` | healthy pods, Service has no endpoints | Service selector mismatch |
 | `dns_failure` | `no such host` in logs | DNS resolution failure |
-| `resource_pressure` | Pending, `Insufficient memory` | insufficient cluster resources |
-| `network_policy_block` | egress only to DNS, `i/o timeout` to the DB | NetworkPolicy blocks egress |
+| `resource_pressure` | Pending, `Insufficient memory` | pods cannot be scheduled |
+| `network_policy_block` | egress only to DNS, `i/o timeout` to the DB | possible NetworkPolicy restriction; enforcement unconfirmed |
 
 Live mode rejects a `scenario` in the request.
 
@@ -141,6 +143,7 @@ Jobs survive client disconnects. See [queue, retries and upgrade instructions](d
 Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
 The UI submits durable jobs, checks status every 2 seconds and resumes the saved job after a tab reload. It keeps older attempts separate from the latest successful report; see the [history contract](docs/investigation-history.md).
+New analyses use [report schema v2](docs/analysis-contract.md): `verdict`, evidence `support`, exact citations, missing data and scope limits. New API clients must handle v2 instead of `confidence`; stored legacy reports remain readable.
 
 ## Data deletion
 
@@ -183,6 +186,7 @@ investigation fails rather than diagnose something it never saw.
 - Live mode was checked by hand on minikube only; CI uses no real cluster. The OpenAI and Ollama clients are tested against fake servers.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
+- Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).
 
 ## Development
 
