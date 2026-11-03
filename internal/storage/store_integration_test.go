@@ -53,6 +53,32 @@ func TestMigrateDownAndUp(t *testing.T) {
 	}
 }
 
+func TestMigrationsRefuseNewerSchema(t *testing.T) {
+	s := isolatedStore(t)
+	ctx := context.Background()
+	all, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := all[len(all)-1].version + 1
+	if _, err := s.pool.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, future); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MigrateUp(ctx); err == nil || !strings.Contains(err.Error(), "newer than this binary") {
+		t.Fatalf("up on a newer schema: %v", err)
+	}
+	if err := s.MigrateDown(ctx); err == nil || !strings.Contains(err.Error(), "newer than this binary") {
+		t.Fatalf("down on a newer schema: %v", err)
+	}
+	var rows, latest int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), max(version) FROM schema_migrations`).Scan(&rows, &latest); err != nil {
+		t.Fatal(err)
+	}
+	if rows != len(all)+1 || latest != future {
+		t.Fatalf("schema_migrations changed: rows=%d latest=%d", rows, latest)
+	}
+}
+
 func TestIncidentRoundTrip(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()

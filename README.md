@@ -193,7 +193,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 - Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0, Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
-- Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application does not refuse a newer database schema; roll back by restoring the pre-upgrade backup.
+- Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
 - Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).
 
 ## Development

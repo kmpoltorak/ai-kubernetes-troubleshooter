@@ -24,12 +24,8 @@ type migration struct {
 // MigrateUp applies all pending migrations in a single transaction.
 // It returns the number of migrations applied.
 func (s *Store) MigrateUp(ctx context.Context) (int, error) {
-	all, err := loadMigrations()
-	if err != nil {
-		return 0, err
-	}
 	applied := 0
-	err = s.withMigrationLock(ctx, func(tx pgx.Tx, current int) error {
+	err := s.withMigrationLock(ctx, func(tx pgx.Tx, all []migration, current int) error {
 		for _, m := range all {
 			if m.version <= current {
 				continue
@@ -49,11 +45,7 @@ func (s *Store) MigrateUp(ctx context.Context) (int, error) {
 
 // MigrateDown rolls back the most recently applied migration, if any.
 func (s *Store) MigrateDown(ctx context.Context) error {
-	all, err := loadMigrations()
-	if err != nil {
-		return err
-	}
-	return s.withMigrationLock(ctx, func(tx pgx.Tx, current int) error {
+	return s.withMigrationLock(ctx, func(tx pgx.Tx, all []migration, current int) error {
 		for _, m := range all {
 			if m.version != current {
 				continue
@@ -68,7 +60,13 @@ func (s *Store) MigrateDown(ctx context.Context) error {
 	})
 }
 
-func (s *Store) withMigrationLock(ctx context.Context, fn func(tx pgx.Tx, current int) error) error {
+// withMigrationLock refuses a schema newer than the embedded migrations, so an
+// older binary neither runs on it nor reports a rollback it cannot perform.
+func (s *Store) withMigrationLock(ctx context.Context, fn func(tx pgx.Tx, all []migration, current int) error) error {
+	all, err := loadMigrations()
+	if err != nil {
+		return err
+	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockID); err != nil {
 			return fmt.Errorf("acquire migration lock: %w", err)
@@ -81,7 +79,10 @@ func (s *Store) withMigrationLock(ctx context.Context, fn func(tx pgx.Tx, curren
 		if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
 			return err
 		}
-		return fn(tx, current)
+		if latest := all[len(all)-1].version; current > latest {
+			return fmt.Errorf("database schema version %d is newer than this binary supports (%d): run the newer version, or restore a backup taken for this version", current, latest)
+		}
+		return fn(tx, all, current)
 	})
 }
 
