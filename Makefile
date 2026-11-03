@@ -1,6 +1,9 @@
 BINARY  := bin/api
 TEST_DB := akt-test-pg
 TEST_DATABASE_URL ?= postgres://troubleshooter:troubleshooter@localhost:55433/troubleshooter_test?sslmode=disable
+BUILD_VERSION ?= dev
+BUILD_REVISION ?= unknown
+BUILD_TIME ?=
 
 # Load .env for run/migrate targets when present.
 ifeq (,$(filter test-e2e,$(MAKECMDGOALS)))
@@ -17,7 +20,7 @@ web:
 	cd web && npm ci && npm run build
 
 build:
-	CGO_ENABLED=0 go build -trimpath -o $(BINARY) ./cmd/api
+	CGO_ENABLED=0 go build -trimpath -ldflags="-X 'github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/buildinfo.Version=$(BUILD_VERSION)' -X 'github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/buildinfo.Revision=$(BUILD_REVISION)' -X 'github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/buildinfo.BuiltAt=$(BUILD_TIME)'" -o $(BINARY) ./cmd/api
 
 test:
 	go test -race ./...

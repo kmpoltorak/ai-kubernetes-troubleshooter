@@ -15,10 +15,19 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
 COPY --from=web /src/internal/api/ui/dist ./internal/api/ui/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+ARG BUILD_VERSION=dev
+ARG BUILD_REVISION=unknown
+ARG BUILD_TIME=
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X 'github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/buildinfo.Version=${BUILD_VERSION}' -X 'github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/buildinfo.Revision=${BUILD_REVISION}' -X 'github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/buildinfo.BuiltAt=${BUILD_TIME}'" -o /out/api ./cmd/api
 
 # Static binary on distroless: no shell, no package manager, non-root user.
 FROM gcr.io/distroless/static-debian12:nonroot
+ARG BUILD_VERSION=dev
+ARG BUILD_REVISION=unknown
+ARG BUILD_TIME=
+LABEL org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${BUILD_REVISION}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
 COPY --from=build /out/api /api
 USER 65532:65532
 EXPOSE 8080

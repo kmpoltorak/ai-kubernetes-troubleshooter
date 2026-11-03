@@ -4,6 +4,34 @@ export type Health = "healthy" | "degraded" | "down";
 export type Severity = "low" | "medium" | "high" | "critical";
 export type ResourceType = "deployment" | "service" | "pod";
 
+export interface BuildInfo {
+  version: string;
+  revision: string;
+  built_at: string | null;
+}
+
+export interface Readiness {
+  checks: Record<string, string>;
+  build?: BuildInfo;
+}
+
+async function readiness(signal: AbortSignal): Promise<Readiness> {
+  const res = await fetch("/ready", { signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]) });
+  if (res.status !== 200 && res.status !== 503) throw new ApiError(`HTTP ${res.status}`, res.status);
+  const body = await res.json();
+  const checks = body?.checks;
+  if (!checks || typeof checks !== "object" || Array.isArray(checks) ||
+    !Object.values(checks).every((v) => typeof v === "string") ||
+    (res.status === 503 && Object.values(checks).every((v) => v === "ok"))) {
+    throw new Error("Invalid readiness response");
+  }
+  const b = body.build;
+  const build = b && typeof b.version === "string" && typeof b.revision === "string" &&
+    (b.built_at === null || (typeof b.built_at === "string" && Number.isFinite(Date.parse(b.built_at))))
+    ? { version: b.version, revision: b.revision, built_at: b.built_at } : undefined;
+  return { checks, build };
+}
+
 export interface Incident {
   id: string;
   title: string;
@@ -139,6 +167,7 @@ async function request<T>(method: string, path: string, body?: unknown, options:
 }
 
 export const api = {
+  readiness,
   listIncidents: () => request<{ incidents: Incident[] }>("GET", "/api/v1/incidents?limit=100").then((r) => r.incidents),
   getIncident: (id: string) => request<Incident>("GET", `/api/v1/incidents/${id}`),
   createIncident: (body: CreateIncident) => request<Incident>("POST", "/api/v1/incidents", body),

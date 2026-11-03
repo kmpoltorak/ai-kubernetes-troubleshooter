@@ -314,6 +314,32 @@ func TestHealthReadyMetrics(t *testing.T) {
 	}
 }
 
+func TestProbeBuildMetadataIsPublicAndAdditive(t *testing.T) {
+	for _, dependencyError := range []error{nil, errors.New("database down")} {
+		srv := newServer(t, llm.RulesProvider{}, dependencyError)
+		for _, path := range []string{"/health", "/ready"} {
+			resp, out := do(t, "GET", srv.URL+path, "")
+			wantCode, wantStatus := 200, "ok"
+			if path == "/ready" {
+				wantStatus = "ready"
+				if dependencyError != nil {
+					wantCode, wantStatus = 503, "unavailable"
+				}
+			}
+			if resp.StatusCode != wantCode || out["status"] != wantStatus {
+				t.Fatalf("probe contract changed: %s HTTP %d", path, resp.StatusCode)
+			}
+			build, ok := out["build"].(map[string]any)
+			if !ok || len(build) != 3 || build["version"] != "dev" || build["revision"] != "unknown" || build["built_at"] != nil {
+				t.Fatalf("unexpected default build: %v", build)
+			}
+			if path == "/ready" && out["checks"] == nil {
+				t.Fatal("readiness checks lost")
+			}
+		}
+	}
+}
+
 func TestRequestIDs(t *testing.T) {
 	srv := newServer(t, llm.RulesProvider{}, nil)
 	resp, out := do(t, "GET", srv.URL+"/api/v1/incidents/bad", "", "X-Request-ID", "client-abc-123")

@@ -144,6 +144,9 @@ Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
 The UI submits durable jobs, checks status every 2 seconds and resumes the saved job after a tab reload. It keeps older attempts separate from the latest successful report; see the [history contract](docs/investigation-history.md).
 New analyses use [report schema v2](docs/analysis-contract.md): `verdict`, evidence `support`, exact citations, missing data and scope limits. New API clients must handle v2 instead of `confidence`; stored legacy reports remain readable.
+`/health` and `/ready` also expose `build: {version, revision, built_at}` publicly,
+including a failing readiness response. The UI shows the responding replica's
+version and short revision. See [build metadata](docs/build-metadata.md) for defaults and build arguments.
 
 ## Data deletion
 

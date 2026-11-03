@@ -65,6 +65,23 @@ func TestLiveCluster(t *testing.T) {
 		t.Fatal("could not create RBAC probe client")
 	}
 	s := &suite{ctx: ctx, admin: client, sa: sa, apiURL: apiURL.String(), http: &http.Client{Timeout: 15 * time.Second}, image: image}
+	t.Run("build_metadata", func(t *testing.T) {
+		for _, path := range []string{"/health", "/ready"} {
+			var response struct {
+				Build struct {
+					Version  string  `json:"version"`
+					Revision string  `json:"revision"`
+					BuiltAt  *string `json:"built_at"`
+				} `json:"build"`
+			}
+			if s.call(t, s.ctx, "GET", path, nil, &response) != 200 {
+				t.Fatal("probe unavailable")
+			}
+			if response.Build.Version != os.Getenv("E2E_BUILD_VERSION") || response.Build.Revision != os.Getenv("E2E_BUILD_REVISION") || response.Build.BuiltAt == nil || *response.Build.BuiltAt != os.Getenv("E2E_BUILD_TIME") {
+				t.Fatalf("linked binary metadata does not match image labels on %s", path)
+			}
+		}
+	})
 	s.deployment(t, "healthy", nil)
 	healthyPod := s.pod(t, "app=healthy", ready)
 	eventually(t, ctx, 3*time.Minute, "healthy deployment status", func(ctx context.Context) (bool, error) {
