@@ -50,12 +50,3 @@ version, revision and time values in these arguments: they are public.
 
 Metadata records what the builder supplied; it does not verify source identity
 or uncommitted changes. A version string does not itself publish an image.
-
-## Verification
-
-Go tests check the public response fields on healthy and unavailable probes.
-UI tests cover rendering, older backends, `503`, malformed responses, timeout
-and cancellation. The live Kubernetes tests stamp an image with a known revision
-and time, check its OCI labels and compare both probe responses from the running
-container with those values. Those checks exercise the linked binary rather than
-assuming a Docker argument reached it.

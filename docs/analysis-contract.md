@@ -1,4 +1,4 @@
-# Report contract
+# Report format
 
 New analyses have `report.analysis.schema_version: 2`. The job, history and latest
 report endpoints all return this shape. Missing `schema_version` identifies a
@@ -63,7 +63,7 @@ even if the analyzer omits them. It masks these fields before storage and API
 output. Prompts include the same coverage information within the existing whole
 request byte limit. Empty collections mean none reported, not complete coverage.
 
-Bounds describe the plan, not a claim that every bound was reached: up to 20 pod
+Sampling caps are maxima, not a claim that every cap was reached: up to 20 pod
 details, 50 related events, three pods' log reads, five references per ConfigMap
 or Secret kind and 21 event subjects. Log requests are capped at 200 tail lines
 and 32 KiB per stream; retention keeps 30 tail lines plus up to 20 error lines,
