@@ -1,15 +1,23 @@
 name: CI
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ci
+    outputs:
+      image_artifact:
+        value: ${{ jobs.build.outputs.image_artifact }}
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,6 +40,7 @@ jobs:
           args: --build-tags integration,authintegration,modeleval,e2e
 
   kubernetes:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -43,6 +52,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      - name: Install image transport
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.build.outputs.image_artifact }}
+          path: candidate
       - name: Install verified kind and kubectl
         shell: bash
         run: |
@@ -62,6 +77,7 @@ jobs:
         env:
           E2E_KUBERNETES_VERSION: ${{ matrix.kubernetes }}
           E2E_ARTIFACT_DIR: ${{ github.workspace }}/report-e2e-${{ matrix.kubernetes }}
+          E2E_IMAGE_ARTIFACT: ${{ github.workspace }}/candidate
         run: make test-e2e
       - name: Upload bounded test output
         if: always()
@@ -146,7 +162,10 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [lint, test, web]
+    outputs:
+      image_artifact: ${{ steps.artifact.outputs.name }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -155,11 +174,21 @@ jobs:
       - name: go build
         run: go build ./...
       - uses: docker/setup-buildx-action@v4
-      - name: Docker build
-        uses: docker/build-push-action@v7
+      - name: Install image transport
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Build one OCI candidate
+        env:
+          BUILD_VERSION: ${{ inputs.version || 'ci' }}
+        run: bash scripts/image-artifact.sh create candidate "$BUILD_VERSION" "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Check artifact transport and rejection paths
+        run: bash scripts/test-image-artifact.sh candidate
+      - name: Check versioned release manifests
+        run: go test -tags e2e -count=1 ./tests/release
+      - id: artifact
+        run: echo "name=tested-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7.0.2
         with:
-          context: .
-          push: false
-          tags: ai-kubernetes-troubleshooter:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: ${{ steps.artifact.outputs.name }}
+          path: candidate/
+          retention-days: 3
+          if-no-files-found: error

@@ -1,0 +1,92 @@
+name: Release candidate
+
+"on":
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Pre-1.0 version (0.x.y, without v)'
+        required: true
+        type: string
+      publish:
+        description: 'Publish tested image and create a GitHub prerelease'
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main and a pre-1.0 version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$VERSION" =~ ^0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+      - name: Require an unused release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$VERSION" \
+            --jq '.[].ref' > refs.txt
+          if grep -Fxq "refs/tags/v$VERSION" refs.txt; then echo 'release tag already exists' >&2; exit 1; fi
+
+  checks:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ inputs.version }}
+
+  publish:
+    if: ${{ inputs.publish }}
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.checks.outputs.image_artifact }}
+          path: candidate
+      - name: Install image transport
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Verify source metadata
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          bash scripts/image-artifact.sh verify candidate
+          test "$(jq -r .revision candidate/metadata.json)" = "$GITHUB_SHA"
+          test "$(jq -r .version candidate/metadata.json)" = "$VERSION"
+      - name: Promote without rebuilding and create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          export REGISTRY_AUTH_FILE="$RUNNER_TEMP/release-auth.json"
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"; rm -f "$REGISTRY_AUTH_FILE"' EXIT
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          bash scripts/release-manifests.sh candidate "$repository" release-assets
+          printf '%s' "$GH_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+          bash scripts/image-artifact.sh publish candidate "$repository"
+          digest=$(jq -r .manifest_digest candidate/metadata.json)
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/v$VERSION" -f "sha=$GITHUB_SHA"
+          printf 'Image: %s@%s\nSource: %s\nPlatform: Linux amd64\n\nBoth Kubernetes CI jobs tested this artifact. Configure database, namespace policy and authentication before installation.\n' \
+            "$repository" "$digest" "$GITHUB_SHA" > "$work/notes.md"
+          gh release create "v$VERSION" --verify-tag --prerelease \
+            --title "v$VERSION" --notes-file "$work/notes.md" \
+            candidate/metadata.json release-assets/kubernetes.yaml release-assets/kubernetes-authenticated.yaml

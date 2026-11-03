@@ -59,21 +59,39 @@ mkdir "$artifacts"
 existing_clusters=$(kind get clusters)
 if printf '%s\n' "$existing_clusters" | grep -Fxq "$cluster"; then echo 'cluster name already exists' >&2; exit 2; fi
 api_image="akt-e2e-api:${suffix}"
-E2E_BUILD_REVISION=$(git rev-parse HEAD)
-E2E_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-export E2E_BUILD_VERSION=e2e E2E_BUILD_REVISION E2E_BUILD_TIME
-echo "Building application and fixture for Kubernetes $version"
-docker build --build-arg "BUILD_VERSION=$E2E_BUILD_VERSION" --build-arg "BUILD_REVISION=$E2E_BUILD_REVISION" --build-arg "BUILD_TIME=$E2E_BUILD_TIME" --tag "$api_image" .
-for field in version revision created; do
-  case "$field" in version) expected=$E2E_BUILD_VERSION ;; revision) expected=$E2E_BUILD_REVISION ;; created) expected=$E2E_BUILD_TIME ;; esac
-  actual=$(docker image inspect --format "{{index .Config.Labels \"org.opencontainers.image.$field\"}}" "$api_image")
-  if [ "$actual" != "$expected" ]; then echo "image build label mismatch: $field" >&2; exit 1; fi
-done
+export E2E_BUILD_VERSION E2E_BUILD_REVISION E2E_BUILD_TIME
+if [ -n "${E2E_IMAGE_ARTIFACT:-}" ]; then
+  bash scripts/image-artifact.sh verify "$E2E_IMAGE_ARTIFACT"
+  api_image="ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter@$(jq -r .manifest_digest "$E2E_IMAGE_ARTIFACT/metadata.json")"
+  E2E_BUILD_VERSION=$(jq -r .version "$E2E_IMAGE_ARTIFACT/metadata.json")
+  E2E_BUILD_REVISION=$(jq -r .revision "$E2E_IMAGE_ARTIFACT/metadata.json")
+  E2E_BUILD_TIME=$(jq -r .built_at "$E2E_IMAGE_ARTIFACT/metadata.json")
+else
+  E2E_BUILD_REVISION=$(git rev-parse HEAD)
+  E2E_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  E2E_BUILD_VERSION=e2e
+  echo "Building application and fixture for Kubernetes $version"
+  docker build --build-arg "BUILD_VERSION=$E2E_BUILD_VERSION" --build-arg "BUILD_REVISION=$E2E_BUILD_REVISION" --build-arg "BUILD_TIME=$E2E_BUILD_TIME" --tag "$api_image" .
+  for field in version revision created; do
+    case "$field" in version) expected=$E2E_BUILD_VERSION ;; revision) expected=$E2E_BUILD_REVISION ;; created) expected=$E2E_BUILD_TIME ;; esac
+    actual=$(docker image inspect --format "{{index .Config.Labels \"org.opencontainers.image.$field\"}}" "$api_image")
+    if [ "$actual" != "$expected" ]; then echo "image build label mismatch: $field" >&2; exit 1; fi
+  done
+fi
 docker build --file tests/e2e/fixture/Dockerfile --tag "$E2E_FIXTURE_IMAGE" .
 go test -c -tags e2e -o "$work/e2e.test" ./tests/e2e
 owned=1
 kind create cluster --name "$cluster" --kubeconfig "$work/kubeconfig" --image "$node_image" --wait 5m
-kind load docker-image --name "$cluster" "$api_image" "$E2E_FIXTURE_IMAGE"
+if [ -n "${E2E_IMAGE_ARTIFACT:-}" ]; then
+  kind load image-archive --name "$cluster" "$E2E_IMAGE_ARTIFACT/image.oci.tar"
+  docker exec "$cluster-control-plane" ctr --namespace k8s.io images tag \
+    "$(jq -r .config_digest "$E2E_IMAGE_ARTIFACT/metadata.json")" "$api_image"
+  docker exec "$cluster-control-plane" crictl inspecti "$api_image" > "$work/imported-image.json"
+  test "$(jq -r .status.id "$work/imported-image.json")" = "$(jq -r .config_digest "$E2E_IMAGE_ARTIFACT/metadata.json")"
+  kind load docker-image --name "$cluster" "$E2E_FIXTURE_IMAGE"
+else
+  kind load docker-image --name "$cluster" "$api_image" "$E2E_FIXTURE_IMAGE"
+fi
 
 cp -R deployments/kubernetes "$work/base"
 cp tests/e2e/postgres.yaml "$work/postgres.yaml"
@@ -86,10 +104,6 @@ kind: Kustomization
 resources:
   - base
   - postgres.yaml
-images:
-  - name: ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter
-    newName: akt-e2e-api
-    newTag: ${suffix}
 secretGenerator:
   - name: troubleshooter-secrets
     namespace: troubleshooter
@@ -101,6 +115,9 @@ patches:
       kind: Deployment
       name: troubleshooter
     patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: $api_image
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Never
