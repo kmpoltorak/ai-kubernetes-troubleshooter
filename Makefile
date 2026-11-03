@@ -3,12 +3,14 @@ TEST_DB := akt-test-pg
 TEST_DATABASE_URL ?= postgres://troubleshooter:troubleshooter@localhost:55433/troubleshooter_test?sslmode=disable
 
 # Load .env for run/migrate targets when present.
+ifeq (,$(filter test-e2e,$(MAKECMDGOALS)))
 ifneq (,$(wildcard .env))
 include .env
 export
 endif
+endif
 
-.PHONY: web build test test-auth test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
+.PHONY: web build test test-auth test-e2e test-integration test-db test-db-stop lint fmt vet run migrate-up migrate-down docker-up docker-down
 
 # Builds the React UI into internal/api/ui/dist, which the binary embeds.
 web:
@@ -23,6 +25,9 @@ test:
 # Runs a real OAuth2 Proxy with a disposable protocol-level OIDC provider.
 test-auth:
 	go test -race -tags authintegration -count=1 -run '^TestOIDCAuthentication$$' ./internal/api
+
+test-e2e:
+	bash scripts/test-e2e.sh
 
 # Starts a disposable PostgreSQL container (port 55433) if it is not running.
 test-db:
@@ -41,7 +46,7 @@ test-integration: test-db
 lint:
 	test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1)
 	go vet ./...
-	golangci-lint run --build-tags integration,authintegration,modeleval
+	golangci-lint run --build-tags integration,authintegration,modeleval,e2e
 
 fmt:
 	gofmt -w .
