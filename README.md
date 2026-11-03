@@ -143,7 +143,7 @@ for job storage errors, `502` `analysis_failed` with stored evidence on the wait
 Jobs survive client disconnects. See [queue, retries and upgrade instructions](docs/durable-jobs.md).
 Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
-The UI submits durable jobs, checks status every 2 seconds and resumes the saved job after a tab reload. It keeps older attempts separate from the latest successful report; see the [history contract](docs/investigation-history.md).
+The UI checks job status every 2 seconds and resumes the saved job after a tab reload. Select older attempts from history; a failed attempt keeps its evidence and does not replace the latest successful report.
 New analyses use [report schema v2](docs/analysis-contract.md): `verdict`, evidence `support`, exact citations, missing data and scope limits. New API clients must handle v2 instead of `confidence`; stored legacy reports remain readable.
 `/health` and `/ready` also expose `build: {version, revision, built_at}` publicly,
 including a failing readiness response. The UI shows the responding replica's
@@ -203,22 +203,11 @@ make lint               # gofmt, go vet, golangci-lint
 cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck and build (Node 22)
 ```
 
-Each tool is tested against client-go fake clients, and all 10 tools run
-against all 11 scenarios checking the expected signals and the absence of
-misleading ones. An [offline evaluation](docs/evaluation.md) runs every scenario
-and adversarial fixtures through the engine, checking assessments, verdict/support,
-citations, missing data and read-only behavior. The same guide documents an
-opt-in, bounded OpenAI/Ollama evaluation with per-attempt usage and human review;
-ordinary tests use local fake servers only. Integration tests run
-migrations and send the sample incidents through REST, the engine and
-PostgreSQL, including killed workers, lost database connections, retries and lease fencing.
-Go tests also fail if the RBAC manifest gains a permission or a
-Grafana panel queries a metric the app does not export. CI adds govulncheck,
-`npm audit` and a Docker build. A report from a live minikube run is in
-[docs/examples/report_oom_killed_minikube.json](docs/examples/report_oom_killed_minikube.json).
-The [live Kubernetes tests](docs/kubernetes-testing.md) use one shared OCI image in CI (or build local source),
-deploy two API replicas with the base ServiceAccount, and check actual failures
-and TCP policy enforcement. They use a separate kubeconfig and remove their cluster.
+Unit tests use synthetic clusters and model responses; integration tests exercise
+PostgreSQL, API requests and worker recovery. See [evaluation commands](docs/evaluation.md)
+for offline checks and the opt-in OpenAI/Ollama tool. The [kind tests](docs/kubernetes-testing.md)
+deploy two API replicas and check live diagnostics, RBAC and NetworkPolicy using
+one shared image in CI. CI also runs govulncheck and `npm audit`.
 
 Built with an AI coding assistant. I wrote the spec and reviewed every change.
 

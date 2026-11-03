@@ -44,40 +44,25 @@ The UI uses the asynchronous routes described below.
 
 ## Browser UI
 
-**Run investigation** submits a job and shows its status, stage, attempt number
-and saved diagnostics. Status is read every two seconds after the previous
-request finishes; requests have a 15-second timeout. Only one read is in flight.
-Terminal jobs stop polling. Read errors keep the last results visible; temporary
-errors retry automatically, while authentication and other client errors stop
-until **Retry status check** or a reload. Retrying status never submits work.
+The UI checks one job at a time and keeps the latest results visible if a read
+fails. **Retry status check** only reads status. After an uncertain submission,
+**Retry submission** reuses the saved key and scenario; a deliberate new analysis
+uses a new key. Reloading the tab resumes observation. Browser session storage
+must be available; clearing it can lose an unconfirmed key, so inspect history
+before submitting from another tab. Leaving the view does not cancel server work.
 
-Before submission, the UI saves the UUID key and scenario in this tab's session
-storage. A lost response, timeout, malformed response or server error leaves them
-available for **Retry submission**, including after a reload. The scenario stays
-fixed until that submission is resolved. A known rejection (validation, access,
-missing incident, key conflict, body limit or full queue) clears the pending
-submission so the user can change options. A deliberate new analysis after a
-terminal job gets a new key.
+Select an older attempt to inspect its own diagnostics, error or report. A failed
+attempt does not replace **Latest successful report**. Selecting history does not
+start or retry an investigation. The relevant API reads are:
 
-After acceptance, session storage holds only the job ID. Opening that incident
-again in the same tab resumes observation. Without a saved job, the UI opens a
-queued/running durable attempt from the loaded history page, or the newest
-attempt if none is active. Selecting an active attempt on an older page also
-starts observation. It watches one job at a time; it does not scan every history
-page for other sessions' work. Legacy `running` rows have no job to follow.
+| Endpoint suffix after `/api/v1/incidents/{id}` | Result |
+|---|---|
+| `/investigations?limit=20&offset=0` | `{investigations, offset, limit, has_more}`; default 20, max 100, non-negative offset |
+| `/investigations/{investigationID}` | `{investigation, tool_executions, evidence, report?}`; a failed/running/queued attempt may have no report |
+| `/report` | newest completed attempt with a report; `404` if none exists |
 
-History remains selectable during work. Choosing an older completed/failed
-attempt keeps that selection while the job status continues updating. **View
-current attempt** returns to live progress, including a new attempt after recovery.
-History and the latest successful report refresh when an observed attempt changes
-or the job finishes; manual refresh remains available.
-
-Leaving the incident aborts local requests and timers, while accepted server work
-continues. Closing a tab or clearing session data can remove an unconfirmed key;
-inspect history before submitting again in another session. No diagnostic bodies
-or credentials are stored in browser session storage. If that storage is blocked
-or malformed, new submissions stop with an error rather than losing a retry key.
-The UI requires browser support for `AbortSignal.timeout` and `AbortSignal.any`.
+History is newest first (`started_at`, then ID). New attempts can shift offset
+pages. Invalid IDs/paging return `400`; missing or foreign attempts return `404`.
 
 ## Limits and recovery
 

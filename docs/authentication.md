@@ -124,15 +124,8 @@ the installation's incidents; there are no per-user or per-namespace roles.
 After a session expires, reload `/` to sign in again. `/oauth2/sign_out` clears
 the local session; logging out of the identity provider is a separate operation.
 
-## Verification
+## Check the installation
 
 After enabling authentication, an anonymous `GET /api/v1/incidents` must return
 `401`, and `/ready` must include `authentication: ok`. Do not rely on starting
 the Compose `auth` profile alone: `AUTH_ENABLED` controls access checks.
-
-`make test` covers the switch, admission failures, origin checks, safe redirects
-and verified audit identity. `make test-auth` starts the pinned OAuth2 Proxy
-image and a disposable protocol-level OIDC provider. It exercises login/callback,
-cookie expiry, JWT validation, disallowed groups and an unavailable proxy.
-Both commands are part of CI. The fixture's HTTP cookies and short expiry are
-test-only overrides; the supplied deployment configuration uses HTTPS cookies.
