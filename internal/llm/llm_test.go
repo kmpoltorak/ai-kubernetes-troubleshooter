@@ -99,6 +99,9 @@ func TestOpenAIProvider(t *testing.T) {
 	if rf["type"] != "json_schema" || js["strict"] != true || got["model"] != "gpt-test" {
 		t.Fatalf("request not using strict schema: %v", got)
 	}
+	if _, exists := got["max_completion_tokens"]; exists {
+		t.Fatal("ordinary Analyze gained an evaluation-only output cap")
+	}
 	if p.Name() != "openai/gpt-test" {
 		t.Fatalf("name = %s", p.Name())
 	}
@@ -171,6 +174,9 @@ func TestOllamaProvider(t *testing.T) {
 	}
 	if got["stream"] != false || got["format"] == nil {
 		t.Fatalf("request missing stream=false or format schema: %v", got)
+	}
+	if _, exists := got["options"].(map[string]any)["num_predict"]; exists {
+		t.Fatal("ordinary Analyze gained an evaluation-only output cap")
 	}
 	msgs := got["messages"].([]any)
 	if len(msgs) != 2 || !strings.Contains(msgs[0].(map[string]any)["content"].(string), "Kubernetes SRE") {
