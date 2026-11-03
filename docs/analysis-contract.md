@@ -17,7 +17,7 @@ not replaced with a number derived from evidence support.
 | `limitations` | coverage/sampling limits from the application plus analyzer qualifications |
 | `severity`, `affected_resources` | impact and resources, as before |
 | `possible_causes` | hypotheses; separate from observed evidence |
-| `recommended_actions`, `safe_commands` | human-reviewed recommendations and validated read-only diagnostic commands |
+| `recommended_actions`, `safe_commands` | recommendations requiring human review and validated read-only diagnostic commands |
 
 `observed_fault` needs a cited unhealthy observation. It can use `strong` support
 for the narrow condition actually observed. For example, OOMKilled establishes
