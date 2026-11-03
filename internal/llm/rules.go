@@ -19,17 +19,18 @@ import (
 // symptom is only the root cause when nothing more specific explains it.
 type RulesProvider struct{}
 
-func (RulesProvider) Name() string { return "rules/rules-v1" }
+func (RulesProvider) Name() string { return "rules/rules-v2" }
 
 type finding struct {
-	rootCause  string
-	summary    string
-	severity   domain.Severity
-	confidence float64
-	signals    []string // evidence carrying any of these is cited
-	causes     []string
-	actions    []string
-	commands   []string
+	rootCause string
+	summary   string
+	severity  domain.Severity
+	verdict   string
+	support   string
+	signals   []string // evidence carrying any of these is cited
+	causes    []string
+	actions   []string
+	commands  []string
 }
 
 type rule struct {
@@ -42,7 +43,8 @@ var rules = []rule{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalNamespaceNotFound) },
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Namespace does not exist", severity: domain.SeverityMedium, confidence: 0.95,
+				rootCause: "Namespace does not exist", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "strong",
 				summary:  fmt.Sprintf("Namespace %s does not exist in cluster %s, so %s cannot run there.", t.Namespace, t.Cluster, t.Ref()),
 				signals:  []string{diagnostics.SignalNamespaceNotFound},
 				causes:   []string{"wrong namespace in the incident", "namespace deleted or not yet created", "incident filed against the wrong cluster"},
@@ -57,7 +59,8 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Target resource not found", severity: domain.SeverityMedium, confidence: 0.9,
+				rootCause: "Target resource not found", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "strong",
 				summary:  fmt.Sprintf("%s does not exist in namespace %s.", t.Ref(), t.Namespace),
 				signals:  []string{diagnostics.SignalWorkloadNotFound, diagnostics.SignalServiceNotFound},
 				causes:   []string{"resource deleted or renamed", "typo in the resource name", "deployment not applied yet"},
@@ -72,7 +75,8 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Container image cannot be pulled (ImagePullBackOff)", severity: domain.SeverityHigh, confidence: 0.93,
+				rootCause: "Container image cannot be pulled (ImagePullBackOff)", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
 				summary: fmt.Sprintf("Pods of %s cannot start because the container image cannot be pulled.", t.Ref()),
 				signals: []string{diagnostics.SignalImagePullError, diagnostics.SignalFailedPull, diagnostics.SignalRolloutStuck},
 				causes:  []string{"image tag does not exist in the registry", "missing or invalid imagePullSecret", "registry unreachable from the nodes"},
@@ -94,7 +98,8 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Referenced ConfigMap or Secret is missing", severity: domain.SeverityHigh, confidence: 0.95,
+				rootCause: "Referenced ConfigMap or Secret is missing", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
 				summary: fmt.Sprintf("Containers of %s cannot be created because a referenced ConfigMap or Secret does not exist (CreateContainerConfigError).", t.Ref()),
 				signals: []string{diagnostics.SignalConfigMapMissing, diagnostics.SignalSecretMissing, diagnostics.SignalContainerConfigError},
 				causes:  []string{"ConfigMap or Secret not applied with this release", "resource renamed without updating the pod template", "resource deleted"},
@@ -110,7 +115,8 @@ var rules = []rule{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalContainerConfigError) },
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Container configuration error (CreateContainerConfigError)", severity: domain.SeverityHigh, confidence: 0.75,
+				rootCause: "Container configuration error (CreateContainerConfigError)", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
 				summary:  fmt.Sprintf("Containers of %s cannot be created because of an invalid configuration reference.", t.Ref()),
 				signals:  []string{diagnostics.SignalContainerConfigError},
 				causes:   []string{"missing key in a ConfigMap or Secret", "invalid volume or env reference"},
@@ -125,8 +131,9 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Insufficient cluster resources: pods cannot be scheduled", severity: domain.SeverityHigh, confidence: 0.9,
-				summary: fmt.Sprintf("Some pods of %s stay Pending because no node has enough free resources for their requests.", t.Ref()),
+				rootCause: "Pods cannot be scheduled", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary: fmt.Sprintf("Some pods of %s could not be scheduled; inspect the scheduler messages to distinguish resources from placement constraints.", t.Ref()),
 				signals: []string{diagnostics.SignalUnschedulable, diagnostics.SignalFailedScheduling, diagnostics.SignalReplicasUnavailable},
 				causes:  []string{"resource requests larger than any node's allocatable capacity", "cluster at capacity", "node selectors, taints or affinity limiting candidate nodes"},
 				actions: []string{
@@ -141,8 +148,9 @@ var rules = []rule{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalOOMKilled) },
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Container OOMKilled: memory exhaustion", severity: domain.SeverityHigh, confidence: 0.94,
-				summary: fmt.Sprintf("Containers of %s are killed by the kernel for exceeding their memory limit and restart repeatedly.", t.Ref()),
+				rootCause: "Container OOMKilled: memory exhaustion", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary: fmt.Sprintf("Containers of %s report OOMKilled. This does not establish a memory leak or prove the configured limit caused it.", t.Ref()),
 				signals: []string{diagnostics.SignalOOMKilled, diagnostics.SignalHighMemoryUsage, diagnostics.SignalOutOfMemory},
 				causes:  []string{"memory limit too low for the workload", "memory leak", "unbounded batch or cache growth"},
 				actions: []string{
@@ -161,7 +169,8 @@ var rules = []rule{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalDNSResolutionError) },
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "DNS resolution failure for a dependency", severity: domain.SeverityHigh, confidence: 0.85,
+				rootCause: "DNS resolution failure for a dependency", severity: domain.SeverityHigh,
+				verdict: "suspected_fault", support: "limited",
 				summary: fmt.Sprintf("%s cannot resolve the hostname of a dependency, so it cannot become ready.", t.Ref()),
 				signals: []string{diagnostics.SignalDNSResolutionError, diagnostics.SignalReadinessProbeFailed},
 				causes:  []string{"wrong or renamed Service hostname in configuration", "dependency Service missing in the target namespace", "CoreDNS unavailable"},
@@ -183,12 +192,13 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "NetworkPolicy blocks egress to a dependency", severity: domain.SeverityHigh, confidence: 0.8,
-				summary: fmt.Sprintf("Connections from %s to a dependency time out while a NetworkPolicy restricts its egress.", t.Ref()),
+				rootCause: "Possible NetworkPolicy egress restriction", severity: domain.SeverityHigh,
+				verdict: "suspected_fault", support: "limited",
+				summary: fmt.Sprintf("Logs of %s report connection timeouts alongside restrictive NetworkPolicy declarations. They do not prove a blocked flow or CNI enforcement.", t.Ref()),
 				signals: []string{diagnostics.SignalConnectionTimeout, diagnostics.SignalEgressRestricted, diagnostics.SignalEgressDenyAll},
-				causes:  []string{"egress policy does not allow the dependency's port or namespace", "recently added default-deny egress policy"},
+				causes:  []string{"egress policy does not allow the dependency's port or namespace", "recently added default-deny egress policy", "dependency unavailable or routing failure"},
 				actions: []string{
-					"add an egress rule allowing the dependency's namespace/pods and port",
+					"verify CNI enforcement, the actual destination and the combined allows of all selecting NetworkPolicies before changing policy",
 					"review recent NetworkPolicy changes in the namespace",
 				},
 				commands: []string{fmt.Sprintf("kubectl get networkpolicies -n %s -o yaml", t.Namespace)},
@@ -199,8 +209,9 @@ var rules = []rule{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalLivenessProbeFailed) },
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Liveness probe failure causes container restarts", severity: domain.SeverityHigh, confidence: 0.85,
-				summary: fmt.Sprintf("The kubelet restarts containers of %s because the liveness probe times out.", t.Ref()),
+				rootCause: "Liveness probe failures with container restarts", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary: fmt.Sprintf("Events for %s report liveness probe failures; inspect their details and restart history before attributing a mechanism.", t.Ref()),
 				signals: []string{diagnostics.SignalLivenessProbeFailed, diagnostics.SignalFrequentRestarts},
 				causes:  []string{"health endpoint blocked by saturated workers", "probe timeout too aggressive", "application deadlock"},
 				actions: []string{
@@ -218,8 +229,9 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Application startup failure (CrashLoopBackOff)", severity: domain.SeverityCritical, confidence: 0.75,
-				summary: fmt.Sprintf("Containers of %s exit with an error during startup and are in CrashLoopBackOff.", t.Ref()),
+				rootCause: "Container restarts with errors (CrashLoopBackOff)", severity: domain.SeverityCritical,
+				verdict: "observed_fault", support: "strong",
+				summary: fmt.Sprintf("Containers of %s exit with errors and restart. The underlying application cause has not been established.", t.Ref()),
 				signals: []string{diagnostics.SignalCrashLoopBackOff, diagnostics.SignalContainerExitError, diagnostics.SignalBackOff, diagnostics.SignalConfigurationError},
 				causes:  []string{"missing or invalid application configuration", "dependency unavailable at startup", "bug introduced by the latest release"},
 				actions: []string{
@@ -238,7 +250,8 @@ var rules = []rule{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalSelectorMismatch) },
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Service selector mismatch: no pods match the selector", severity: domain.SeverityHigh, confidence: 0.92,
+				rootCause: "Service selector mismatch: no pods match the selector", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
 				summary:  "The Service selector matches no pods, so it has no endpoints and traffic cannot reach the workload.",
 				signals:  []string{diagnostics.SignalSelectorMismatch, diagnostics.SignalNoReadyEndpoints},
 				causes:   []string{"selector changed without updating pod labels", "pod labels changed in a new release", "typo in the selector"},
@@ -253,8 +266,9 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Readiness probe failure: pods are running but not ready", severity: domain.SeverityHigh, confidence: 0.8,
-				summary: fmt.Sprintf("Pods of %s are running but fail their readiness probe, so they receive no traffic.", t.Ref()),
+				rootCause: "Pods are not ready (readiness failure)", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary: fmt.Sprintf("Some pods of %s are not ready. Inspect conditions and probe messages; this does not establish why they are not ready.", t.Ref()),
 				signals: []string{diagnostics.SignalReadinessProbeFailed, diagnostics.SignalPodNotReady, diagnostics.SignalNoReadyEndpoints},
 				causes:  []string{"a dependency checked by the readiness endpoint is unavailable", "slow warm-up exceeding the probe budget", "wrong probe path or port"},
 				actions: []string{
@@ -269,7 +283,8 @@ var rules = []rule{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalConnectionRefused) },
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "A dependency refuses connections", severity: domain.SeverityMedium, confidence: 0.65,
+				rootCause: "A dependency refuses connections", severity: domain.SeverityMedium,
+				verdict: "suspected_fault", support: "limited",
 				summary: fmt.Sprintf("Logs of %s show refused connections to a dependency.", t.Ref()),
 				signals: []string{diagnostics.SignalConnectionRefused},
 				causes:  []string{"dependency down or restarting", "wrong port in configuration"},
@@ -283,8 +298,9 @@ var rules = []rule{
 		},
 		build: func(t domain.Target) finding {
 			return finding{
-				rootCause: "Workload degraded without a specific cause", severity: domain.SeverityMedium, confidence: 0.5,
-				summary: fmt.Sprintf("%s shows degraded signals but the evidence does not identify a specific cause; confidence is low.", t.Ref()),
+				rootCause: "Workload degraded without a specific cause", severity: domain.SeverityMedium,
+				verdict: "inconclusive", support: "insufficient",
+				summary: fmt.Sprintf("%s shows degraded signals but the evidence does not identify a specific cause.", t.Ref()),
 				signals: []string{diagnostics.SignalReplicasUnavailable, diagnostics.SignalNoReadyEndpoints, diagnostics.SignalHighMemoryUsage, diagnostics.SignalHighCPUUsage},
 				causes:  []string{"transient rollout", "resource saturation"},
 				actions: []string{"re-run the investigation while the problem is occurring", "review recent changes to the workload"},
@@ -293,21 +309,15 @@ var rules = []rule{
 	},
 }
 
-// coreTools back the healthy verdict; resource usage and the rest are
-// optional (metrics-server may be absent).
-var coreTools = []string{diagnostics.GetDeployment, diagnostics.GetService, diagnostics.GetPods, diagnostics.GetEvents, diagnostics.GetPodLogs}
-
 func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analysis, error) {
 	if len(in.Evidence) == 0 {
 		return domain.Analysis{}, errors.New("rules: no evidence to analyze")
 	}
 	var all []string
-	// The default finding claims pods are ready, events quiet and logs
-	// clean; it holds only when those were observed and nothing is unhealthy.
-	incomplete := slices.ContainsFunc(in.Failed, func(te domain.ToolExecution) bool { return slices.Contains(coreTools, te.ToolName) })
+	// Missing observations are not evidence of health.
+	incomplete := domain.HealthUnconfirmed(in.Evidence, in.Failed)
 	for _, e := range in.Evidence {
 		all = append(all, e.Signals...)
-		incomplete = incomplete || e.Health != domain.Healthy
 	}
 	has := func(sigs ...string) bool {
 		return slices.ContainsFunc(sigs, func(s string) bool { return slices.Contains(all, s) })
@@ -315,15 +325,17 @@ func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analys
 
 	t := in.Incident.Target
 	f := finding{
-		rootCause: "No Kubernetes-level fault detected", severity: domain.SeverityLow, confidence: 0.6,
-		summary: fmt.Sprintf("%s looks healthy: pods are ready, no warning events and no error patterns were found. The problem may be outside Kubernetes or intermittent.", t.Ref()),
+		rootCause: "No Kubernetes-level fault detected", severity: domain.SeverityLow,
+		verdict: "no_fault_observed", support: "limited",
+		summary: fmt.Sprintf("No known Kubernetes fault was observed for %s in the collected snapshots. Application health, intermittent faults and external dependencies remain unconfirmed.", t.Ref()),
 		causes:  []string{"application-level error not visible in the sampled logs", "intermittent issue not present during the checks", "problem in an external dependency"},
 		actions: []string{"check application metrics and error rates", "re-run the investigation while the problem is occurring"},
 	}
 	if incomplete {
 		f = finding{
-			rootCause: "Inconclusive: no known fault pattern, but health could not be confirmed", severity: domain.SeverityMedium, confidence: 0.3,
-			summary: fmt.Sprintf("No known fault pattern matched for %s, but some diagnostics failed or reported problems, so the workload cannot be called healthy; confidence is low.", t.Ref()),
+			rootCause: "Inconclusive: no known fault pattern, but health could not be confirmed", severity: domain.SeverityMedium,
+			verdict: "inconclusive", support: "insufficient",
+			summary: fmt.Sprintf("No known fault pattern matched for %s, but some diagnostics failed or reported problems, so the workload cannot be called healthy.", t.Ref()),
 			causes:  []string{"diagnostics lacked permission or timed out", "a fault not covered by the known patterns"},
 			actions: []string{"review the failed or degraded diagnostics", "re-run the investigation once the cluster API is reachable"},
 		}
@@ -334,28 +346,30 @@ func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analys
 			break
 		}
 	}
-	return f.analysis(t, in.Evidence), nil
+	a := f.analysis(t, in.Evidence)
+	a.MissingData, a.Limitations = in.MissingData(), append([]string{}, in.Limitations...)
+	return a.Redacted(), nil
 }
 
 // analysis cites the evidence carrying the finding's signals (or all
 // evidence when none does) and lists concrete affected resources.
 func (f finding) analysis(t domain.Target, evidence []domain.Evidence) domain.Analysis {
 	a := domain.Analysis{
-		Summary: f.summary, RootCause: f.rootCause, Confidence: f.confidence, Severity: f.severity,
+		Summary: f.summary, RootCause: f.rootCause, SchemaVersion: 2, Verdict: f.verdict, Support: f.support, Severity: f.severity,
 		AffectedResources: []string{t.Ref()}, PossibleCauses: f.causes, RecommendedActions: f.actions, SafeCommands: f.commands,
 	}
 	for _, e := range evidence {
 		if len(f.signals) > 0 && !slices.ContainsFunc(e.Signals, func(s string) bool { return slices.Contains(f.signals, s) }) {
 			continue
 		}
-		a.Evidence = append(a.Evidence, domain.EvidenceReference{Source: e.Source, Description: e.Summary})
+		a.Evidence = append(a.Evidence, domain.EvidenceReference{EvidenceID: e.ID, Source: e.Source, Description: e.Summary})
 		if kind, _, _ := strings.Cut(e.Subject, "/"); slices.Contains(concreteKinds, kind) && !slices.Contains(a.AffectedResources, e.Subject) {
 			a.AffectedResources = append(a.AffectedResources, e.Subject)
 		}
 	}
 	if len(a.Evidence) == 0 {
 		for _, e := range evidence {
-			a.Evidence = append(a.Evidence, domain.EvidenceReference{Source: e.Source, Description: e.Summary})
+			a.Evidence = append(a.Evidence, domain.EvidenceReference{EvidenceID: e.ID, Source: e.Source, Description: e.Summary})
 		}
 	}
 	return a

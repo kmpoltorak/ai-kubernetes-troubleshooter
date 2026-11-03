@@ -8,12 +8,12 @@ import (
 
 func validAnalysis() Analysis {
 	return Analysis{
-		Summary:            "Payment service is restarting because of memory exhaustion",
-		RootCause:          "Container OOMKilled",
-		Confidence:         0.94,
+		Summary:       "Payment service is restarting because of memory exhaustion",
+		RootCause:     "Container OOMKilled",
+		SchemaVersion: 2, Verdict: "observed_fault", Support: "strong",
 		Severity:           SeverityHigh,
 		AffectedResources:  []string{"deployment/payment-service"},
-		Evidence:           []EvidenceReference{{Source: "get_pods", Description: "last state OOMKilled"}},
+		Evidence:           []EvidenceReference{{EvidenceID: "ee376713-5c52-48d9-9ded-95113daaab0c", Source: "get_pods", Description: "last state OOMKilled"}},
 		RecommendedActions: []string{"increase memory limit if justified"},
 		SafeCommands:       []string{"kubectl describe pod <pod> -n payments"},
 	}
@@ -34,7 +34,7 @@ func TestAnalysisValidate(t *testing.T) {
 		{"bad severity", func(a *Analysis) { a.Severity = "urgent" }, "severity"},
 		{"bad affected resource", func(a *Analysis) { a.AffectedResources = []string{"payment-service"} }, "kind/name"},
 		{"no evidence", func(a *Analysis) { a.Evidence = nil }, "evidence is empty"},
-		{"uncollected source", func(a *Analysis) { a.Evidence[0].Source = "get_nodes" }, `"get_nodes" was not collected`},
+		{"uncollected source", func(a *Analysis) { a.Evidence[0].Source = "get_nodes" }, `"get_nodes" does not match`},
 		{"blank evidence description", func(a *Analysis) { a.Evidence[0].Description = "" }, "empty description"},
 		{"no actions", func(a *Analysis) { a.RecommendedActions = []string{""} }, "recommended_actions"},
 		{"write command", func(a *Analysis) { a.SafeCommands = []string{"kubectl delete pod x"} }, "safe command"},
@@ -43,7 +43,7 @@ func TestAnalysisValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := validAnalysis()
 			tt.mutate(&a)
-			err := a.Validate([]string{"get_pods", "get_events"})
+			err := a.Validate([]Evidence{{ID: "ee376713-5c52-48d9-9ded-95113daaab0c", Source: "get_pods", Health: Down}}, nil)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

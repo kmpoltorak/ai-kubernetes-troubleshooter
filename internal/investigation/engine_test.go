@@ -201,7 +201,7 @@ func TestInvalidAnalysisFailsButKeepsEvidence(t *testing.T) {
 	if rec.Report != nil || rec.Investigation.Status != domain.InvestigationFailed || len(rec.Evidence) == 0 {
 		t.Fatalf("record: %+v", rec.Investigation)
 	}
-	for _, want := range []string{"get_nodes", "safe command"} {
+	for _, want := range []string{"evidence_id", "safe command"} {
 		if !strings.Contains(rec.Investigation.Error, want) {
 			t.Errorf("error %q does not mention %q", rec.Investigation.Error, want)
 		}
@@ -390,5 +390,34 @@ func TestInvestigationMasksBeforeAnalyzerStorageAndResponse(t *testing.T) {
 		if store.incidents[inc.ID].Description != inc.Description {
 			t.Fatal("legacy incident was rewritten")
 		}
+	}
+}
+
+func TestReportIdentifiesActuallyTruncatedLogSamples(t *testing.T) {
+	inc := incident(domain.ResourceDeployment, "payment-service")
+	clusters := clustersFunc(func(target domain.Target, _ string) (kube.Cluster, string, error) {
+		c, err := simulation.Build("healthy", target)
+		if err == nil {
+			c.Client.(*fake.Clientset).PrependReactor("get", "pods/log", func(k8stesting.Action) (bool, runtime.Object, error) {
+				return true, &runtime.Unknown{Raw: []byte(strings.Repeat("ordinary line\n", 40))}, nil
+			})
+		}
+		return c, "healthy", err
+	})
+	rec, err := newEngine(newMemStore(inc), clusters, llm.RulesProvider{}).Investigate(context.Background(), inc.ID, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, ev := range rec.Evidence {
+		if ev.Source == diagnostics.GetPodLogs {
+			seen = true
+			if !slices.Contains(rec.Report.Analysis.Limitations, ev.ID+": retained log sample is truncated") {
+				t.Fatalf("truncated sample not disclosed: %+v", rec.Report.Analysis.Limitations)
+			}
+		}
+	}
+	if !seen {
+		t.Fatal("fixture did not collect logs")
 	}
 }

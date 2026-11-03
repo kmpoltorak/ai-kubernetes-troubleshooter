@@ -101,7 +101,22 @@ func TestIntegrationSampleIncidents(t *testing.T) {
 				t.Fatalf("report: %d %v", resp.StatusCode, out)
 			}
 			report := out["report"].(map[string]any)
-			rootCause := report["analysis"].(map[string]any)["root_cause"].(string)
+			analysis := report["analysis"].(map[string]any)
+			rootCause := analysis["root_cause"].(string)
+			if _, present := analysis["confidence"]; present || analysis["schema_version"] != float64(2) || analysis["verdict"] == nil || analysis["support"] == nil || analysis["missing_data"] == nil || len(analysis["limitations"].([]any)) == 0 {
+				t.Fatalf("invalid v2 contract: %v", analysis)
+			}
+			collected := map[string]string{}
+			for _, item := range out["evidence"].([]any) {
+				ev := item.(map[string]any)
+				collected[ev["id"].(string)] = ev["source"].(string)
+			}
+			for _, item := range analysis["evidence"].([]any) {
+				ref := item.(map[string]any)
+				if ref["evidence_id"] == nil || collected[ref["evidence_id"].(string)] != ref["source"] {
+					t.Fatalf("foreign citation: %v", ref)
+				}
+			}
 			if !strings.Contains(strings.ToLower(rootCause), s.keyword) {
 				t.Fatalf("root cause %q does not mention %q", rootCause, s.keyword)
 			}

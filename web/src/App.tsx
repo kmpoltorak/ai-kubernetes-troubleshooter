@@ -111,7 +111,7 @@ function EmptyState() {
       <p className="mt-2 max-w-md text-sm text-zinc-500">
         The troubleshooter reads pods, events, logs, the Deployment, Services, config references, NetworkPolicies and
         resource usage (read-only), then an analyzer correlates the evidence into a validated report with a root
-        cause, confidence and safe next steps.
+        assessment, evidence support and read-only next steps.
       </p>
     </div>
   );

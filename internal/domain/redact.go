@@ -27,6 +27,8 @@ func (a Analysis) Redacted() Analysis {
 	}
 	a.AffectedResources = redactedStrings(a.AffectedResources)
 	a.PossibleCauses = redactedStrings(a.PossibleCauses)
+	a.MissingData = redactedStrings(a.MissingData)
+	a.Limitations = redactedStrings(a.Limitations)
 	a.RecommendedActions = redactedStrings(a.RecommendedActions)
 	a.SafeCommands = redactedStrings(a.SafeCommands)
 	return a

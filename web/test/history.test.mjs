@@ -77,3 +77,29 @@ test("job status shows queue, analysis and unknown outcome without hiding stored
   assert.match(html, /analysis outcome unknown/);
   assert.doesNotMatch(html, /Checking every/);
 });
+
+test("v2 assessment links exact evidence, separates hypotheses and states bounds without a percentage", () => {
+  const item = { id: "ev-one", tool_execution_id: "tool", source: "get_pod_logs", subject: "pod/api", health: "degraded", summary: "connection timeout", signals: [] };
+  const record = { investigation: success, tool_executions: [{ id: "tool", tool_name: "get_pod_logs", duration_ms: 2 }], evidence: [item], report: { provider: "rules/rules-v2", created_at: success.completed_at, analysis: { schema_version: 2, verdict: "suspected_fault", support: "limited", summary: "Timeout plus declarations do not prove enforcement", root_cause: "Possible NetworkPolicy restriction", severity: "high", evidence: [{ evidence_id: item.id, source: item.source, description: "timeout" }], missing_data: ["metrics unavailable"], limitations: ["CNI enforcement not observed", "sampled logs only"], possible_causes: ["dependency unavailable"] } } };
+  const html = render(Report, { record });
+  assert.match(html, /Assessment/);
+  assert.match(html, /Hypothesis/);
+  assert.match(html, /Evidence support: <strong>limited/);
+  assert.match(html, /Possible causes \(hypotheses\)/);
+  assert.match(html, /href="#evidence-success-ev-one"/);
+  assert.match(html, /id="evidence-success-ev-one"/);
+  assert.match(html, /metrics unavailable/);
+  assert.match(html, /CNI enforcement not observed/);
+  assert.match(html, /sampled logs only/);
+  assert.doesNotMatch(html, /Confidence|\d+%/);
+  const other = render(Report, { record: { ...record, investigation: { ...success, id: "other-attempt" }, evidence: [] } });
+  assert.doesNotMatch(other, /href="#evidence/);
+});
+
+test("legacy reports stay readable without recasting their score as evidence support", () => {
+  const html = render(Report, { record: { investigation: success, evidence: [], tool_executions: [], report: { provider: "rules/rules-v1", analysis: { summary: "old summary", root_cause: "old cause", confidence: 0.94, severity: "high", evidence: [{ source: "get_pods", description: "legacy citation" }] } } } });
+  assert.match(html, /old summary/);
+  assert.match(html, /legacy citation/);
+  assert.match(html, /Legacy report/);
+  assert.doesNotMatch(html, /94%|Evidence support:|href="#evidence/);
+});

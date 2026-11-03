@@ -16,13 +16,16 @@ const healthStyle: Record<Health | "failed", string> = {
 };
 
 const chip = "rounded-md border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px] dark:border-zinc-700";
+const verdictLabel = { observed_fault: "Observed condition", suspected_fault: "Hypothesis", no_fault_observed: "No fault observed in this sample", inconclusive: "Inconclusive" };
 
 export default function Report({ record }: { record: InvestigationRecord }) {
   const report = record.report;
   const a = report?.analysis;
   // The API returns [] for collections, but older stored records may hold null.
   const evidenceByExec = new Map((record.evidence ?? []).map((e) => [e.tool_execution_id, e]));
-  const pct = a ? Math.round(a.confidence * 100) : 0;
+  const v2 = a?.schema_version === 2;
+  const citedIDs = new Set((record.evidence ?? []).map((e) => e.id));
+  const anchor = (id: string) => `evidence-${record.investigation.id}-${id}`;
   const actions = report?.remediation_actions ?? [];
   const recommendations = actions.filter((r) => r.kind === "recommendation");
   const commands = actions.filter((r) => r.kind === "diagnostic_command");
@@ -44,7 +47,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
         <>
           <div className="card grid gap-6 md:grid-cols-[1fr_240px]">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Root cause</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{v2 ? "Assessment" : "Root cause"}</p>
               <h3 className="mt-1 text-xl font-semibold">{a.root_cause}</h3>
               <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{a.summary}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
@@ -59,15 +62,11 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               <span className={`self-start rounded-md border px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${severityStyle[a.severity]}`}>
                 {a.severity}
               </span>
-              <div>
-                <div className="mb-1.5 flex justify-between text-xs text-zinc-500">
-                  <span>Confidence</span>
-                  <strong className="text-zinc-900 dark:text-zinc-100">{pct}%</strong>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                  <div className="h-full rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
+              {v2 ? <div className="text-sm">
+                <p>{a.verdict && verdictLabel[a.verdict]}</p>
+                <p>Evidence support: <strong>{a.support}</strong></p>
+                <p className="mt-1 text-xs text-zinc-500">Support describes the evidence, not a probability of correctness.</p>
+              </div> : <p className="text-xs text-zinc-500">Legacy report: tool-level citations and an uncalibrated score. The numeric score is not displayed.</p>}
               <span className="font-mono text-xs text-zinc-500">analyzed by {report.provider}</span>
             </div>
           </div>
@@ -100,7 +99,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               )}
             </div>
             <div className="card">
-              <h4 className="section-title">Possible causes</h4>
+              <h4 className="section-title">Possible causes (hypotheses)</h4>
               <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm">
                 {(a.possible_causes ?? []).map((t) => (
                   <li key={t}>{t}</li>
@@ -110,11 +109,17 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               <ul className="flex flex-col gap-1.5 text-sm">
                 {(a.evidence ?? []).map((e, i) => (
                   <li key={i}>
-                    <span className="mr-2 font-mono text-xs text-zinc-500">{e.source}</span>
+                    {v2 && e.evidence_id && citedIDs.has(e.evidence_id) ? <a className="mr-2 font-mono text-xs text-indigo-600 underline dark:text-indigo-400" href={`#${anchor(e.evidence_id)}`}>{e.source} · {e.evidence_id}</a> : <span className="mr-2 font-mono text-xs text-zinc-500">{e.source}</span>}
                     {e.description}
                   </li>
                 ))}
               </ul>
+              {v2 && <>
+                <h4 className="section-title mt-5">Missing data</h4>
+                {(a.missing_data ?? []).length ? <ul className="list-disc pl-5 text-sm">{a.missing_data?.map((item, i) => <li key={i}>{item}</li>)}</ul> : <p className="text-sm text-zinc-500">No failed diagnostics reported; coverage is still limited.</p>}
+                <h4 className="section-title mt-5">Scope and sampling limits</h4>
+                <ul className="list-disc pl-5 text-sm">{a.limitations?.map((item, i) => <li key={i}>{item}</li>)}</ul>
+              </>}
             </div>
           </div>
         </>
@@ -138,7 +143,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
                 const health = ev?.health ?? "failed";
                 const signals = ev?.signals ?? [];
                 return (
-                  <tr key={te.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800/60">
+                  <tr key={te.id} id={ev && anchor(ev.id)} className="scroll-mt-20 border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800/60">
                     <td className="py-2.5 pr-4">
                       <div className="font-mono text-xs">{te.tool_name}</div>
                       {ev?.subject && <div className="mt-0.5 font-mono text-[11px] text-zinc-500">{ev.subject}</div>}

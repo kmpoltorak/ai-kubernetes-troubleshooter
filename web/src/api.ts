@@ -35,12 +35,17 @@ export interface Evidence {
 }
 
 export interface Analysis {
+  schema_version?: number;
+  verdict?: "observed_fault" | "suspected_fault" | "no_fault_observed" | "inconclusive";
+  support?: "strong" | "limited" | "insufficient";
+  missing_data?: string[];
+  limitations?: string[];
   summary: string;
   root_cause: string;
-  confidence: number;
+  confidence?: number;
   severity: Severity;
   affected_resources: string[];
-  evidence: { source: string; description: string }[];
+  evidence: { evidence_id?: string; source: string; description: string }[];
   possible_causes: string[];
   recommended_actions: string[];
   safe_commands: string[];

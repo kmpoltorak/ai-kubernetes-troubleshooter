@@ -40,7 +40,7 @@ func testIncident() domain.Incident {
 }
 
 func TestMigrateDownAndUp(t *testing.T) {
-	s := testStore(t)
+	s := isolatedStore(t)
 	ctx := context.Background()
 	if err := s.MigrateDown(ctx); err != nil {
 		t.Fatalf("down: %v", err)
