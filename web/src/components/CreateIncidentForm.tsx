@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { api, type CreateIncident, type Incident, type ResourceType } from "../api";
+import { api, type CreateIncident, type Incident, type ResourceType, type Runtime } from "../api";
 
 // Samples load a matching simulation scenario for the first investigation.
 const PRESETS: Record<string, { label: string; incident: CreateIncident }> = {
@@ -37,9 +37,10 @@ const PRESETS: Record<string, { label: string; incident: CreateIncident }> = {
   },
 };
 
-const empty: CreateIncident = { title: "", description: "", cluster: "local", namespace: "", resource_type: "deployment", resource_name: "" };
-
-export default function CreateIncidentForm({ onCreated }: { onCreated: (inc: Incident, scenario: string) => void }) {
+// Samples exist only in simulation; live mode never offers them.
+export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Runtime | null; onCreated: (inc: Incident, scenario: string) => void }) {
+  const cluster = runtime?.cluster_name ?? "";
+  const empty: CreateIncident = { title: "", description: "", cluster, namespace: "", resource_type: "deployment", resource_name: "" };
   const [form, setForm] = useState<CreateIncident>(empty);
   const [preset, setPreset] = useState("");
   const [error, setError] = useState("");
@@ -67,13 +68,13 @@ export default function CreateIncidentForm({ onCreated }: { onCreated: (inc: Inc
     <div className="card">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">New incident</h2>
-        <div className="flex gap-1.5" role="group" aria-label="Sample incidents">
+        {runtime?.mode === "simulation" && <div className="flex gap-1.5" role="group" aria-label="Sample incidents">
           {Object.entries(PRESETS).map(([key, p]) => (
             <button
               key={key}
               type="button"
               onClick={() => {
-                setForm(p.incident);
+                setForm({ ...p.incident, cluster });
                 setPreset(key);
               }}
               className="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs hover:border-indigo-500 dark:border-zinc-700"
@@ -81,7 +82,7 @@ export default function CreateIncidentForm({ onCreated }: { onCreated: (inc: Inc
               {p.label}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
       <form onSubmit={submit} className="flex flex-col gap-3" noValidate>
         <label className="label">
@@ -101,7 +102,8 @@ export default function CreateIncidentForm({ onCreated }: { onCreated: (inc: Inc
           </label>
           <label className="label">
             Namespace
-            <input className="field font-mono" value={form.namespace} onChange={set("namespace")} placeholder="payments" spellCheck={false} autoComplete="off" />
+            <input className="field font-mono" value={form.namespace} onChange={set("namespace")} placeholder="payments" spellCheck={false} autoComplete="off" list="allowed-namespaces" />
+            <datalist id="allowed-namespaces">{runtime?.allowed_namespaces.map((ns) => <option key={ns} value={ns} />)}</datalist>
           </label>
           <label className="label">
             Kind

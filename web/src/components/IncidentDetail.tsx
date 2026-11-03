@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, SCENARIOS, type Incident, type InvestigationPage, type InvestigationRecord, type JobRecord } from "../api";
+import { api, ApiError, type Incident, type InvestigationPage, type InvestigationRecord, type JobRecord } from "../api";
 import { activeJob, followJob, readSession, saveSession, submitInvestigation, type JobSession } from "../jobs";
 import { target } from "../format";
 import Report from "./Report";
@@ -9,10 +9,11 @@ import JobStatus from "./JobStatus";
 interface Props {
   id: string;
   initialScenario: string;
+  scenarios: string[];
   onChanged: () => void;
 }
 
-export default function IncidentDetail({ id, initialScenario, onChanged }: Props) {
+export default function IncidentDetail({ id, initialScenario, scenarios, onChanged }: Props) {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [record, setRecord] = useState<InvestigationRecord | null>(null);
   const [scenario, setScenario] = useState(initialScenario);
@@ -180,22 +181,23 @@ export default function IncidentDetail({ id, initialScenario, onChanged }: Props
         {incident.description && <p className="mt-3 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{incident.description}</p>}
 
         <div className="mt-5 flex flex-wrap items-end gap-3">
-          <label className="label w-60">
-            Scenario
-            <select className="field" value={pending?.scenario ?? scenario} disabled={submitting || running || !!pending} onChange={(e) => setScenario(e.target.value)}>
-              <option value="">Default</option>
-              {SCENARIOS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
+          {scenarios.length > 0 && (
+            <label className="label w-60">
+              Scenario
+              <select className="field" value={pending?.scenario ?? scenario} disabled={submitting || running || !!pending} onChange={(e) => setScenario(e.target.value)}>
+                <option value="">Default</option>
+                {scenarios.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button type="button" className="btn-primary" onClick={investigate} disabled={!sessionReady || !!storageError || submitting || running || loadingHistory || loadingRecord}>
             {(running || submitting) && <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
             {submitting ? "Submitting…" : running ? "Investigation active" : pending ? "Retry submission" : "Run investigation"}
           </button>
-          <span className="pb-2 text-xs text-zinc-500">Scenarios apply in simulation mode only.</span>
         </div>
         {running && !job && <p role="status" className="mt-3 text-sm text-zinc-500">Resuming investigation status…</p>}
         {pending && <p className="mt-3 text-sm text-zinc-500">Submission is unconfirmed. Retry uses the same request and does not start a duplicate investigation.</p>}

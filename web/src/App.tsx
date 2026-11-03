@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Readiness, type Incident } from "./api";
+import { api, type Readiness, type Incident, type Runtime } from "./api";
 import BuildLabel from "./components/BuildLabel";
 import CreateIncidentForm from "./components/CreateIncidentForm";
 import IncidentList from "./components/IncidentList";
@@ -19,6 +19,12 @@ export default function App() {
     history.replaceState(null, "", `?incident=${encodeURIComponent(sel.id)}`);
   };
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [runtime, setRuntime] = useState<Runtime | null>(null);
+  const [runtimeError, setRuntimeError] = useState("");
+
+  useEffect(() => {
+    api.runtime().then(setRuntime, (e) => setRuntimeError((e as Error).message));
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -55,6 +61,9 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm">
+            <span className="font-mono text-xs text-zinc-500">
+              {runtime ? `${runtime.mode} · ${runtime.cluster_name} · ${runtime.analyzer.provider}/${runtime.analyzer.model}` : runtimeError && `settings unavailable: ${runtimeError}`}
+            </span>
             <a href="/metrics" target="_blank" rel="noopener" className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
               Metrics
             </a>
@@ -65,12 +74,13 @@ export default function App() {
 
       <main className="mx-auto grid max-w-7xl gap-5 px-6 py-6 lg:grid-cols-[360px_1fr]">
         <aside className="flex min-w-0 flex-col gap-5">
-          <CreateIncidentForm
+          {runtime || runtimeError ? <CreateIncidentForm
+            runtime={runtime}
             onCreated={(inc, scenario) => {
               setSelected({ id: inc.id, scenario });
               refresh();
             }}
-          />
+          /> : <div className="card h-40 animate-pulse" />}
           <IncidentList
             incidents={incidents}
             error={listError}
@@ -81,7 +91,7 @@ export default function App() {
         </aside>
         <section className="min-w-0">
           {selected ? (
-            <IncidentDetail key={selected.id} id={selected.id} initialScenario={selected.scenario} onChanged={refresh} />
+            <IncidentDetail key={selected.id} id={selected.id} initialScenario={selected.scenario} scenarios={runtime?.scenarios ?? []} onChanged={refresh} />
           ) : (
             <EmptyState />
           )}

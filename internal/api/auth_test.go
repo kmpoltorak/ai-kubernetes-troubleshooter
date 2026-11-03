@@ -74,6 +74,7 @@ func TestAuthenticationProtectsBackend(t *testing.T) {
 		{"forged identity", "GET", "/api/v1/incidents", "", []string{"X-Forwarded-User", "admin", "X-Auth-Request-User", "admin"}, 401},
 		{"forged proxy IP", "GET", "/api/v1/incidents", "", []string{"X-Forwarded-For", "127.0.0.1"}, 401},
 		{"anonymous metrics", "GET", "/metrics", "", nil, 401},
+		{"anonymous runtime", "GET", "/api/v1/runtime", "", nil, 401},
 		{"allowed JWT", "GET", "/api/v1/incidents", "", []string{"Authorization", "Bearer valid"}, 200},
 		{"allowed cookie", "GET", "/api/v1/incidents", "", []string{"Cookie", "session=valid"}, 200},
 		{"forbidden group", "GET", "/api/v1/incidents", "", []string{"Authorization", "Bearer forbidden"}, 403},

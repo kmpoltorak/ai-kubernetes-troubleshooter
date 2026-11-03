@@ -21,9 +21,10 @@ trap 'echo "$(basename "$0"): failed at line $LINENO" >&2' ERR
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# ready PORT [PATH]: PATH defaults to /ready.
 ready() {
   for _ in $(seq 60); do
-    if curl -fsS --max-time 2 "http://127.0.0.1:$1/ready" >/dev/null 2>&1; then return; fi
+    if curl -fsS --max-time 2 "http://127.0.0.1:$1${2:-/ready}" >/dev/null 2>&1; then return; fi
     sleep 1
   done
   echo "server on port $1 did not become ready" >&2

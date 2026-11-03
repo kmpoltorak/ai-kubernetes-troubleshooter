@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const rules = process.env.BROWSER_RULES_URL ?? "";
 const failing = process.env.BROWSER_FAILING_URL ?? "";
-if (!rules || !failing) throw new Error("run through scripts/test-browser.sh");
+const live = process.env.BROWSER_LIVE_URL ?? "";
+if (!rules || !failing || !live) throw new Error("run through scripts/test-browser.sh");
 
 async function createSample(page: Page, base: string, sample: string) {
   await page.goto(base);
@@ -23,6 +24,8 @@ const jobStatus = (page: Page) => page.getByRole("region", { name: "Investigatio
 
 test("a sample investigation links citations to evidence and survives a reload", async ({ page }) => {
   await createSample(page, rules, "OOM");
+  await expect(page.getByText("simulation · local · rules/rules-v1")).toBeVisible();
+  await expect(page.getByLabel("Scenario")).toHaveValue("oom_killed");
   await page.getByRole("button", { name: "Run investigation" }).click();
   await expect(page.getByRole("heading", { name: /OOMKilled/ })).toBeVisible();
   await expect(page.getByText("Evidence support:")).toBeVisible();
@@ -94,4 +97,18 @@ test("a rejected status read stops polling until the user retries", async ({ pag
   await expect(page.getByRole("heading", { name: /OOMKilled/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Retry status check" }).click();
   await expect(page.getByRole("heading", { name: /OOMKilled/ })).toBeVisible();
+});
+
+test("live mode hides simulation controls and fills the configured cluster", async ({ page }) => {
+  await page.goto(live);
+  await expect(page.getByText("live · browser-live · rules/rules-v1")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Sample incidents" })).toHaveCount(0);
+  await expect(page.getByLabel("Cluster")).toHaveValue("browser-live");
+  await expect(page.locator("#allowed-namespaces option")).toHaveCount(2);
+  await page.getByLabel("Description").fill("Checkout returns 503 after the release.");
+  await page.getByLabel("Namespace").fill("payments");
+  await page.getByLabel("Name", { exact: true }).fill("checkout");
+  await page.getByRole("button", { name: "Create incident" }).click();
+  await expect(page.getByRole("button", { name: "Run investigation" })).toBeEnabled();
+  await expect(page.getByLabel("Scenario")).toHaveCount(0);
 });
