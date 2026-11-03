@@ -2,7 +2,8 @@
 
 The CI `kubernetes` matrix runs the built application against a real API server,
 kubelet, controllers and NetworkPolicy enforcement. It uses one kind node per
-job on Linux amd64. The seven other CI jobs remain enabled.
+job on Linux amd64. Both jobs import the same OCI artifact from the `build` job;
+they do not rebuild the application. The seven other CI jobs remain enabled.
 
 | Kubernetes | kind | Node image SHA256 |
 |---|---|---|
@@ -25,12 +26,18 @@ make test-e2e                                     # Kubernetes 1.37.0
 E2E_KUBERNETES_VERSION=1.36.4 make test-e2e
 ```
 
-Each command builds the application Dockerfile and a small test fixture, compiles
+By default, each command builds the application Dockerfile and a small test fixture, compiles
 the Go tests, creates a uniquely named `akt-e2e-*` kind cluster, and uses its own
 temporary kubeconfig and explicit context. It never selects your current context
 or reads `.env`. The test code also requires the expected single-node kind name
 and a loopback API endpoint before writing fixtures. It cannot target a remote
 production cluster.
+
+Set `E2E_IMAGE_ARTIFACT` to a downloaded [candidate artifact](releases.md) directory
+to test an existing image. This requires Skopeo, jq and shasum. The runner verifies
+its archive checksum, manifest/configuration digests and build labels, loads the
+OCI archive directly into kind and checks the imported configuration ID. It pins
+the Deployment to the original digest. The fixture is still built locally.
 
 The runner applies a temporary copy of the base Kustomize manifests, retains two
 replicas and the base ServiceAccount, loads the local application image, and adds

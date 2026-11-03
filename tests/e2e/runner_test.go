@@ -15,7 +15,7 @@ func TestRunnerFailsClosedAndCleansOwnedCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"invalid_artifact", "list_failure", "create_failure"} {
+	for _, mode := range []string{"invalid_artifact", "list_failure", "create_failure", "missing_image_artifact"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			bin := filepath.Join(dir, "bin")
@@ -55,6 +55,10 @@ fi
 			}
 			cmd := exec.CommandContext(ctx, "bash", filepath.Join(repo, "scripts/test-e2e.sh"))
 			cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "TMPDIR="+dir, "E2E_TRACE="+trace, "E2E_FAKE_MODE="+mode, "E2E_KUBERNETES_VERSION=1.37.0", "E2E_ARTIFACT_DIR="+artifact, "KUBECONFIG="+filepath.Join(dir, "user-context-must-stay"))
+			cmd.Env = append(cmd.Env, "E2E_IMAGE_ARTIFACT=")
+			if mode == "missing_image_artifact" {
+				cmd.Env = append(cmd.Env, "E2E_IMAGE_ARTIFACT="+filepath.Join(dir, "absent-image"))
+			}
 			if err := os.WriteFile(filepath.Join(dir, "user-context-must-stay"), []byte("unchanged"), 0600); err != nil {
 				t.Fatal(err)
 			}

@@ -3,6 +3,8 @@
 .env
 .env.*
 bin
+candidate
+release-assets
 docs
 deployments
 *.md

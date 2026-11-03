@@ -4,6 +4,8 @@
 *.test
 *.out
 coverage.*
+/candidate/
+/release-assets/
 
 # Local environment — never commit secrets
 .env

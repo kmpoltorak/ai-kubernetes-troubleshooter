@@ -36,6 +36,7 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
 
 Requires Docker with Compose. Go 1.27+ (and Node 22 for the UI) only to run
 outside Docker.
+For a digest-pinned Kubernetes image and manifests, see [candidates and releases](docs/releases.md).
 
 ```bash
 git clone https://github.com/kmpoltorak/ai-kubernetes-troubleshooter.git
@@ -215,7 +216,7 @@ Go tests also fail if the RBAC manifest gains a permission or a
 Grafana panel queries a metric the app does not export. CI adds govulncheck,
 `npm audit` and a Docker build. A report from a live minikube run is in
 [docs/examples/report_oom_killed_minikube.json](docs/examples/report_oom_killed_minikube.json).
-The [live Kubernetes tests](docs/kubernetes-testing.md) build the current source,
+The [live Kubernetes tests](docs/kubernetes-testing.md) use one shared OCI image in CI (or build local source),
 deploy two API replicas with the base ServiceAccount, and check actual failures
 and TCP policy enforcement. They use a separate kubeconfig and remove their cluster.
 
