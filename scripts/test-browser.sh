@@ -35,7 +35,8 @@ node -e 'require("http").createServer((req, res) => { req.resume(); setTimeout((
 }, 8000); }).listen(Number(process.argv[1]), "127.0.0.1");' "$((port + 2))" > "$work/provider.log" 2>&1 &
 pids="$pids $!"
 
-start "$port" akt LLM_PROVIDER=rules
+# A low limit makes the UI's normal request bursts hit 429 rate_limited on every run.
+start "$port" akt LLM_PROVIDER=rules RATE_LIMIT_RPS=2
 start $((port + 1)) failing LLM_PROVIDER=openai OPENAI_API_KEY=browser-test OPENAI_BASE_URL="http://127.0.0.1:$((port + 2))/v1"
 ready "$port"
 ready $((port + 1))
