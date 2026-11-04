@@ -48,7 +48,6 @@ cp .env.example .env
 
 ```bash
 docker compose up --build                          # UI and API on http://localhost:8080
-docker compose --profile monitoring up --build     # plus Prometheus :9090 and Grafana :3000
 docker compose --profile ollama up --build         # plus a local Ollama with a model pull
 ```
 
@@ -96,7 +95,6 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 | `JOB_TIMEOUT`, `JOB_QUEUE_CAPACITY` | `15m`, `100` | total time from acceptance; maximum waiting jobs |
 | `MAX_CONCURRENT_INVESTIGATIONS` | `4` | valid active leases across replicas sharing the database |
 | `RATE_LIMIT_RPS` | `5` | per-IP rate limit |
-| `GRAFANA_ADMIN_PASSWORD` | `admin` | `monitoring` profile only |
 
 **Simulation.** Each investigation gets its own fake cluster built around the
 incident's namespace and name, and the real tools run against it.
@@ -152,8 +150,10 @@ API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
 `rate_limited` with `Retry-After`, `409` `idempotency_conflict`, `503` `unavailable`
 for job storage errors, `502` `analysis_failed` with stored evidence on the waiting endpoint.
 Jobs survive client disconnects. See [queue, retries and upgrade instructions](docs/durable-jobs.md).
-Logs are JSON with request and trace IDs. The `monitoring` profile
-provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
+Logs are JSON with request and trace IDs. Prometheus metrics are served at `/metrics`
+(the Kubernetes Deployment carries `prometheus.io/*` scrape annotations). Import
+[the Grafana dashboard](deployments/grafana/dashboards/kubernetes-troubleshooter.json)
+into your Grafana and pick a Prometheus data source in its `Data source` variable.
 The UI checks job status every 2 seconds and resumes the saved job after a tab reload. It resends a `rate_limited` request after `Retry-After` plus up to 0.5 s jitter until the request's 15 s timeout; `busy` is shown. Select older attempts from history; a failed attempt keeps its evidence and does not replace the latest successful report, and an older attempt is labelled with its age. The incident list shows 20 per page.
 **Export** saves the selected attempt as Markdown or JSON from the data the API returned (already masked). JSON is the attempt record plus `incident` and `export: {exported_at, build, schema_version}` (`1` for legacy reports, `null` without a report); legacy scores are never exported as numbers.
 New analyses use [report schema v2](docs/analysis-contract.md): `verdict`, evidence `support`, exact citations, missing data and scope limits. New API clients must handle v2 instead of `confidence`; stored legacy reports remain readable.

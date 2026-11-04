@@ -116,7 +116,7 @@ limited. Rate limiting uses the direct peer address, so an ingress
 may share one bucket across users; arbitrary forwarding headers are not trusted.
 
 Prometheus needs an OIDC JWT with the same admission claims when scraping
-`/metrics`; the default monitoring profile is for authentication-disabled demos.
+`/metrics`.
 Configure token acquisition/refresh in the scraper or its credential manager.
 The application does not mint or refresh API tokens. All admitted users can read
 the installation's incidents; there are no per-user or per-namespace roles.
