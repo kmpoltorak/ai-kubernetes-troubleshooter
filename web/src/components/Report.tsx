@@ -3,15 +3,15 @@ import type { Health, InvestigationRecord, Severity } from "../api";
 import { verdictLabel } from "../export";
 
 const severityStyle: Record<Severity, string> = {
-  low: "text-emerald-600 border-emerald-500/40 dark:text-emerald-400",
-  medium: "text-amber-600 border-amber-500/40 dark:text-amber-400",
+  low: "text-emerald-700 border-emerald-500/40 dark:text-emerald-400",
+  medium: "text-amber-700 border-amber-500/40 dark:text-amber-400",
   high: "text-red-600 border-red-500/40 dark:text-red-400",
   critical: "text-fuchsia-600 border-fuchsia-500/40 dark:text-fuchsia-400",
 };
 
 const healthStyle: Record<Health | "failed", string> = {
-  healthy: "text-emerald-600 dark:text-emerald-400",
-  degraded: "text-amber-600 dark:text-amber-400",
+  healthy: "text-emerald-700 dark:text-emerald-400",
+  degraded: "text-amber-700 dark:text-amber-400",
   down: "text-red-600 dark:text-red-400",
   failed: "text-red-600 dark:text-red-400",
 };
@@ -35,19 +35,19 @@ export default function Report({ record }: { record: InvestigationRecord }) {
       <section className="card" aria-label="Selected investigation">
         <h3 className="section-title">Selected investigation</h3>
         <p className="text-sm">Status: <strong>{record.investigation.status}</strong></p>
-        <p className="mt-1 font-mono text-xs text-zinc-500">{record.investigation.id}</p>
+        <p className="mt-1 font-mono text-xs text-zinc-600 dark:text-zinc-400">{record.investigation.id}</p>
         <p className="mt-2 text-sm">Started: <time dateTime={record.investigation.started_at}>{record.investigation.started_at}</time></p>
         {record.investigation.completed_at && <p className="text-sm">Finished: <time dateTime={record.investigation.completed_at}>{record.investigation.completed_at}</time></p>}
         {report && <p className="text-sm">Report created: <time dateTime={report.created_at}>{report.created_at}</time></p>}
         {record.investigation.error && <p role="alert" className="mt-2 whitespace-pre-wrap text-sm text-red-600 dark:text-red-400">{record.investigation.error}</p>}
-        {record.investigation.status === "queued" && <p className="mt-2 text-sm text-zinc-500">This investigation is queued and waiting for a worker.</p>}
-        {record.investigation.status === "running" && <p className="mt-2 text-sm text-zinc-500">This investigation is running. Its saved diagnostic results appear below.</p>}
+        {record.investigation.status === "queued" && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">This investigation is queued and waiting for a worker.</p>}
+        {record.investigation.status === "running" && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">This investigation is running. Its saved diagnostic results appear below.</p>}
       </section>
       {a && report && (
         <>
           <div className="card grid gap-6 md:grid-cols-[1fr_240px]">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{v2 ? "Assessment" : "Root cause"}</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">{v2 ? "Assessment" : "Root cause"}</p>
               <h3 className="mt-1 text-xl font-semibold">{a.root_cause}</h3>
               <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{a.summary}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
@@ -65,9 +65,9 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               {v2 ? <div className="text-sm">
                 <p>{a.verdict && verdictLabel[a.verdict]}</p>
                 <p>Evidence support: <strong>{a.support}</strong></p>
-                <p className="mt-1 text-xs text-zinc-500">Support describes the evidence, not a probability of correctness.</p>
-              </div> : <p className="text-xs text-zinc-500">Legacy report: tool-level citations and an uncalibrated score. The numeric score is not displayed.</p>}
-              <span className="font-mono text-xs text-zinc-500">analyzed by {report.provider}</span>
+                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">Support describes the evidence, not a probability of correctness.</p>
+              </div> : <p className="text-xs text-zinc-600 dark:text-zinc-400">Legacy report: tool-level citations and an uncalibrated score. The numeric score is not displayed.</p>}
+              <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">analyzed by {report.provider}</span>
             </div>
           </div>
 
@@ -77,10 +77,10 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               <ol className="flex flex-col gap-2 text-sm">
                 {recommendations.map((r) => (
                   <li key={r.id} className="flex items-start gap-2">
-                    <span className="mt-0.5 font-mono text-xs text-zinc-500">{r.position}.</span>
+                    <span className="mt-0.5 font-mono text-xs text-zinc-600 dark:text-zinc-400">{r.position}.</span>
                     <span className="flex-1">{r.description}</span>
                     {r.requires_approval && (
-                      <span className="shrink-0 rounded-full border border-amber-500/40 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                      <span className="shrink-0 rounded-full border border-amber-500/40 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-400">
                         needs approval
                       </span>
                     )}
@@ -109,14 +109,14 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               <ul className="flex flex-col gap-1.5 text-sm">
                 {(a.evidence ?? []).map((e, i) => (
                   <li key={i}>
-                    {v2 && e.evidence_id && citedIDs.has(e.evidence_id) ? <a className="mr-2 font-mono text-xs text-indigo-600 underline dark:text-indigo-400" href={`#${anchor(e.evidence_id)}`}>{e.source} · {e.evidence_id}</a> : <span className="mr-2 font-mono text-xs text-zinc-500">{e.source}</span>}
+                    {v2 && e.evidence_id && citedIDs.has(e.evidence_id) ? <a className="mr-2 font-mono text-xs text-indigo-600 underline dark:text-indigo-400" href={`#${anchor(e.evidence_id)}`}>{e.source} · {e.evidence_id}</a> : <span className="mr-2 font-mono text-xs text-zinc-600 dark:text-zinc-400">{e.source}</span>}
                     {e.description}
                   </li>
                 ))}
               </ul>
               {v2 && <>
                 <h4 className="section-title mt-5">Missing data</h4>
-                {(a.missing_data ?? []).length ? <ul className="list-disc pl-5 text-sm">{a.missing_data?.map((item, i) => <li key={i}>{item}</li>)}</ul> : <p className="text-sm text-zinc-500">No failed diagnostics reported; coverage is still limited.</p>}
+                {(a.missing_data ?? []).length ? <ul className="list-disc pl-5 text-sm">{a.missing_data?.map((item, i) => <li key={i}>{item}</li>)}</ul> : <p className="text-sm text-zinc-600 dark:text-zinc-400">No failed diagnostics reported; coverage is still limited.</p>}
                 <h4 className="section-title mt-5">Scope and sampling limits</h4>
                 <ul className="list-disc pl-5 text-sm">{a.limitations?.map((item, i) => <li key={i}>{item}</li>)}</ul>
               </>}
@@ -129,7 +129,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
         <h4 className="section-title">Diagnostics</h4>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs text-zinc-500">
+            <thead className="text-xs text-zinc-600 dark:text-zinc-400">
               <tr className="border-b border-zinc-200 dark:border-zinc-800">
                 <th className="py-2 pr-4 font-medium">Tool</th>
                 <th className="py-2 pr-4 font-medium">Result</th>
@@ -146,7 +146,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
                   <tr key={te.id} id={ev && anchor(ev.id)} className="scroll-mt-20 border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800/60">
                     <td className="py-2.5 pr-4">
                       <div className="font-mono text-xs">{te.tool_name}</div>
-                      {ev?.subject && <div className="mt-0.5 font-mono text-[11px] text-zinc-500">{ev.subject}</div>}
+                      {ev?.subject && <div className="mt-0.5 font-mono text-[11px] text-zinc-600 dark:text-zinc-400">{ev.subject}</div>}
                     </td>
                     <td className={`py-2.5 pr-4 text-xs font-semibold whitespace-nowrap ${healthStyle[health]}`}>
                       <span className="mr-1.5 inline-block size-2 rounded-full bg-current" />
@@ -183,7 +183,7 @@ function CommandLine({ command }: { command: string }) {
       <code className="flex-1 truncate font-mono text-xs">{command}</code>
       <button
         type="button"
-        className="shrink-0 text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="shrink-0 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
         onClick={() =>
           // Clipboard access can be denied or missing (plain HTTP); say so instead of failing silently.
           Promise.resolve().then(() => navigator.clipboard.writeText(command)).then(

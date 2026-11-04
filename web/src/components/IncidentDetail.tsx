@@ -173,22 +173,22 @@ export default function IncidentDetail({ id, initialScenario, scenarios, build, 
       <div className="card">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold">{incident.title}</h2>
-            <p className="mt-1 truncate font-mono text-xs text-zinc-500">
+            <h2 className="text-lg font-semibold break-words">{incident.title}</h2>
+            <p className="mt-1 truncate font-mono text-xs text-zinc-600 dark:text-zinc-400">
               {target(incident)} · {incident.id}
             </p>
           </div>
           <span
             className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
               incident.status === "analyzed"
-                ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-                : "border-zinc-300 text-zinc-500 dark:border-zinc-700"
+                ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
+                : "border-zinc-300 text-zinc-600 dark:text-zinc-400 dark:border-zinc-700"
             }`}
           >
             {incident.status}
           </span>
         </div>
-        {incident.description && <p className="mt-3 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{incident.description}</p>}
+        {incident.description && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-zinc-700 dark:text-zinc-300">{incident.description}</p>}
 
         <div className="mt-5 flex flex-wrap items-end gap-3">
           {scenarios.length > 0 && (
@@ -209,8 +209,8 @@ export default function IncidentDetail({ id, initialScenario, scenarios, build, 
             {submitting ? "Submitting…" : running ? "Investigation active" : pending ? "Retry submission" : "Run investigation"}
           </button>
         </div>
-        {running && !job && <p role="status" className="mt-3 text-sm text-zinc-500">Resuming investigation status…</p>}
-        {pending && <p className="mt-3 text-sm text-zinc-500">Submission is unconfirmed. Retry uses the same request and does not start a duplicate investigation.</p>}
+        {running && !job && <p role="status" className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">Resuming investigation status…</p>}
+        {pending && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">Submission is unconfirmed. Retry uses the same request and does not start a duplicate investigation.</p>}
         {(error || storageError) && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{storageError || error}</p>}
         {(job || watchError) && <JobStatus record={job} error={watchError} onRetry={() => setWatchVersion((v) => v + 1)} onView={() => {
           if (job) { ++recordVersion.current; selectedJobID.current = job.job.id; setRecord(job.result); setLoadingRecord(false); }
@@ -220,7 +220,7 @@ export default function IncidentDetail({ id, initialScenario, scenarios, build, 
       <InvestigationHistory page={page} selectedID={record?.investigation.id} latestReport={latestReport}
         busy={submitting || loadingHistory || loadingRecord} error={historyError}
         onSelect={selectAttempt} onPage={(offset) => loadHistory(offset)} onRefresh={() => loadHistory(0, true)} />
-      {loadingRecord && <p role="status" className="text-sm text-zinc-500">Loading investigation…</p>}
+      {loadingRecord && <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">Loading investigation…</p>}
       {record && <section className="card flex flex-wrap items-center gap-3 text-sm" aria-label="Export">
         {newest && record.investigation.id !== newest.id && <p role="note" className="w-full text-amber-700 dark:text-amber-400">
           Older attempt from {timeAgo(record.investigation.started_at)} (<time dateTime={record.investigation.started_at}>{record.investigation.started_at}</time>).

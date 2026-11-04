@@ -195,6 +195,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
 - Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0 (pull requests: 1.37.0 only), Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI. Browser tests run in Chromium only; Firefox and Safari are untested.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
+- Accessibility is checked with axe's automated rules in Chromium only; there is no manual screen-reader audit.
 - Exports are created in the browser; the server does not record who exported what.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
 - Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
@@ -217,7 +218,9 @@ Unit tests use synthetic clusters and model responses; integration tests exercis
 PostgreSQL, API requests and worker recovery. The upgrade test compares API reads
 before and after a real backup and restore. The browser tests drive the embedded UI
 in Chromium: a report with evidence links, a reload during a failing analysis,
-keyboard-only use and status-read errors. See [evaluation commands](docs/evaluation.md)
+keyboard-only use and status-read errors. They also run axe's automated WCAG 2.1 A/AA
+rules on the main states in light and dark mode, and check that long titles do not
+widen the page at 390 and 1280 px. See [evaluation commands](docs/evaluation.md)
 for offline checks and the opt-in OpenAI/Ollama tool. The [kind tests](docs/kubernetes-testing.md)
 deploy two API replicas and check live diagnostics, RBAC and NetworkPolicy using
 one shared image in CI. CI also runs govulncheck and `npm audit`.
