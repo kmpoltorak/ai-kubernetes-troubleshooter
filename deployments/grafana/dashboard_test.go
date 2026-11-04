@@ -1,4 +1,4 @@
-// Package grafana holds tests for the provisioned Grafana dashboard.
+// Package grafana holds tests for the Grafana dashboard that operators import.
 package grafana
 
 import (
@@ -56,5 +56,52 @@ func TestDashboardUsesExportedMetrics(t *testing.T) {
 	}
 	if queries < 15 {
 		t.Fatalf("only %d queries found; dashboard not parsed correctly", queries)
+	}
+}
+
+// TestDashboardImportsIntoAnyGrafana fails when a panel or query is tied to a
+// data source that exists only in one Grafana instead of the selectable variable.
+func TestDashboardImportsIntoAnyGrafana(t *testing.T) {
+	raw, err := os.ReadFile("dashboards/kubernetes-troubleshooter.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type source struct{ Type, UID string }
+	var dash struct {
+		Templating struct {
+			List []struct{ Name, Type, Query string } `json:"list"`
+		} `json:"templating"`
+		Panels []struct {
+			Title      string  `json:"title"`
+			Type       string  `json:"type"`
+			Datasource *source `json:"datasource"`
+			Targets    []struct {
+				Datasource *source `json:"datasource"`
+			} `json:"targets"`
+		} `json:"panels"`
+	}
+	if err := json.Unmarshal(raw, &dash); err != nil {
+		t.Fatal(err)
+	}
+	variable := false
+	for _, v := range dash.Templating.List {
+		variable = variable || (v.Name == "datasource" && v.Type == "datasource" && v.Query == "prometheus")
+	}
+	if !variable {
+		t.Fatal("dashboard needs a Prometheus data source variable named datasource")
+	}
+	want := source{Type: "prometheus", UID: "${datasource}"}
+	for _, p := range dash.Panels {
+		if p.Type == "row" {
+			continue
+		}
+		if p.Datasource == nil || *p.Datasource != want {
+			t.Errorf("panel %q data source %+v, want the variable", p.Title, p.Datasource)
+		}
+		for _, tgt := range p.Targets {
+			if tgt.Datasource == nil || *tgt.Datasource != want {
+				t.Errorf("panel %q query data source %+v, want the variable", p.Title, tgt.Datasource)
+			}
+		}
 	}
 }
