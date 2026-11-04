@@ -69,6 +69,15 @@ EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@db.example.net:5432/tr
   docker compose up --build -d --no-deps app
 ```
 
+A PostgreSQL container on the same host (its port bound to `127.0.0.1` is not
+reachable from the app): join its Docker network and name the container in the URL.
+
+```bash
+EXTERNAL_DATABASE_NETWORK=atlas_default \
+EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@atlas-db:5432/troubleshooter?sslmode=disable' \
+  docker compose -f docker-compose.yml -f docker-compose.external-db.yml up --build -d --no-deps app
+```
+
 The UI's sample buttons fill in an incident and pick the matching simulation
 scenario. The header shows the mode, cluster name and analyzer; live mode has no
 samples or scenario choice, and the form pre-fills the configured cluster. Outside Docker:
@@ -90,6 +99,7 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 | `AUTH_PUBLIC_URL` | empty | required when auth is on; HTTPS origin, or HTTP loopback for local auth tests |
 | `DATABASE_URL` | | PostgreSQL; Compose points it at its own container |
 | `EXTERNAL_DATABASE_URL` | empty | Compose only: use this PostgreSQL instead; start with `up --no-deps app` |
+| `EXTERNAL_DATABASE_NETWORK` | | Compose with `docker-compose.external-db.yml`: existing Docker network of that database |
 | `POSTGRES_PORT` | `5432` | Compose only: host port of the bundled PostgreSQL, bound to `127.0.0.1` for `make run` |
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
 | `SIMULATION_SCENARIO` | `healthy` | default scenario |

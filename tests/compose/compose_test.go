@@ -20,12 +20,17 @@ type rendered struct {
 			Published string `json:"published"`
 			Target    int    `json:"target"`
 		} `json:"ports"`
-		Volumes []struct {
+		Networks map[string]any `json:"networks"`
+		Volumes  []struct {
 			Source   string `json:"source"`
 			Target   string `json:"target"`
 			ReadOnly bool   `json:"read_only"`
 		} `json:"volumes"`
 	} `json:"services"`
+	Networks map[string]struct {
+		Name     string `json:"name"`
+		External bool   `json:"external"`
+	} `json:"networks"`
 }
 
 func render(t *testing.T, kubeconfig string, files ...string) (rendered, string, error) {
@@ -51,7 +56,7 @@ func renderEnv(t *testing.T, env map[string]string, files ...string) (rendered, 
 	cmd := exec.CommandContext(ctx, "docker", append(args, "config", "--format", "json")...)
 	cmd.Dir = "../.."
 	for _, kv := range os.Environ() {
-		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "EXTERNAL_DATABASE_URL" && name != "POSTGRES_PORT" {
+		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "EXTERNAL_DATABASE_URL" && name != "EXTERNAL_DATABASE_NETWORK" && name != "POSTGRES_PORT" {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
@@ -128,5 +133,26 @@ func TestExternalDatabaseURLReplacesBundledPostgres(t *testing.T) {
 	}
 	if got := r.Services["app"].Environment["DATABASE_URL"]; got != url {
 		t.Fatalf("app database: %q", got)
+	}
+}
+
+func TestExternalDatabaseNetworkJoinsExistingNetwork(t *testing.T) {
+	env := map[string]string{"EXTERNAL_DATABASE_NETWORK": "atlas_default", "EXTERNAL_DATABASE_URL": "postgres://u:p@atlas-db:5432/t"}
+	r, stderr, err := renderEnv(t, env, "docker-compose.yml", "docker-compose.external-db.yml")
+	if err != nil {
+		t.Fatalf("render: %v %s", err, stderr)
+	}
+	networks := r.Services["app"].Networks
+	if _, ok := networks["external-database"]; !ok {
+		t.Fatalf("app does not join the database network: %v", networks)
+	}
+	if _, ok := networks["default"]; !ok {
+		t.Fatalf("app left its own network: %v", networks)
+	}
+	if n := r.Networks["external-database"]; n.Name != "atlas_default" || !n.External {
+		t.Fatalf("network must be the existing one, not created: %+v", n)
+	}
+	if _, stderr, err := renderEnv(t, map[string]string{}, "docker-compose.yml", "docker-compose.external-db.yml"); err == nil || !strings.Contains(stderr, "set EXTERNAL_DATABASE_NETWORK") {
+		t.Fatalf("missing EXTERNAL_DATABASE_NETWORK must fail clearly: %v %s", err, stderr)
 	}
 }
