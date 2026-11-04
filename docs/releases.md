@@ -1,8 +1,9 @@
 # Image candidates and releases
 
-CI builds one Linux amd64 OCI archive after lint, Go unit tests and UI checks.
-The two Kubernetes jobs download that same artifact, verify its checksum and
-image metadata, and import it directly into kind. They do not rebuild the app.
+CI builds one Linux amd64 OCI archive. The Kubernetes jobs (1.37.0 on pull
+requests, 1.36.4 and 1.37.0 on `main` and releases) download that same artifact,
+verify its checksum and image metadata, and import it directly into kind. They do
+not rebuild the app.
 The loaded configuration ID must match the artifact, the Deployment uses the
 original manifest digest, and the live tests check the compiled build fields.
 
@@ -11,46 +12,50 @@ the archive SHA256, OCI manifest and configuration digests, source revision,
 version and build time. CI retains it for three days. The candidate is not a
 published release. The image is not signed; metadata is supplied by the builder.
 
-## Prepare a candidate
+## Versions and the release PR
 
-Run the **Release candidate** workflow from `main`, with an unused version
-`0.x.y` (without `v`) and **publish disabled**. It runs the same CI workflow,
-including authentication, database integration, security and both Kubernetes
-versions. Download its artifact to inspect it. This mode creates no registry
-image, Git tag or GitHub release.
+Versions follow SemVer and are derived by
+[release-please](https://github.com/googleapis/release-please-action) from commit
+prefixes since the last release: `fix:` → patch, `feat:` → minor, `!` after the type
+or a `BREAKING CHANGE:` footer → major. `docs:`, `ci:` and `chore:` alone do not
+release. After each push to `main`, release-please keeps one open release PR with the
+next version and its `CHANGELOG.md` entry. Merging that PR is the decision to release.
+
+Requirements and limits:
+
+- Settings → Actions → General must allow GitHub Actions to create pull requests.
+- The release PR is opened with the workflow token, so GitHub runs no CI on it. It
+  changes only `CHANGELOG.md` and `.release-please-manifest.json`; the full CI runs
+  on its merge commit before anything is published.
 
 ## Publish
 
-After reviewing the source and choosing a version, run **Release candidate**
-from `main` with that version and **publish enabled**. This starts a fresh,
-fully tested candidate; it does not promote an earlier workflow run. Only after
-all its checks pass does the publication job receive package/repository write
-permissions. PR workflows have read-only permissions.
+Merging the release PR creates a draft release `vX.Y.Z` and its tag at the merge
+commit. The **Release** workflow then:
 
-The publication job copies the original OCI archive to
-`ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter:0.x.y`, requires preservation
-of its digest, and verifies the remote manifest. It then creates a GitHub
-prerelease and `v0.x.y` tag at the tested commit, with metadata and base/auth
-Kubernetes manifests pinned to the image digest. It creates no `latest` tag.
+1. requires the version to be `X.Y.Z` and the tag to point at the pushed commit;
+2. runs the whole CI on that commit, including authentication, database
+   integration, browser, security and both Kubernetes versions;
+3. copies the tested OCI archive to
+   `ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter:X.Y.Z`, requiring its digest to
+   be preserved, and verifies the remote manifest;
+4. attaches `metadata.json` and the base/auth Kubernetes manifests pinned to the
+   image digest, adds the digest to the release notes, and publishes the draft.
 
-Registry tags can be changed. Install by the digest in the release assets,
-and never reuse a version for different source. The workflow rejects an existing
-Git release tag and serializes release runs. It cannot prevent another registry
-writer from changing a tag.
-Tag creation also refuses a version taken while the tests were running; release
-creation requires that tag instead of silently choosing an existing one.
+Only the publish job gets package and repository write permissions, and only after
+all checks pass. No `latest` tag is created. Registry tags can be changed by anyone
+with write access: install by the digest in the release assets.
 
-Publication, Git tagging and GitHub release creation are separate operations.
-A failure can leave a registry image or a Git tag without release assets. Inspect the image
-digest and Git tag before recovery; do not blindly rerun a version with different
-source or a different candidate. Package visibility and repository permissions
-must allow your consumers to pull the image. No public image is implied merely
-by merging the workflow.
+If a check fails, the draft release and its tag remain and nothing is published.
+Inspect them, then delete both, or fix the problem and let the next release PR use
+the next version. Image publication, asset upload and publishing the draft are
+separate operations: a failure between them can leave an image without a public
+release. Check the image digest and the draft before rerunning.
 
 ## Install a release
 
 Download `kubernetes.yaml` or `kubernetes-authenticated.yaml` from the selected
-GitHub prerelease. Review and configure the namespace policy, database Secret,
+GitHub release. Review and configure the namespace policy, database Secret,
 ingress and, for authentication, the [OIDC settings](authentication.md) before
 applying it. The base variant has authentication disabled. PostgreSQL is external;
 release assets contain neither database credentials nor auth secrets. The image
@@ -60,7 +65,7 @@ reference is already pinned; do not replace it with a floating tag.
 
 `scripts/image-artifact.sh create DIR VERSION REVISION UTC_TIME` exports a new
 candidate from the current working tree. It requires Docker Buildx with OCI
-export support, Skopeo, jq and shasum. Versions are `ci` or `0.x.y`; revision is
+export support, Skopeo, jq and shasum. Versions are `ci` or SemVer `X.Y.Z`; revision is
 a full lowercase Git SHA and time has the form `2026-01-01T12:34:56Z`.
 
 ```bash

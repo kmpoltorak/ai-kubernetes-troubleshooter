@@ -10,7 +10,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/akt-artifact.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 hash() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
-valid_version() { [[ "$1" =~ ^0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; }
+valid_version() { [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; }
 verify() {
   jq -e '
     .schema == 1 and
@@ -42,7 +42,7 @@ case "$command" in
     version=${3:?version}
     revision=${4:?revision}
     built_at=${5:?build time}
-    if [ "$version" != ci ] && ! valid_version "$version"; then echo 'expected ci or 0.x.y' >&2; exit 2; fi
+    if [ "$version" != ci ] && ! valid_version "$version"; then echo 'expected ci or a SemVer x.y.z' >&2; exit 2; fi
     [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
     [[ "$built_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
     jq -en --arg stamp "$built_at" '($stamp | fromdateiso8601 | todateiso8601) == $stamp' >/dev/null
