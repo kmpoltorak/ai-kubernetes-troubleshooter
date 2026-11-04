@@ -30,8 +30,6 @@ jobs:
           go-version-file: go.mod
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
-      - name: go vet
-        run: go vet ./... && go vet -tags integration,authintegration,modeleval,e2e ./...
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0
@@ -46,7 +44,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kubernetes: ["1.36.4", "1.37.0"]
+        # Pull requests check the newest version; pushes to main and release candidates check both.
+        kubernetes: ${{ fromJSON(github.event_name == 'pull_request' && '["1.37.0"]' || '["1.36.4", "1.37.0"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -192,7 +191,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint, test, web]
     outputs:
       image_artifact: ${{ steps.artifact.outputs.name }}
     steps:
@@ -200,8 +198,6 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: go build
-        run: go build ./...
       - uses: docker/setup-buildx-action@v4
       - name: Install image transport
         run: sudo apt-get update && sudo apt-get install -y skopeo

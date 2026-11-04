@@ -1,8 +1,9 @@
 # Live Kubernetes tests
 
 Run diagnostics, RBAC and NetworkPolicy checks on a disposable single-node kind
-cluster. CI covers Kubernetes **1.36.4** and **1.37.0**, Linux amd64, using one
-shared OCI image for both jobs.
+cluster. CI covers Kubernetes **1.36.4** and **1.37.0** on pushes to `main` and
+release candidates, and 1.37.0 on pull requests, Linux amd64, using one shared
+OCI image for every job.
 
 ## Run
 
