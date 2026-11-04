@@ -163,15 +163,21 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 // The server rejects rate_limited requests before handling them, so any method can be resent.
-// Other 429s (a full job queue) reach the caller. The 15s timeout covers every attempt.
-const rateLimitRetries = 3;
+// Resend until the 15s timeout; jitter spreads requests that were refused together, since the
+// UI's own burst after a reload can exceed the per-IP bucket. Other 429s (a full job queue)
+// reach the caller.
+function retryDelay(res: Response): number {
+  const header = res.headers.get("Retry-After");
+  const seconds = header === null ? 1 : Math.min(Math.max(Number(header) || 0, 0), 5);
+  return seconds * 1000 + Math.random() * 500;
+}
 
 async function request<T>(method: string, path: string, body?: unknown, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (body !== undefined) headers.set("Content-Type", "application/json");
   const timeout = AbortSignal.timeout(15_000);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
-  for (let attempt = 0; ; attempt++) {
+  for (;;) {
     const res = await fetch(path, {
       ...options,
       method,
@@ -183,8 +189,11 @@ async function request<T>(method: string, path: string, body?: unknown, options:
       if (signal.aborted || res.ok) throw e;
       return {};
     });
-    if (res.status === 429 && data.error?.code === "rate_limited" && attempt < rateLimitRetries) {
-      await pause(Math.min(Number(res.headers.get("Retry-After")) || 1, 5) * 1000, signal);
+    if (res.status === 429 && data.error?.code === "rate_limited") {
+      await pause(retryDelay(res), signal).catch((e) => {
+        // Still limited when the timeout fires: report the limit, not a generic timeout.
+        throw timeout.aborted ? new ApiError(data.error.message, 429) : e;
+      });
       continue;
     }
     if (!res.ok) throw new ApiError(data.error?.message ?? `HTTP ${res.status}`, res.status);
