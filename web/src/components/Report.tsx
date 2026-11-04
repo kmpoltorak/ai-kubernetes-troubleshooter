@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Health, InvestigationRecord, Severity } from "../api";
+import { verdictLabel } from "../export";
 
 const severityStyle: Record<Severity, string> = {
   low: "text-emerald-600 border-emerald-500/40 dark:text-emerald-400",
@@ -16,7 +17,6 @@ const healthStyle: Record<Health | "failed", string> = {
 };
 
 const chip = "rounded-md border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px] dark:border-zinc-700";
-const verdictLabel = { observed_fault: "Observed condition", suspected_fault: "Hypothesis", no_fault_observed: "No fault observed in this sample", inconclusive: "Inconclusive" };
 
 export default function Report({ record }: { record: InvestigationRecord }) {
   const report = record.report;
@@ -177,7 +177,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
 }
 
 function CommandLine({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"" | "copied" | "copy failed: select the command">("");
   return (
     <li className="flex items-center gap-2 rounded-lg bg-zinc-100 px-3 py-1.5 dark:bg-zinc-800">
       <code className="flex-1 truncate font-mono text-xs">{command}</code>
@@ -185,13 +185,13 @@ function CommandLine({ command }: { command: string }) {
         type="button"
         className="shrink-0 text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
         onClick={() =>
-          navigator.clipboard.writeText(command).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
+          // Clipboard access can be denied or missing (plain HTTP); say so instead of failing silently.
+          Promise.resolve().then(() => navigator.clipboard.writeText(command)).then(
+            () => { setCopied("copied"); setTimeout(() => setCopied(""), 1500); },
+            () => setCopied("copy failed: select the command"))
         }
       >
-        {copied ? "copied" : "copy"}
+        {copied || "copy"}
       </button>
     </li>
   );

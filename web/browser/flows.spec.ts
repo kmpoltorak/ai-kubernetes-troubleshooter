@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 const rules = process.env.BROWSER_RULES_URL ?? "";
@@ -111,4 +112,74 @@ test("live mode hides simulation controls and fills the configured cluster", asy
   await page.getByRole("button", { name: "Create incident" }).click();
   await expect(page.getByRole("button", { name: "Run investigation" })).toBeEnabled();
   await expect(page.getByLabel("Scenario")).toHaveCount(0);
+});
+
+async function investigateSample(page: Page) {
+  await createSample(page, rules, "OOM");
+  await page.getByRole("button", { name: "Run investigation" }).click();
+  await expect(page.getByRole("heading", { name: /OOMKilled/ })).toBeVisible();
+}
+
+async function exported(page: Page, label: string) {
+  const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: label }).click()]);
+  return { name: file.suggestedFilename(), body: readFileSync((await file.path())!, "utf8") };
+}
+
+test("attempts export as Markdown and JSON, and an older attempt is marked as older", async ({ page }) => {
+  await investigateSample(page);
+  const md = await exported(page, "Export Markdown");
+  expect(md.name).toMatch(/^incident-[0-9a-f]{8}-attempt-[0-9a-f]{8}\.md$/);
+  expect(md.body).toContain("# settlement restarts under load");
+  expect(md.body).toContain("**Container OOMKilled: memory exhaustion**");
+  expect(md.body).toMatch(/- Evidence support: \w+ \(describes the evidence/);
+  const first = JSON.parse((await exported(page, "Export JSON")).body);
+  expect(first.export.schema_version).toBe(2);
+  expect(first.evidence.length).toBeGreaterThan(0);
+
+  const history = page.getByRole("region", { name: "Investigation history" });
+  await page.getByRole("button", { name: "Run investigation" }).click();
+  await expect(history.getByRole("button", { name: /^completed/ })).toHaveCount(2);
+  await expect(page.getByRole("note")).toHaveCount(0);
+  await history.getByRole("button", { name: new RegExp(first.investigation.id) }).click();
+  await expect(page.getByRole("note")).toContainText("Older attempt");
+  expect(JSON.parse((await exported(page, "Export JSON")).body).investigation.id).toBe(first.investigation.id);
+  await history.getByRole("button", { name: /Latest attempt/ }).click();
+  await expect(page.getByRole("note")).toHaveCount(0);
+});
+
+test("copying a command reports success and a denied clipboard", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await investigateSample(page);
+  const line = page.getByRole("listitem").filter({ has: page.locator("code") }).first();
+  const command = await line.locator("code").innerText();
+  await line.getByRole("button", { name: "copy" }).click();
+  await expect(line.getByRole("button", { name: "copied" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(command);
+
+  await page.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new DOMException("denied", "NotAllowedError")); });
+  await line.getByRole("button", { name: "copy" }).click();
+  await expect(line.getByRole("button", { name: "copy failed: select the command" })).toBeVisible();
+});
+
+test("the incident list pages through older incidents", async ({ page, request }) => {
+  for (let i = 0; i < 21; i++) {
+    const data = { title: `paging ${i}`, description: "Paging check", cluster: "browser-live", namespace: "payments", resource_type: "deployment", resource_name: `app-${i}` };
+    for (let tries = 0; ; tries++) {
+      const res = await request.post(`${live}/api/v1/incidents`, { data });
+      if (res.status() === 201) break;
+      expect(res.status() === 429 && tries < 10, `create incident: ${res.status()}`).toBe(true);
+      await page.waitForTimeout(1000);
+    }
+  }
+  await page.goto(live);
+  const items = page.locator("li > button[aria-current]");
+  await expect(items).toHaveCount(20);
+  await expect(page.getByText("Page 1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Newer incidents" })).toBeDisabled();
+  await page.getByRole("button", { name: "Older incidents" }).click();
+  await expect(page.getByText("Page 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Newer incidents" })).toBeEnabled();
+  await expect(items.first()).toBeVisible();
+  await page.getByRole("button", { name: "Newer incidents" }).click();
+  await expect(items).toHaveCount(20);
 });

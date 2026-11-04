@@ -195,7 +195,8 @@ async function request<T>(method: string, path: string, body?: unknown, options:
 export const api = {
   readiness,
   runtime: () => request<Runtime>("GET", "/api/v1/runtime"),
-  listIncidents: () => request<{ incidents: Incident[] }>("GET", "/api/v1/incidents?limit=100").then((r) => r.incidents),
+  listIncidents: (limit: number, offset: number) =>
+    request<{ incidents: Incident[] }>("GET", `/api/v1/incidents?limit=${limit}&offset=${offset}`).then((r) => r.incidents),
   getIncident: (id: string) => request<Incident>("GET", `/api/v1/incidents/${id}`),
   createIncident: (body: CreateIncident) => request<Incident>("POST", "/api/v1/incidents", body),
   submitJob: (id: string, scenario: string, key: string, signal: AbortSignal) =>

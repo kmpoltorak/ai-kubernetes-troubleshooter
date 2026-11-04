@@ -145,7 +145,8 @@ for job storage errors, `502` `analysis_failed` with stored evidence on the wait
 Jobs survive client disconnects. See [queue, retries and upgrade instructions](docs/durable-jobs.md).
 Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
-The UI checks job status every 2 seconds and resumes the saved job after a tab reload. It resends a `rate_limited` request up to 3 times after `Retry-After`; `busy` is shown. Select older attempts from history; a failed attempt keeps its evidence and does not replace the latest successful report.
+The UI checks job status every 2 seconds and resumes the saved job after a tab reload. It resends a `rate_limited` request up to 3 times after `Retry-After`; `busy` is shown. Select older attempts from history; a failed attempt keeps its evidence and does not replace the latest successful report, and an older attempt is labelled with its age. The incident list shows 20 per page.
+**Export** saves the selected attempt as Markdown or JSON from the data the API returned (already masked). JSON is the attempt record plus `incident` and `export: {exported_at, build, schema_version}` (`1` for legacy reports, `null` without a report); legacy scores are never exported as numbers.
 New analyses use [report schema v2](docs/analysis-contract.md): `verdict`, evidence `support`, exact citations, missing data and scope limits. New API clients must handle v2 instead of `confidence`; stored legacy reports remain readable.
 `/health` and `/ready` also expose `build: {version, revision, built_at}` publicly,
 including a failing readiness response. The UI shows the responding replica's
@@ -194,6 +195,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
 - Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0, Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI. Browser tests run in Chromium only; Firefox and Safari are untested.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
+- Exports are created in the browser; the server does not record who exported what.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
 - Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
 - Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).

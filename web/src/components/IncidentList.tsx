@@ -7,9 +7,11 @@ interface Props {
   selectedId?: string;
   onSelect: (id: string) => void;
   onRefresh: () => void;
+  page: { offset: number; limit: number; hasMore: boolean };
+  onPage: (offset: number) => void;
 }
 
-export default function IncidentList({ incidents, error, selectedId, onSelect, onRefresh }: Props) {
+export default function IncidentList({ incidents, error, selectedId, onSelect, onRefresh, page, onPage }: Props) {
   return (
     <div className="card">
       <div className="mb-3 flex items-center justify-between">
@@ -44,6 +46,13 @@ export default function IncidentList({ incidents, error, selectedId, onSelect, o
           </li>
         ))}
       </ul>
+      {(page.offset > 0 || page.hasMore) && (
+        <div className="mt-3 flex items-center gap-3 text-sm">
+          <button type="button" className="btn-secondary" disabled={page.offset === 0} onClick={() => onPage(Math.max(0, page.offset - page.limit))}>Newer incidents</button>
+          <span>Page {Math.floor(page.offset / page.limit) + 1}</span>
+          <button type="button" className="btn-secondary" disabled={!page.hasMore} onClick={() => onPage(page.offset + page.limit)}>Older incidents</button>
+        </div>
+      )}
     </div>
   );
 }
