@@ -145,7 +145,7 @@ for job storage errors, `502` `analysis_failed` with stored evidence on the wait
 Jobs survive client disconnects. See [queue, retries and upgrade instructions](docs/durable-jobs.md).
 Logs are JSON with request and trace IDs. The `monitoring` profile
 provisions a Grafana dashboard from [deployments/grafana/](deployments/grafana/).
-The UI checks job status every 2 seconds and resumes the saved job after a tab reload. It resends a `rate_limited` request up to 3 times after `Retry-After`; `busy` is shown. Select older attempts from history; a failed attempt keeps its evidence and does not replace the latest successful report, and an older attempt is labelled with its age. The incident list shows 20 per page.
+The UI checks job status every 2 seconds and resumes the saved job after a tab reload. It resends a `rate_limited` request after `Retry-After` plus up to 0.5 s jitter until the request's 15 s timeout; `busy` is shown. Select older attempts from history; a failed attempt keeps its evidence and does not replace the latest successful report, and an older attempt is labelled with its age. The incident list shows 20 per page.
 **Export** saves the selected attempt as Markdown or JSON from the data the API returned (already masked). JSON is the attempt record plus `incident` and `export: {exported_at, build, schema_version}` (`1` for legacy reports, `null` without a report); legacy scores are never exported as numbers.
 New analyses use [report schema v2](docs/analysis-contract.md): `verdict`, evidence `support`, exact citations, missing data and scope limits. New API clients must handle v2 instead of `confidence`; stored legacy reports remain readable.
 `/health` and `/ready` also expose `build: {version, revision, built_at}` publicly,

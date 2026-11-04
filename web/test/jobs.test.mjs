@@ -191,6 +191,37 @@ test("rate-limited requests are resent after Retry-After, including submissions"
   assert.ok(requests[1].at - requests[0].at >= 900, "waits for Retry-After");
 });
 
+test("rate-limited requests keep being resent until accepted", async (t) => {
+  const requests = await fixture(t, (req, res, count) => {
+    if (count <= 5) {
+      res.statusCode = 429;
+      res.setHeader("Retry-After", "0");
+      res.end(JSON.stringify({ error: { code: "rate_limited", message: "too many requests, slow down" } }));
+      return;
+    }
+    res.statusCode = 202;
+    res.end(JSON.stringify(record("queued")));
+  });
+  const result = await jobs.submitInvestigation(id, "oom_killed", controller(t).signal);
+  assert.equal(result.job.id, jobID);
+  assert.equal(requests.length, 6);
+  assert.ok(new Set(requests.map((r) => r.key)).size === 1, "one idempotency key for every resend");
+});
+
+test("a caller abort stops resending rate-limited requests", async (t) => {
+  const requests = await fixture(t, (req, res) => {
+    res.statusCode = 429;
+    res.setHeader("Retry-After", "0");
+    res.end(JSON.stringify({ error: { code: "rate_limited", message: "too many requests, slow down" } }));
+  });
+  const c = new AbortController();
+  setTimeout(() => c.abort(), 300);
+  await assert.rejects(jobs.submitInvestigation(id, "oom_killed", c.signal));
+  const sent = requests.length;
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(requests.length, sent, "no request after the abort");
+});
+
 test("a full queue is reported, not resent", async (t) => {
   const requests = await fixture(t, (req, res) => {
     res.statusCode = 429;
