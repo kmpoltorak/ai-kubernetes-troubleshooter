@@ -103,7 +103,7 @@ export default function App() {
             onPage={loadIncidents}
           />
         </aside>
-        <section className="min-w-0">
+        <section className={`min-w-0 ${selected ? "order-first lg:order-none" : ""}`}>
           {selected ? (
             <IncidentDetail key={selected.id} id={selected.id} initialScenario={selected.scenario} scenarios={runtime?.scenarios ?? []} build={readiness?.build ?? null} onChanged={refresh} />
           ) : (

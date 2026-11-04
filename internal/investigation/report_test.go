@@ -73,3 +73,32 @@ func TestReportRejectsNoFaultClaimWithUnhealthyEvidence(t *testing.T) {
 		t.Fatalf("false no-fault claim admitted: %+v %v", rec, err)
 	}
 }
+
+// Pilot decision: a healthy result recommends nothing, whatever the analyzer wrote.
+func TestHealthyReportCarriesNoRecommendations(t *testing.T) {
+	inc := incident(domain.ResourceDeployment, "payment-service")
+	chatty := changedAnalysis(func(a *domain.Analysis) {
+		a.RecommendedActions = []string{"check application metrics", "re-run the investigation"}
+	})
+	for name, provider := range map[string]llm.Provider{"rules": llm.RulesProvider{}, "analyzer that recommends anyway": chatty} {
+		t.Run(name, func(t *testing.T) {
+			rec, err := newEngine(newMemStore(inc), sim(t), provider).Investigate(context.Background(), inc.ID, Options{Scenario: "healthy"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := rec.Report.Analysis
+			if a.Verdict != "no_fault_observed" || len(a.RecommendedActions) != 0 {
+				t.Fatalf("verdict %s with recommendations %v", a.Verdict, a.RecommendedActions)
+			}
+			for _, r := range rec.Report.RemediationActions {
+				if r.Kind == domain.RemediationRecommendation {
+					t.Fatalf("stored recommendation for a healthy result: %+v", r)
+				}
+			}
+		})
+	}
+	rec, err := newEngine(newMemStore(inc), sim(t), llm.RulesProvider{}).Investigate(context.Background(), inc.ID, Options{Scenario: "oom_killed"})
+	if err != nil || len(rec.Report.Analysis.RecommendedActions) == 0 {
+		t.Fatalf("a fault must keep its recommendations: %v %+v", err, rec.Report)
+	}
+}

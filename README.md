@@ -30,7 +30,7 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
 - Secret values are never read: Secrets are fetched as metadata only, env vars are reported as names and source kinds, ConfigMaps as key names and sizes.
 - Passwords, tokens, JWTs, API keys, URL credentials and private keys are masked in incident text, diagnostic data, reports and errors before storage, API responses and LLM requests, including multi-line PEM blocks.
 - New reports cite exact evidence IDs from their attempt and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation and keeps the evidence (`502` on the waiting endpoint).
-- Failed diagnostics and sampling limits remain in the report. New reports cannot claim `no_fault_observed` when core diagnostics failed or collected observations are unhealthy; support is qualitative, never a probability.
+- Failed diagnostics and sampling limits remain in the report. New reports cannot claim `no_fault_observed` when core diagnostics failed or collected observations are unhealthy, and recommend nothing when no fault is observed; support is qualitative, never a probability.
 
 ## Install
 
@@ -80,7 +80,11 @@ EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@atlas-db:5432/troubles
 
 The UI's sample buttons fill in an incident and pick the matching simulation
 scenario. The header shows the mode, cluster name and analyzer; live mode has no
-samples or scenario choice, and the form pre-fills the configured cluster. Outside Docker:
+samples or scenario choice. In the form the cluster is fixed, Namespace is a list
+when `KUBERNETES_ALLOWED_NAMESPACES` is set, and Name suggests objects listed from
+the cluster (any name can still be typed). A report opens with its conclusion,
+cited evidence and export buttons; hypotheses, sampling limits, diagnostics and
+the attempt history are collapsed. Outside Docker:
 
 ```bash
 docker compose up -d postgres
@@ -141,7 +145,9 @@ Live mode rejects a `scenario` in the request.
 `get_network_policies`, `get_resource_usage`. Evidence is bounded: the last 30
 lines plus error lines per log stream, 50 events, 20 pods with unhealthy ones
 first. Events match the exact target, its pods or its ReplicaSets, so `payment`
-never picks up `payment-worker`.
+never picks up `payment-worker`. The rules analyzer quotes the last logged error as an
+observation (not a confirmed cause), names missing ConfigMaps or Secrets, and fills
+known pod and Service names into its read-only commands.
 
 **Authentication:** `AUTH_ENABLED=false` supports local/test/minikube without SSO.
 Enable it with the [OIDC setup](docs/authentication.md); the backend checks each
@@ -163,6 +169,7 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 | `GET` | `/api/v1/incidents/{id}/investigations/{investigationID}` | one attempt, including failed/running attempts without a report |
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
 | `GET` | `/api/v1/runtime` | `mode`, `cluster_name`, `allowed_namespaces`, `analyzer` (`provider`, `model`), `scenarios` (simulation only); no URLs or keys; requires login when auth is on |
+| `GET` | `/api/v1/targets?namespace=&kind=` | `{names}`: Deployments, Services or Pods in an allowed namespace for the form (live: listed from the cluster, at most 500; simulation: empty); `502 list_failed` when listing fails |
 | `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`), Prometheus |
 
 API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
@@ -204,7 +211,7 @@ RBAC, ConfigMap (live mode), Deployment (2 replicas, non-root, read-only root
 filesystem, no capabilities, `RuntimeDefault` seccomp), Service and Ingress.
 
 RBAC grants, per namespace through a RoleBinding: `get, list` on pods,
-services; `get` on `pods/log`, configmaps, deployments; `list` on events,
+services, deployments (`list` only fills the form's name suggestions); `get` on `pods/log`, configmaps; `list` on events,
 endpointslices, networkpolicies and `metrics.k8s.io/pods`; plus `get` on
 namespaces. Nothing else: no write verbs, `pods/exec`, `attach`, `portforward`
 or Secrets. `get secrets` (used as metadata only) is in the opt-in
@@ -227,6 +234,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - Accessibility is checked with axe's automated rules in Chromium only; there is no manual screen-reader audit.
 - Exports are created in the browser; the server does not record who exported what.
+- Empty observations count as missing data: no log lines (core) or no usage samples (optional). A healthy workload whose containers write no logs is therefore `inconclusive`, not `no_fault_observed`.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
 - Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
 - Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).

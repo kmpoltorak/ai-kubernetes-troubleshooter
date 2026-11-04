@@ -16,7 +16,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if c.HTTPPort != 8080 || c.LLMProvider != "rules" || c.LLMModel != "rules-v1" ||
+	if c.HTTPPort != 8080 || c.LLMProvider != "rules" || c.LLMModel != "rules-v2" ||
 		!c.SimulationEnabled || c.SimulationScenario != "healthy" || c.LogLevel != slog.LevelInfo ||
 		c.InvestigationTimeout != 90*time.Second || c.MaxConcurrentInvestigations != 4 ||
 		c.ClusterName != "local" || c.AllowedNamespaces != nil || c.RateLimitRPS != 5 || c.Auth.Enabled {

@@ -27,10 +27,10 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get"]
-  # get_deployment
+  # get_deployment; list fills the Name suggestions in the incident form
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get"]
+    verbs: ["get", "list"]
   # get_service: ready endpoints behind a Service
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]

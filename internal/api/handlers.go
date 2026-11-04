@@ -65,10 +65,13 @@ func RuntimeFrom(cfg config.Config) Runtime {
 	return rt
 }
 
+// TargetLister lists object names for the incident form; nil lists nothing (simulation).
+type TargetLister func(ctx context.Context, namespace string, kind domain.ResourceType) ([]string, error)
+
 // New returns the fully wired HTTP handler. checks are the readiness checks
 // by dependency name (database, kubernetes). API routes are rate limited per
 // client IP at rps requests per second; auth also limits other non-probe routes.
-func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth, runtime Runtime) http.Handler {
+func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth, runtime Runtime, targets TargetLister) http.Handler {
 	h := &handler{incidents: svc, jobs: jobService, checks: checks, log: log, build: buildinfo.Current()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/incidents", h.createIncident)
@@ -81,6 +84,7 @@ func New(svc *incidents.Service, jobService JobService, checks map[string]func(c
 	mux.HandleFunc("GET /api/v1/incidents/{id}/jobs/{jobID}", h.getJob)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/investigations/{investigationID}", h.getInvestigation)
 	mux.HandleFunc("GET /api/v1/runtime", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, runtime) })
+	mux.HandleFunc("GET /api/v1/targets", h.listTargets(runtime, targets))
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /ready", h.readiness)
 	mux.Handle("GET /metrics", promhttp.Handler())
@@ -176,6 +180,33 @@ func (h *handler) getReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rec)
+}
+
+// listTargets offers names for the incident form within the same target policy as incidents.
+func (h *handler) listTargets(runtime Runtime, list TargetLister) http.HandlerFunc {
+	policy := domain.TargetPolicy{ClusterName: runtime.ClusterName, AllowedNamespaces: runtime.AllowedNamespaces}
+	return func(w http.ResponseWriter, r *http.Request) {
+		// The name is a placeholder: only namespace and kind come from the request.
+		t := domain.Target{Cluster: runtime.ClusterName, Namespace: r.URL.Query().Get("namespace"),
+			ResourceType: domain.ResourceType(r.URL.Query().Get("kind")), ResourceName: "placeholder"}
+		if err := errors.Join(t.Validate(), policy.Check(t)); err != nil {
+			writeError(w, r, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+		names := []string{}
+		if list != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+			found, err := list(ctx, t.Namespace, t.ResourceType)
+			if err != nil {
+				h.log.WarnContext(r.Context(), "listing targets failed", "namespace", t.Namespace, "kind", t.ResourceType, "error", redact.Text(err.Error()))
+				writeError(w, r, http.StatusBadGateway, "list_failed", redact.Text(err.Error()))
+				return
+			}
+			names = append(names, found...)
+		}
+		writeJSON(w, http.StatusOK, map[string][]string{"names": names})
+	}
 }
 
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {

@@ -103,3 +103,15 @@ test("legacy reports stay readable without recasting their score as evidence sup
   assert.match(html, /Legacy report/);
   assert.doesNotMatch(html, /94%|Evidence support:|href="#evidence/);
 });
+
+test("a report without recommendations or commands shows no remediation card", () => {
+  const record = { investigation: success, tool_executions: [], evidence: [], report: { created_at: "2026-01-01T00:01:00Z", provider: "rules/rules-v2", remediation_actions: [],
+    analysis: { schema_version: 2, verdict: "no_fault_observed", support: "limited", summary: "s", root_cause: "No Kubernetes-level fault detected", severity: "low", affected_resources: [], evidence: [], possible_causes: [], recommended_actions: [], safe_commands: [], missing_data: [], limitations: [] } } };
+  const html = render(Report, { record });
+  assert.match(html, /No Kubernetes-level fault detected/);
+  assert.doesNotMatch(html, /Remediation|needs approval|Read-only commands/);
+  const withCommand = { ...record, report: { ...record.report, remediation_actions: [{ id: "c", position: 1, kind: "diagnostic_command", description: "", command: "kubectl get pods -n payments", requires_approval: false, status: "proposed" }] } };
+  const commandOnly = render(Report, { record: withCommand });
+  assert.match(commandOnly, /Read-only commands/);
+  assert.doesNotMatch(commandOnly, />Remediation</);
+});

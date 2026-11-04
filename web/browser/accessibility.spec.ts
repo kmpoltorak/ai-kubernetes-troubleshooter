@@ -35,7 +35,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     // "_" keeps the strings unbreakable and outside the base64 blob redaction.
     await page.getByLabel("Title (optional)").fill("x_".repeat(100));
     await page.getByLabel("Description").fill("y_".repeat(150));
-    await page.getByLabel("Namespace").fill("payments");
+    await page.getByLabel("Namespace").selectOption("payments");
     await page.getByLabel("Name", { exact: true }).fill("checkout");
     await page.getByRole("button", { name: "Create incident" }).click();
     await expect(page.getByRole("heading", { level: 2, name: /^(x_)+$/ })).toBeVisible();

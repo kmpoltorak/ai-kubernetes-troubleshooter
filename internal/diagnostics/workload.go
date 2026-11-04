@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -16,6 +17,9 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
+
+// The registry answered that the image reference does not exist.
+var imageNotFound = regexp.MustCompile(`(?i)not found|manifest unknown|does not exist`)
 
 const (
 	maxMessageBytes = 300
@@ -82,7 +86,8 @@ func summarizeSpec(spec corev1.PodSpec) PodSpecSummary {
 		}
 		if p := v.Projected; p != nil {
 			for _, src := range p.Sources {
-				if src.ConfigMap != nil && !isTrue(src.ConfigMap.Optional) {
+				// kube-root-ca.crt is the cluster CA Kubernetes mounts into every pod: not a workload reference.
+				if src.ConfigMap != nil && !isTrue(src.ConfigMap.Optional) && src.ConfigMap.Name != "kube-root-ca.crt" {
 					cms.add(src.ConfigMap.Name)
 				}
 				if src.Secret != nil && !isTrue(src.Secret.Optional) {
@@ -399,6 +404,9 @@ func podInfo(p corev1.Pod) PodInfo {
 				signals.add(SignalCrashLoopBackOff)
 			case "ImagePullBackOff", "ErrImagePull", "InvalidImageName":
 				signals.add(SignalImagePullError)
+				if imageNotFound.MatchString(s.Waiting.Message) {
+					signals.add(SignalImageNotFound)
+				}
 			case "CreateContainerConfigError", "CreateContainerError":
 				signals.add(SignalContainerConfigError)
 			}

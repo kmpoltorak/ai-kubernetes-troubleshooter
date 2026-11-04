@@ -76,6 +76,7 @@ func run(args []string) error {
 		checks["authentication"] = func(ctx context.Context) error { return api.AuthenticationReady(ctx, cfg.Auth) }
 	}
 	var clusters investigation.Clusters
+	var targets api.TargetLister
 	if cfg.SimulationEnabled {
 		sim, err := simulation.NewClusters(cfg.SimulationScenario)
 		if err != nil {
@@ -88,6 +89,7 @@ func run(args []string) error {
 			return err
 		}
 		clusters = kube.Live{Cluster: cluster}
+		targets = cluster.ListNames
 		checks["kubernetes"] = cluster.Ping
 	}
 
@@ -113,7 +115,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),
-		Handler:           api.New(incidents.NewService(store, policy), scheduler, checks, log, cfg.RateLimitRPS, cfg.Auth, api.RuntimeFrom(cfg)),
+		Handler:           api.New(incidents.NewService(store, policy), scheduler, checks, log, cfg.RateLimitRPS, cfg.Auth, api.RuntimeFrom(cfg), targets),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		// The compatibility endpoint waits through queueing and execution.

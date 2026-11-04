@@ -135,8 +135,13 @@ func (a Analysis) Validate(collected []Evidence, failed []ToolExecution) error {
 	if a.Verdict == "observed_fault" && !observed {
 		errs = append(errs, errors.New("observed_fault requires a cited unhealthy observation"))
 	}
-	if !slices.ContainsFunc(a.RecommendedActions, func(s string) bool { return strings.TrimSpace(s) != "" }) {
+	// A fault needs a next step; nothing to fix needs no recommendation.
+	hasAction := slices.ContainsFunc(a.RecommendedActions, func(s string) bool { return strings.TrimSpace(s) != "" })
+	if a.Verdict != "no_fault_observed" && !hasAction {
 		errs = append(errs, errors.New("recommended_actions is empty"))
+	}
+	if a.Verdict == "no_fault_observed" && len(a.RecommendedActions) > 0 {
+		errs = append(errs, errors.New("no_fault_observed must not recommend actions"))
 	}
 	for _, c := range a.SafeCommands {
 		if err := ValidateSafeCommand(c); err != nil {

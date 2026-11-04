@@ -67,11 +67,11 @@ func TestScenarioSignals(t *testing.T) {
 	}{
 		{"healthy", nil, nil, nil},
 		{"crash_loop_backoff", []string{"CrashLoopBackOff", "ContainerExitError", "FrequentRestarts", "BackOff", "ConfigurationError", "NoReadyEndpoints"}, []string{"OOMKilled"}, nil},
-		{"image_pull_error", []string{"ImagePullError", "FailedPull", "RolloutStuck", "ReplicasUnavailable"}, nil, []string{"get_pod_logs"}},
+		{"image_pull_error", []string{"ImagePullError", "FailedPull", "RolloutStuck", "ReplicasUnavailable"}, nil, []string{"get_pod_logs", "get_resource_usage"}},
 		{"oom_killed", []string{"OOMKilled", "CrashLoopBackOff", "HighMemoryUsage", "OutOfMemory"}, nil, nil},
 		{"readiness_probe_failure", []string{"ReadinessProbeFailed", "PodNotReady", "NoReadyEndpoints"}, []string{"FrequentRestarts", "SelectorMismatch"}, nil},
 		{"liveness_probe_failure", []string{"LivenessProbeFailed", "FrequentRestarts", "ContainerExitError"}, nil, nil},
-		{"missing_configmap", []string{"ContainerConfigError", "ConfigMapMissing"}, nil, []string{"get_pod_logs"}},
+		{"missing_configmap", []string{"ContainerConfigError", "ConfigMapMissing"}, nil, []string{"get_pod_logs", "get_resource_usage"}},
 		{"service_selector_mismatch", []string{"SelectorMismatch", "NoReadyEndpoints"}, []string{"PodNotReady"}, nil},
 		{"dns_failure", []string{"DNSResolutionError", "ReadinessProbeFailed"}, []string{"EgressRestricted"}, nil},
 		{"resource_pressure", []string{"Unschedulable", "FailedScheduling", "ReplicasUnavailable"}, nil, nil},
