@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Readiness, type Incident, type Runtime } from "./api";
 import BuildLabel from "./components/BuildLabel";
 import CreateIncidentForm from "./components/CreateIncidentForm";
 import IncidentList from "./components/IncidentList";
 import IncidentDetail from "./components/IncidentDetail";
 
+const pageSize = 20;
+
 export default function App() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [listError, setListError] = useState("");
+  const [listPage, setListPage] = useState({ offset: 0, hasMore: false });
+  const listOffset = useRef(0);
+  const listVersion = useRef(0);
   const [selected, setSelectedState] = useState<{ id: string; scenario: string } | null>(() => {
     const id = new URLSearchParams(location.search).get("incident");
     return id ? { id, scenario: "" } : null;
@@ -26,14 +31,21 @@ export default function App() {
     api.runtime().then(setRuntime, (e) => setRuntimeError((e as Error).message));
   }, []);
 
-  const refresh = useCallback(async () => {
+  // One extra row tells whether an older page exists; the latest request wins.
+  const loadIncidents = useCallback(async (offset: number) => {
+    const version = ++listVersion.current;
+    listOffset.current = offset;
     try {
-      setIncidents(await api.listIncidents());
+      const list = await api.listIncidents(pageSize + 1, offset);
+      if (version !== listVersion.current) return;
+      setIncidents(list.slice(0, pageSize));
+      setListPage({ offset, hasMore: list.length > pageSize });
       setListError("");
     } catch (e) {
-      setListError((e as Error).message);
+      if (version === listVersion.current) setListError((e as Error).message);
     }
   }, []);
+  const refresh = useCallback(() => loadIncidents(listOffset.current), [loadIncidents]);
 
   useEffect(() => {
     refresh();
@@ -78,7 +90,7 @@ export default function App() {
             runtime={runtime}
             onCreated={(inc, scenario) => {
               setSelected({ id: inc.id, scenario });
-              refresh();
+              loadIncidents(0);
             }}
           /> : <div className="card h-40 animate-pulse" />}
           <IncidentList
@@ -87,11 +99,13 @@ export default function App() {
             selectedId={selected?.id}
             onSelect={(id) => setSelected({ id, scenario: "" })}
             onRefresh={refresh}
+            page={{ ...listPage, limit: pageSize }}
+            onPage={loadIncidents}
           />
         </aside>
         <section className="min-w-0">
           {selected ? (
-            <IncidentDetail key={selected.id} id={selected.id} initialScenario={selected.scenario} scenarios={runtime?.scenarios ?? []} onChanged={refresh} />
+            <IncidentDetail key={selected.id} id={selected.id} initialScenario={selected.scenario} scenarios={runtime?.scenarios ?? []} build={readiness?.build ?? null} onChanged={refresh} />
           ) : (
             <EmptyState />
           )}

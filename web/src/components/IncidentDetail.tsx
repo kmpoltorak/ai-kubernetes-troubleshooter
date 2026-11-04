@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, type Incident, type InvestigationPage, type InvestigationRecord, type JobRecord } from "../api";
+import { api, ApiError, type BuildInfo, type Incident, type Investigation, type InvestigationPage, type InvestigationRecord, type JobRecord } from "../api";
+import { download, reportJSON, reportMarkdown } from "../export";
 import { activeJob, followJob, readSession, saveSession, submitInvestigation, type JobSession } from "../jobs";
-import { target } from "../format";
+import { target, timeAgo } from "../format";
 import Report from "./Report";
 import InvestigationHistory from "./InvestigationHistory";
 import JobStatus from "./JobStatus";
@@ -10,10 +11,11 @@ interface Props {
   id: string;
   initialScenario: string;
   scenarios: string[];
+  build: BuildInfo | null;
   onChanged: () => void;
 }
 
-export default function IncidentDetail({ id, initialScenario, scenarios, onChanged }: Props) {
+export default function IncidentDetail({ id, initialScenario, scenarios, build, onChanged }: Props) {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [record, setRecord] = useState<InvestigationRecord | null>(null);
   const [scenario, setScenario] = useState(initialScenario);
@@ -41,6 +43,7 @@ export default function IncidentDetail({ id, initialScenario, scenarios, onChang
 
   const [page, setPage] = useState<InvestigationPage | null>(null);
   const [latestReport, setLatestReport] = useState<InvestigationRecord | null>(null);
+  const [newest, setNewest] = useState<Investigation | null>(null);
   const [historyError, setHistoryError] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(false);
@@ -85,6 +88,7 @@ export default function IncidentDetail({ id, initialScenario, scenarios, onChang
       if (version !== historyVersion.current) return;
       setIncident(inc);
       setPage(attempts);
+      if (offset === 0) setNewest(attempts.investigations[0] ?? null);
       setLatestReport(lastReport);
       if (selectNewest) {
         // ponytail: discover other sessions' active work on the loaded page; older pages remain selectable.
@@ -154,6 +158,12 @@ export default function IncidentDetail({ id, initialScenario, scenarios, onChang
     }
   }
 
+  function exportAs(inc: Incident, rec: InvestigationRecord, ext: "md" | "json") {
+    const meta = { exported_at: new Date().toISOString(), build };
+    download(`incident-${inc.id.slice(0, 8)}-attempt-${rec.investigation.id.slice(0, 8)}.${ext}`,
+      ext === "md" ? "text/markdown" : "application/json", (ext === "md" ? reportMarkdown : reportJSON)(inc, rec, meta));
+  }
+
   if (!incident) {
     return (error || historyError) ? <p className="card text-sm text-red-600">{error || historyError}</p> : <div className="card h-40 animate-pulse" />;
   }
@@ -211,6 +221,14 @@ export default function IncidentDetail({ id, initialScenario, scenarios, onChang
         busy={submitting || loadingHistory || loadingRecord} error={historyError}
         onSelect={selectAttempt} onPage={(offset) => loadHistory(offset)} onRefresh={() => loadHistory(0, true)} />
       {loadingRecord && <p role="status" className="text-sm text-zinc-500">Loading investigation…</p>}
+      {record && <section className="card flex flex-wrap items-center gap-3 text-sm" aria-label="Export">
+        {newest && record.investigation.id !== newest.id && <p role="note" className="w-full text-amber-700 dark:text-amber-400">
+          Older attempt from {timeAgo(record.investigation.started_at)} (<time dateTime={record.investigation.started_at}>{record.investigation.started_at}</time>).
+          The latest attempt is {newest.status}, started <time dateTime={newest.started_at}>{newest.started_at}</time>.
+        </p>}
+        <button type="button" className="btn-secondary" onClick={() => exportAs(incident, record, "md")}>Export Markdown</button>
+        <button type="button" className="btn-secondary" onClick={() => exportAs(incident, record, "json")}>Export JSON</button>
+      </section>}
       {record && <Report record={record} />}
     </div>
   );
