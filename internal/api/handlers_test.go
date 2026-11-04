@@ -147,7 +147,7 @@ func newHandler(t *testing.T, provider llm.Provider, ready error, rps float64, a
 	policy := domain.TargetPolicy{ClusterName: "local"}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 2, Policy: policy})
 	checks := map[string]func(context.Context) error{"database": func(context.Context) error { return ready }}
-	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth, RuntimeFrom(config.Config{SimulationEnabled: true, ClusterName: "local", LLMProvider: "rules", LLMModel: "rules-v2"}))
+	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth, RuntimeFrom(config.Config{SimulationEnabled: true, ClusterName: "local", LLMProvider: "rules", LLMModel: "rules-v2"}), nil)
 }
 
 func do(t *testing.T, method, url, body string, headers ...string) (*http.Response, map[string]any) {
@@ -340,7 +340,7 @@ func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			srv := httptest.NewServer(New(nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), 1000, config.Auth{}, RuntimeFrom(cfg)))
+			srv := httptest.NewServer(New(nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), 1000, config.Auth{}, RuntimeFrom(cfg), nil))
 			t.Cleanup(srv.Close)
 			resp, err := http.Get(srv.URL + "/api/v1/runtime")
 			if err != nil {
@@ -517,4 +517,53 @@ func (s *syncTestJobs) Get(_ context.Context, incidentID, id string) (domain.Job
 }
 func (s *syncTestJobs) Wait(ctx context.Context, incidentID, id string) (domain.JobRecord, error) {
 	return s.Get(ctx, incidentID, id)
+}
+
+func TestTargetsListsWithinPolicy(t *testing.T) {
+	rt := Runtime{Mode: "live", ClusterName: "lab", AllowedNamespaces: []string{"payments"}}
+	var asked []string
+	list := func(_ context.Context, ns string, kind domain.ResourceType) ([]string, error) {
+		asked = append(asked, ns+"/"+string(kind))
+		if kind == domain.ResourcePod {
+			return nil, errors.New("pods is forbidden: User \"system:serviceaccount:troubleshooter:troubleshooter\" cannot list")
+		}
+		return []string{"checkout", "ledger"}, nil
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, rt, list))
+	t.Cleanup(srv.Close)
+	get := func(query string) (int, string) {
+		resp, err := http.Get(srv.URL + "/api/v1/targets?" + query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode, strings.TrimSpace(string(body))
+	}
+	if code, body := get("namespace=payments&kind=deployment"); code != 200 || body != `{"names":["checkout","ledger"]}` {
+		t.Fatalf("list: %d %s", code, body)
+	}
+	for _, q := range []string{"namespace=kube-system&kind=deployment", "namespace=payments&kind=secret", "kind=deployment", "namespace=Bad_NS&kind=pod"} {
+		if code, body := get(q); code != 400 || !strings.Contains(body, "validation_failed") {
+			t.Errorf("%s: %d %s", q, code, body)
+		}
+	}
+	if code, body := get("namespace=payments&kind=pod"); code != 502 || !strings.Contains(body, "list_failed") || !strings.Contains(body, "forbidden") {
+		t.Fatalf("lister error: %d %s", code, body)
+	}
+	if len(asked) != 2 {
+		t.Fatalf("lister called outside the policy: %v", asked)
+	}
+	sim := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, Runtime{Mode: "simulation", ClusterName: "local"}, nil))
+	t.Cleanup(sim.Close)
+	resp, err := http.Get(sim.URL + "/api/v1/targets?namespace=payments&kind=service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || strings.TrimSpace(string(body)) != `{"names":[]}` {
+		t.Fatalf("simulation: %d %s", resp.StatusCode, body)
+	}
 }

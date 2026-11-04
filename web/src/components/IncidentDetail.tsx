@@ -221,15 +221,23 @@ export default function IncidentDetail({ id, initialScenario, scenarios, build, 
         busy={submitting || loadingHistory || loadingRecord} error={historyError}
         onSelect={selectAttempt} onPage={(offset) => loadHistory(offset)} onRefresh={() => loadHistory(0, true)} />
       {loadingRecord && <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">Loading investigation…</p>}
-      {record && <section className="card flex flex-wrap items-center gap-3 text-sm" aria-label="Export">
-        {newest && record.investigation.id !== newest.id && <p role="note" className="w-full text-amber-700 dark:text-amber-400">
-          Older attempt from {timeAgo(record.investigation.started_at)} (<time dateTime={record.investigation.started_at}>{record.investigation.started_at}</time>).
-          The latest attempt is {newest.status}, started <time dateTime={newest.started_at}>{newest.started_at}</time>.
+      {record && <Report record={record}
+        notice={newest && record.investigation.id !== newest.id && <p role="note" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          Older attempt from <time dateTime={record.investigation.started_at} title={record.investigation.started_at}>{timeAgo(record.investigation.started_at)}</time>.
+          The latest attempt is {newest.status}, started <time dateTime={newest.started_at} title={newest.started_at}>{timeAgo(newest.started_at)}</time>.
         </p>}
-        <button type="button" className="btn-secondary" onClick={() => exportAs(incident, record, "md")}>Export Markdown</button>
-        <button type="button" className="btn-secondary" onClick={() => exportAs(incident, record, "json")}>Export JSON</button>
-      </section>}
-      {record && <Report record={record} />}
+        toolbar={<>
+          <button type="button" className="btn-secondary" onClick={() => exportAs(incident, record, "md")}><DownloadIcon />Export Markdown</button>
+          <button type="button" className="btn-secondary" onClick={() => exportAs(incident, record, "json")}><DownloadIcon />Export JSON</button>
+        </>} />}
     </div>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2.5v7.5M4.75 7 8 10.25 11.25 7M3 12.5h10" />
+    </svg>
   );
 }

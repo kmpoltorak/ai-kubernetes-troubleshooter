@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/metadata"
@@ -173,4 +175,44 @@ func (l Live) For(_ domain.Target, scenario string) (Cluster, string, error) {
 		return Cluster{}, "", fmt.Errorf("scenario %q requires simulation mode", scenario)
 	}
 	return l.Cluster, "", nil
+}
+
+// maxListedNames bounds the names offered for one namespace and kind.
+const maxListedNames = 500
+
+// ListNames lists object names of a supported kind for the incident form.
+// It reads names only and is bounded; diagnostics never depend on it.
+func (c Cluster) ListNames(ctx context.Context, namespace string, kind domain.ResourceType) ([]string, error) {
+	opts := metav1.ListOptions{Limit: maxListedNames}
+	var names []string
+	switch kind {
+	case domain.ResourceDeployment:
+		l, err := c.Client.AppsV1().Deployments(namespace).List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range l.Items {
+			names = append(names, o.Name)
+		}
+	case domain.ResourceService:
+		l, err := c.Client.CoreV1().Services(namespace).List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range l.Items {
+			names = append(names, o.Name)
+		}
+	case domain.ResourcePod:
+		l, err := c.Client.CoreV1().Pods(namespace).List(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range l.Items {
+			names = append(names, o.Name)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported kind %q", kind)
+	}
+	slices.Sort(names)
+	return names, nil
 }

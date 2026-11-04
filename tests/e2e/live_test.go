@@ -279,6 +279,16 @@ func (s *suite) checkRBAC(t *testing.T) {
 	if s.call(t, s.ctx, "POST", "/api/v1/incidents", body, nil) != 400 {
 		t.Fatal("API admitted namespace outside policy")
 	}
+	// The incident form's name suggestions list through the same read-only ServiceAccount.
+	var listed struct {
+		Names []string `json:"names"`
+	}
+	if code := s.call(t, s.ctx, "GET", "/api/v1/targets?namespace=payments&kind=deployment", nil, &listed); code != 200 || !slices.Contains(listed.Names, "healthy") {
+		t.Fatalf("deployment names not listed: %d %v", code, listed.Names)
+	}
+	if s.call(t, s.ctx, "GET", "/api/v1/targets?namespace=outside&kind=pod", nil, nil) != 400 {
+		t.Fatal("API listed names outside policy")
+	}
 	for _, probe := range []struct{ verb, group, resource, sub string }{{"create", "", "pods", ""}, {"update", "apps", "deployments", ""}, {"patch", "apps", "deployments", ""}, {"delete", "", "pods", ""}, {"create", "", "pods", "exec"}, {"create", "", "pods", "attach"}, {"create", "", "pods", "portforward"}, {"get", "", "secrets", ""}, {"list", "", "secrets", ""}} {
 		allowed, err := s.allowed(s.ctx, probe.verb, probe.group, probe.resource, probe.sub, "payments")
 		if err != nil || allowed {

@@ -62,7 +62,7 @@ func newQueuedIntegrationServer(t *testing.T, provider llm.Provider, cfg jobs.Co
 		t.Cleanup(func() { stop(); <-done })
 	}
 	srv := httptest.NewServer(New(incidents.NewService(store, policy), scheduler,
-		map[string]func(context.Context) error{"database": store.Ping}, log, 1000, config.Auth{}, Runtime{}))
+		map[string]func(context.Context) error{"database": store.Ping}, log, 1000, config.Auth{}, Runtime{}, nil))
 	t.Cleanup(srv.Close)
 	return srv
 }

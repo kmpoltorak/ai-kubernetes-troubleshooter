@@ -80,7 +80,11 @@ EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@atlas-db:5432/troubles
 
 The UI's sample buttons fill in an incident and pick the matching simulation
 scenario. The header shows the mode, cluster name and analyzer; live mode has no
-samples or scenario choice, and the form pre-fills the configured cluster. Outside Docker:
+samples or scenario choice. In the form the cluster is fixed, Namespace is a list
+when `KUBERNETES_ALLOWED_NAMESPACES` is set, and Name suggests objects listed from
+the cluster (any name can still be typed). A report opens with its conclusion,
+cited evidence and export buttons; hypotheses, sampling limits, diagnostics and
+the attempt history are collapsed. Outside Docker:
 
 ```bash
 docker compose up -d postgres
@@ -163,6 +167,7 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 | `GET` | `/api/v1/incidents/{id}/investigations/{investigationID}` | one attempt, including failed/running attempts without a report |
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
 | `GET` | `/api/v1/runtime` | `mode`, `cluster_name`, `allowed_namespaces`, `analyzer` (`provider`, `model`), `scenarios` (simulation only); no URLs or keys; requires login when auth is on |
+| `GET` | `/api/v1/targets?namespace=&kind=` | `{names}`: Deployments, Services or Pods in an allowed namespace for the form (live: listed from the cluster, at most 500; simulation: empty); `502 list_failed` when listing fails |
 | `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`), Prometheus |
 
 API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
@@ -204,7 +209,7 @@ RBAC, ConfigMap (live mode), Deployment (2 replicas, non-root, read-only root
 filesystem, no capabilities, `RuntimeDefault` seccomp), Service and Ingress.
 
 RBAC grants, per namespace through a RoleBinding: `get, list` on pods,
-services; `get` on `pods/log`, configmaps, deployments; `list` on events,
+services, deployments (`list` only fills the form's name suggestions); `get` on `pods/log`, configmaps; `list` on events,
 endpointslices, networkpolicies and `metrics.k8s.io/pods`; plus `get` on
 namespaces. Nothing else: no write verbs, `pods/exec`, `attach`, `portforward`
 or Secrets. `get secrets` (used as metadata only) is in the opt-in

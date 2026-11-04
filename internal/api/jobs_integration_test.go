@@ -207,7 +207,7 @@ func TestIntegrationJobStorageUnavailable(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	// A closed real pool rejects both reads and submissions before any runner call.
 	scheduler := jobs.New(store, nil, log, jobs.Config{})
-	srv := httptest.NewServer(New(incidents.NewService(store, domain.TargetPolicy{ClusterName: "local"}), scheduler, nil, log, 1000, config.Auth{}, Runtime{}))
+	srv := httptest.NewServer(New(incidents.NewService(store, domain.TargetPolicy{ClusterName: "local"}), scheduler, nil, log, 1000, config.Auth{}, Runtime{}, nil))
 	t.Cleanup(srv.Close)
 	path := srv.URL + "/api/v1/incidents/" + domain.NewID() + "/jobs"
 	for _, method := range []string{"GET", "POST"} {

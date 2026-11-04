@@ -105,9 +105,12 @@ test("live mode hides simulation controls and fills the configured cluster", asy
   await expect(page.getByText("live · browser-live · rules/rules-v2")).toBeVisible();
   await expect(page.getByRole("group", { name: "Sample incidents" })).toHaveCount(0);
   await expect(page.getByLabel("Cluster")).toHaveValue("browser-live");
-  await expect(page.locator("#allowed-namespaces option")).toHaveCount(2);
+  await expect(page.getByLabel("Cluster")).not.toBeEditable();
+  await expect(page.getByLabel("Namespace").locator("option")).toHaveText(["Choose…", "payments", "checkout"]);
   await page.getByLabel("Description").fill("Checkout returns 503 after the release.");
-  await page.getByLabel("Namespace").fill("payments");
+  await page.getByLabel("Namespace").selectOption("payments");
+  // This server's cluster is unreachable: listing fails visibly and typing a name still works.
+  await expect(page.getByText(/Could not list names .*Type the name\./)).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("checkout");
   await page.getByRole("button", { name: "Create incident" }).click();
   await expect(page.getByRole("button", { name: "Run investigation" })).toBeEnabled();
@@ -138,6 +141,7 @@ test("attempts export as Markdown and JSON, and an older attempt is marked as ol
 
   const history = page.getByRole("region", { name: "Investigation history" });
   await page.getByRole("button", { name: "Run investigation" }).click();
+  await history.getByText("Investigation history").click();
   await expect(history.getByRole("button", { name: /^completed/ })).toHaveCount(2);
   await expect(page.getByRole("note")).toHaveCount(0);
   await history.getByRole("button", { name: new RegExp(first.investigation.id) }).click();

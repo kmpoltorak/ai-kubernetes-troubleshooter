@@ -204,6 +204,8 @@ async function request<T>(method: string, path: string, body?: unknown, options:
 export const api = {
   readiness,
   runtime: () => request<Runtime>("GET", "/api/v1/runtime"),
+  targets: (namespace: string, kind: ResourceType, signal: AbortSignal) =>
+    request<{ names: string[] }>("GET", `/api/v1/targets?namespace=${encodeURIComponent(namespace)}&kind=${kind}`, undefined, { signal }).then((r) => r.names),
   listIncidents: (limit: number, offset: number) =>
     request<{ incidents: Incident[] }>("GET", `/api/v1/incidents?limit=${limit}&offset=${offset}`).then((r) => r.incidents),
   getIncident: (id: string) => request<Incident>("GET", `/api/v1/incidents/${id}`),
