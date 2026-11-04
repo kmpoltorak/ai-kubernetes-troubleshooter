@@ -36,7 +36,7 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
 
 Requires Docker with Compose. Go 1.27+ (and Node 22 for the UI) only to run
 outside Docker.
-For a digest-pinned Kubernetes image and manifests, see [candidates and releases](docs/releases.md).
+Releases follow SemVer from 1.0.0. For a digest-pinned Kubernetes image and manifests, see [releases](docs/releases.md).
 
 ```bash
 git clone https://github.com/kmpoltorak/ai-kubernetes-troubleshooter.git

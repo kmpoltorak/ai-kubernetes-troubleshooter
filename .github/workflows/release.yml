@@ -1,16 +1,12 @@
-name: Release candidate
+name: Release
 
+# release-please keeps one release PR open: the next SemVer version from Conventional
+# Commits and the CHANGELOG.md entry. Merging it creates a draft release with its tag at
+# the merge commit. The full CI then runs on that commit; only after every check passes
+# is the tested image published and the release made public. Other pushes publish nothing.
 "on":
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Pre-1.0 version (0.x.y, without v)'
-        required: true
-        type: string
-      publish:
-        description: 'Publish tested image and create a GitHub prerelease'
-        default: false
-        type: boolean
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -20,33 +16,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   validate:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Require main and a pre-1.0 version
+      - name: Require a SemVer release tagged at this commit
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
         run: |
-          test "$GITHUB_REF" = refs/heads/main
-          [[ "$VERSION" =~ ^0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-      - name: Require an unused release tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$VERSION" \
-            --jq '.[].ref' > refs.txt
-          if grep -Fxq "refs/tags/v$VERSION" refs.txt; then echo 'release tag already exists' >&2; exit 1; fi
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$RELEASE_SHA" = "$GITHUB_SHA"
 
   checks:
-    needs: validate
+    needs: [release-please, validate]
     uses: ./.github/workflows/ci.yml
     with:
-      version: ${{ inputs.version }}
+      version: ${{ needs.release-please.outputs.version }}
 
   publish:
-    if: ${{ inputs.publish }}
-    needs: checks
+    needs: [release-please, checks]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -64,29 +71,29 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y skopeo
       - name: Verify source metadata
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           bash scripts/image-artifact.sh verify candidate
           test "$(jq -r .revision candidate/metadata.json)" = "$GITHUB_SHA"
           test "$(jq -r .version candidate/metadata.json)" = "$VERSION"
-      - name: Promote without rebuilding and create prerelease
+      - name: Promote without rebuilding and publish the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           set -euo pipefail
           export REGISTRY_AUTH_FILE="$RUNNER_TEMP/release-auth.json"
           work=$(mktemp -d)
           trap 'rm -rf "$work"; rm -f "$REGISTRY_AUTH_FILE"' EXIT
+          test "$(gh release view "v$VERSION" --json isDraft --jq .isDraft)" = true
           repository="ghcr.io/${GITHUB_REPOSITORY,,}"
           bash scripts/release-manifests.sh candidate "$repository" release-assets
           printf '%s' "$GH_TOKEN" | skopeo login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
           bash scripts/image-artifact.sh publish candidate "$repository"
           digest=$(jq -r .manifest_digest candidate/metadata.json)
-          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f "ref=refs/tags/v$VERSION" -f "sha=$GITHUB_SHA"
-          printf 'Image: %s@%s\nSource: %s\nPlatform: Linux amd64\n\nBoth Kubernetes CI jobs tested this artifact. Configure database, namespace policy and authentication before installation.\n' \
+          printf 'Image: %s@%s\nSource: %s\nPlatform: Linux amd64\n\nBoth Kubernetes CI jobs tested this artifact. Configure database, namespace policy and authentication before installation.\n\n' \
             "$repository" "$digest" "$GITHUB_SHA" > "$work/notes.md"
-          gh release create "v$VERSION" --verify-tag --prerelease \
-            --title "v$VERSION" --notes-file "$work/notes.md" \
+          gh release view "v$VERSION" --json body --jq .body >> "$work/notes.md"
+          gh release upload "v$VERSION" \
             candidate/metadata.json release-assets/kubernetes.yaml release-assets/kubernetes-authenticated.yaml
+          gh release edit "v$VERSION" --notes-file "$work/notes.md" --draft=false
