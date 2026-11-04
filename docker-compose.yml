@@ -1,5 +1,6 @@
 # Default:            docker compose up --build            (app + postgres, simulation mode)
 # With a local LLM:   LLM_PROVIDER=ollama docker compose --profile ollama up --build
+# Existing database:  EXTERNAL_DATABASE_URL=postgres://... docker compose up --build --no-deps app
 #
 # Values come from .env (see .env.example). Addresses of other containers
 # (database, Ollama) are fixed here because they are facts of this network.
@@ -11,8 +12,9 @@ services:
       POSTGRES_USER: troubleshooter
       POSTGRES_PASSWORD: troubleshooter
       POSTGRES_DB: troubleshooter
+    # Loopback only, for `make run` outside Docker; the app uses the Compose network.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -36,7 +38,8 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_PROXY_URL: http://oauth2-proxy:4180
       AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-}
-      DATABASE_URL: postgres://troubleshooter:troubleshooter@postgres:5432/troubleshooter?sslmode=disable
+      # An existing PostgreSQL: set EXTERNAL_DATABASE_URL and start with `up --no-deps app`.
+      DATABASE_URL: ${EXTERNAL_DATABASE_URL:-postgres://troubleshooter:troubleshooter@postgres:5432/troubleshooter?sslmode=disable}
       KUBERNETES_CLUSTER_NAME: ${KUBERNETES_CLUSTER_NAME:-local}
       KUBERNETES_ALLOWED_NAMESPACES: ${KUBERNETES_ALLOWED_NAMESPACES:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-rules}
