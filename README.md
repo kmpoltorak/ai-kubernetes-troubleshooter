@@ -52,6 +52,15 @@ docker compose --profile monitoring up --build     # plus Prometheus :9090 and G
 docker compose --profile ollama up --build         # plus a local Ollama with a model pull
 ```
 
+Live cluster from Docker, with a kubeconfig for a read-only ServiceAccount
+(the [RBAC](deployments/kubernetes/rbac.yaml) below; readable by the container's uid 65532):
+
+```bash
+KUBECONFIG_FILE=$HOME/.kube/troubleshooter.yaml KUBERNETES_CLUSTER_NAME=lab \
+  KUBERNETES_ALLOWED_NAMESPACES=payments \
+  docker compose -f docker-compose.yml -f docker-compose.live.yml up --build
+```
+
 The UI's sample buttons fill in an incident and pick the matching simulation
 scenario. The header shows the mode, cluster name and analyzer; live mode has no
 samples or scenario choice, and the form pre-fills the configured cluster. Outside Docker:

@@ -47,8 +47,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OLLAMA_BASE_URL: http://ollama:11434
-      # Compose runs the demo in simulation mode; for a live cluster run the
-      # binary locally or deploy it with deployments/kubernetes.
+      # Simulation by default; add -f docker-compose.live.yml for a live cluster.
       SIMULATION_ENABLED: "true"
       SIMULATION_SCENARIO: ${SIMULATION_SCENARIO:-healthy}
       JOB_TIMEOUT: ${JOB_TIMEOUT:-15m}
