@@ -561,3 +561,26 @@ func TestEmptyObservationsAreMissingData(t *testing.T) {
 		t.Fatalf("no samples: %v", err)
 	}
 }
+
+// k3s pilot cases: what the logs and container states already say.
+func TestPilotSignalsFromLogsStatesAndReferences(t *testing.T) {
+	matched := false
+	for _, lp := range logPatterns {
+		matched = matched || (lp.signal == SignalConfigurationError && lp.re.MatchString("config error: DATABASE_URL is not set"))
+	}
+	if !matched {
+		t.Error(`"config error: DATABASE_URL is not set" is not a configuration error`)
+	}
+	p := pod("bad-image-1", func(p *corev1.Pod) {
+		p.Status.ContainerStatuses[0].State = corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ErrImagePull",
+			Message: `failed to pull image "nginx:0.0.0-does-not-exist": docker.io/library/nginx:0.0.0-does-not-exist: not found`}}
+	})
+	wantSignals(t, run(t, cluster(t, p), GetPods, Input{LabelSelector: "app=payment-service"}), SignalImagePullError, SignalImageNotFound)
+
+	spec := corev1.PodSpec{Volumes: []corev1.Volume{{Name: "kube-api-access", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+		Sources: []corev1.VolumeProjection{{ConfigMap: &corev1.ConfigMapProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "kube-root-ca.crt"}}},
+			{ConfigMap: &corev1.ConfigMapProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "app-settings"}}}}}}}}}
+	if got := summarizeSpec(spec).ConfigMaps; !slices.Equal(got, []string{"app-settings"}) {
+		t.Errorf("references %v: the cluster CA mounted into every pod is not a workload reference", got)
+	}
+}

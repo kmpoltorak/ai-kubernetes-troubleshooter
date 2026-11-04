@@ -39,6 +39,7 @@ const (
 	SignalNoPods               = "NoPods"
 	SignalCrashLoopBackOff     = "CrashLoopBackOff"
 	SignalImagePullError       = "ImagePullError"
+	SignalImageNotFound        = "ImageNotFound"
 	SignalContainerConfigError = "ContainerConfigError"
 	SignalOOMKilled            = "OOMKilled"
 	SignalContainerExitError   = "ContainerExitError"

@@ -37,7 +37,7 @@ var (
 		{regexp.MustCompile(`(?i)no such host|server misbehaving|temporary failure in name resolution|lookup \S+( on \S+)?: .*(i/o timeout|no such host)|name or service not known|could not resolve host`), SignalDNSResolutionError},
 		{regexp.MustCompile(`(?i)connection refused|econnrefused`), SignalConnectionRefused},
 		{regexp.MustCompile(`(?i)(dial tcp [^:]+:\d+: (i/o timeout|connect: connection timed out))|connection timed out|etimedout`), SignalConnectionTimeout},
-		{regexp.MustCompile(`(?i)(missing|required|invalid|unset|not set|no value for).{0,40}(config|configuration|environment variable|env var|setting)|(config|configuration).{0,40}(missing|required|invalid|not found)`), SignalConfigurationError},
+		{regexp.MustCompile(`(?i)(missing|required|invalid|unset|not set|no value for).{0,40}(config|configuration|environment variable|env var|setting)|(config|configuration).{0,40}(missing|required|invalid|not found|not set|unset)`), SignalConfigurationError},
 		{regexp.MustCompile(`(?i)out of memory|outofmemoryerror|heap out of memory|cannot allocate memory`), SignalOutOfMemory},
 	}
 )

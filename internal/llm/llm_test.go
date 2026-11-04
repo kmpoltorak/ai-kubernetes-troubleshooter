@@ -296,3 +296,59 @@ func TestRulesDefaultModelMatchesProviderName(t *testing.T) {
 		t.Fatalf("configured analyzer %q, reports say %q", got, want)
 	}
 }
+
+// k3s pilot cases: the report uses what the diagnostics already read.
+func TestRulesUseLoggedErrorsAndKnownNames(t *testing.T) {
+	analyze := func(target domain.Target, failed []domain.ToolExecution, evidence ...domain.Evidence) domain.Analysis {
+		t.Helper()
+		a, err := RulesProvider{}.Analyze(context.Background(), AnalysisInput{Incident: domain.Incident{Target: target}, Evidence: evidence, Failed: failed})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	deploy := func(name string) domain.Target {
+		return domain.Target{Cluster: "lab", Namespace: "payments", ResourceType: domain.ResourceDeployment, ResourceName: name}
+	}
+	logs := ev("get_pod_logs", "pod/crash-worker-cb5c48f48-zpvn2")
+	logs.Summary = "Pod crash-worker-cb5c48f48-zpvn2: 2 log streams, 2 error lines. Last error: config error: DATABASE_URL is not set"
+	crash := analyze(deploy("crash-worker"), nil, ev("get_pods", "pods/app=crash-worker", "CrashLoopBackOff"), logs)
+	if !slices.ContainsFunc(crash.Evidence, func(r domain.EvidenceReference) bool { return r.EvidenceID == logs.ID }) ||
+		!strings.Contains(crash.Summary, "Last logged error (an observation, not a confirmed cause): config error: DATABASE_URL is not set") {
+		t.Errorf("logged error not cited: %+v", crash)
+	}
+	if slices.ContainsFunc(crash.RecommendedActions, func(s string) bool { return strings.Contains(s, "read the previous container logs") }) ||
+		!slices.Contains(crash.SafeCommands, "kubectl logs crash-worker-cb5c48f48-zpvn2 -n payments --previous") {
+		t.Errorf("asks for logs it read or keeps a placeholder: %v %v", crash.RecommendedActions, crash.SafeCommands)
+	}
+
+	probe := ev("get_pod_logs", "pod/not-ready-1")
+	probe.Summary = `Pod not-ready-1: 1 log streams, 20 error lines. Last error: open() "/usr/share/nginx/html/healthz" failed (2: No such file or directory)`
+	ready := analyze(deploy("not-ready"), nil, ev("get_pods", "pods/app=not-ready", "PodNotReady"), probe)
+	if !strings.Contains(ready.PossibleCauses[0], "probe path") || len(ready.PossibleCauses) != 3 {
+		t.Errorf("a missing probe target must put the probe path first: %v", ready.PossibleCauses)
+	}
+
+	config := analyze(deploy("missing-config"), nil, ev("get_pods", "pods/app=missing-config", "ContainerConfigError"), ev("get_configmap", "configmap/payments-settings", "ConfigMapMissing"))
+	if config.RootCause != "Referenced ConfigMap payments-settings is missing" {
+		t.Errorf("root cause %q", config.RootCause)
+	}
+	pull := analyze(deploy("bad-image"), []domain.ToolExecution{{ToolName: "get_pod_logs", Input: json.RawMessage(`{"name":"bad-image-67c6b47d84-kjmck"}`), Error: "waiting to start"}},
+		ev("get_pods", "pods/app=bad-image", "ImagePullError", "ImageNotFound"))
+	if !strings.Contains(pull.Summary, "registry reports that the image reference was not found") ||
+		!slices.Contains(pull.SafeCommands, "kubectl describe pod bad-image-67c6b47d84-kjmck -n payments") {
+		t.Errorf("image not found: %q %v", pull.Summary, pull.SafeCommands)
+	}
+	svc := analyze(domain.Target{Cluster: "lab", Namespace: "payments", ResourceType: domain.ResourceService, ResourceName: "checkout"}, nil,
+		ev("get_service", "service/checkout", "SelectorMismatch", "NoReadyEndpoints"))
+	if !slices.Contains(svc.SafeCommands, "kubectl describe service checkout -n payments") {
+		t.Errorf("service placeholder: %v", svc.SafeCommands)
+	}
+	for _, a := range []domain.Analysis{crash, ready, config, pull, svc} {
+		for _, c := range a.SafeCommands {
+			if err := domain.ValidateSafeCommand(c); err != nil {
+				t.Errorf("unsafe command %q: %v", c, err)
+			}
+		}
+	}
+}

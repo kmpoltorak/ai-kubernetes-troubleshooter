@@ -2,8 +2,10 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -346,8 +348,68 @@ func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analys
 		}
 	}
 	a := f.analysis(t, in.Evidence)
+	refine(&a, t, in, has)
 	a.MissingData, a.Limitations = in.MissingData(), append([]string{}, in.Limitations...)
 	return a.Redacted(), nil
+}
+
+var probePathHint = regexp.MustCompile(`(?i)\b404\b|no such file|not found`)
+
+// refine uses what the diagnostics already read: the last logged error, the names of
+// missing references and pods, so a report does not ask for data it holds.
+func refine(a *domain.Analysis, t domain.Target, in AnalysisInput, has func(...string) bool) {
+	if a.Verdict == "observed_fault" || a.Verdict == "suspected_fault" {
+		for _, e := range in.Evidence {
+			_, last, ok := strings.Cut(e.Summary, "Last error: ")
+			if e.Source != diagnostics.GetPodLogs || e.Health == domain.Healthy || !ok {
+				continue
+			}
+			if !slices.ContainsFunc(a.Evidence, func(r domain.EvidenceReference) bool { return r.EvidenceID == e.ID }) {
+				a.Evidence = append(a.Evidence, domain.EvidenceReference{EvidenceID: e.ID, Source: e.Source, Description: e.Summary})
+			}
+			a.Summary += " Last logged error (an observation, not a confirmed cause): " + last
+			a.RecommendedActions = slices.DeleteFunc(a.RecommendedActions, func(s string) bool { return strings.HasPrefix(s, "read the previous container logs") })
+			// A missing probe target points at the probe path first.
+			if i := slices.IndexFunc(a.PossibleCauses, func(c string) bool { return strings.Contains(c, "probe path") }); i > 0 && probePathHint.MatchString(last) {
+				a.PossibleCauses = append([]string{a.PossibleCauses[i]}, slices.Delete(slices.Clone(a.PossibleCauses), i, i+1)...)
+			}
+			break
+		}
+	}
+	var missing []string
+	for _, e := range in.Evidence {
+		if slices.Contains(e.Signals, diagnostics.SignalConfigMapMissing) || slices.Contains(e.Signals, diagnostics.SignalSecretMissing) {
+			kind, name, _ := strings.Cut(e.Subject, "/")
+			missing = append(missing, map[string]string{"configmap": "ConfigMap", "secret": "Secret"}[kind]+" "+name)
+		}
+	}
+	if len(missing) > 0 && strings.HasPrefix(a.RootCause, "Referenced ConfigMap or Secret is missing") {
+		a.RootCause = "Referenced " + strings.Join(missing, ", ") + " is missing"
+	}
+	if has(diagnostics.SignalImageNotFound) && strings.HasPrefix(a.RootCause, "Container image cannot be pulled") {
+		a.Summary += " The registry reports that the image reference was not found."
+	}
+	pod := ""
+	for _, e := range in.Evidence {
+		if kind, name, _ := strings.Cut(e.Subject, "/"); kind == "pod" && pod == "" {
+			pod = name
+		}
+	}
+	for _, te := range in.Failed {
+		var input struct{ Name string }
+		if pod == "" && te.ToolName == diagnostics.GetPodLogs && json.Unmarshal(te.Input, &input) == nil {
+			pod = input.Name
+		}
+	}
+	for i, c := range a.SafeCommands {
+		if pod != "" {
+			c = strings.ReplaceAll(c, "<pod>", pod)
+		}
+		if t.ResourceType == domain.ResourceService {
+			c = strings.ReplaceAll(c, "<service>", t.ResourceName)
+		}
+		a.SafeCommands[i] = c
+	}
 }
 
 // analysis cites the evidence carrying the finding's signals (or all

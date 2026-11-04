@@ -145,7 +145,9 @@ Live mode rejects a `scenario` in the request.
 `get_network_policies`, `get_resource_usage`. Evidence is bounded: the last 30
 lines plus error lines per log stream, 50 events, 20 pods with unhealthy ones
 first. Events match the exact target, its pods or its ReplicaSets, so `payment`
-never picks up `payment-worker`.
+never picks up `payment-worker`. The rules analyzer quotes the last logged error as an
+observation (not a confirmed cause), names missing ConfigMaps or Secrets, and fills
+known pod and Service names into its read-only commands.
 
 **Authentication:** `AUTH_ENABLED=false` supports local/test/minikube without SSO.
 Enable it with the [OIDC setup](docs/authentication.md); the backend checks each
