@@ -26,7 +26,7 @@ export default function InvestigationHistory({ page, selectedID, latestReport, b
         </p>
       )}
       {error && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
-      {page && page.investigations.length === 0 && <p className="mt-3 text-sm text-zinc-500">No investigations on this page.</p>}
+      {page && page.investigations.length === 0 && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">No investigations on this page.</p>}
       <ul className="mt-3 flex flex-col gap-2">
         {page?.investigations.map((attempt, index) => (
           <li key={attempt.id}>
@@ -35,7 +35,7 @@ export default function InvestigationHistory({ page, selectedID, latestReport, b
               <strong>{attempt.status}</strong>{page.offset === 0 && index === 0 && <span> · Latest attempt</span>}{" · "}
               <time dateTime={attempt.started_at}>{attempt.started_at}</time>
               {attempt.scenario && <span> · {attempt.scenario}</span>}
-              <span className="mt-1 block font-mono text-xs text-zinc-500">{attempt.id}</span>
+              <span className="mt-1 block font-mono text-xs text-zinc-600 dark:text-zinc-400">{attempt.id}</span>
             </button>
           </li>
         ))}

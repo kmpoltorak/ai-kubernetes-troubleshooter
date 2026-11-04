@@ -64,19 +64,19 @@ export default function App() {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3">
           <div className="flex items-center gap-3">
             <div className="size-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-500" aria-hidden />
             <div>
               <h1 className="text-sm font-semibold">Kubernetes Troubleshooter</h1>
-              <p className="text-xs text-zinc-500">AI-assisted workload triage<BuildLabel build={readiness?.build ?? null} /></p>
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">AI-assisted workload triage<BuildLabel build={readiness?.build ?? null} /></p>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="font-mono text-xs text-zinc-500">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
               {runtime ? `${runtime.mode} · ${runtime.cluster_name} · ${runtime.analyzer.provider}/${runtime.analyzer.model}` : runtimeError && `settings unavailable: ${runtimeError}`}
             </span>
-            <a href="/metrics" target="_blank" rel="noopener" className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
+            <a href="/metrics" target="_blank" rel="noopener" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
               Metrics
             </a>
             <StatusPill ready={readiness?.checks ?? null} />
@@ -119,9 +119,9 @@ function StatusPill({ ready }: { ready: Record<string, string> | null }) {
   const failing = ready ? Object.entries(ready).filter(([, v]) => v !== "ok").map(([k]) => k) : [];
   const [text, cls] =
     ready === null
-      ? ["checking…", "text-zinc-500"]
+      ? ["checking…", "text-zinc-600 dark:text-zinc-400"]
       : failing.length === 0
-        ? [`ready · ${Object.keys(ready).join(", ")}`, "text-emerald-600 dark:text-emerald-400"]
+        ? [`ready · ${Object.keys(ready).join(", ")}`, "text-emerald-700 dark:text-emerald-400"]
         : [`${failing.join(", ")} unavailable`, "text-red-600 dark:text-red-400"];
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs font-medium dark:border-zinc-700 ${cls}`}>
@@ -135,7 +135,7 @@ function EmptyState() {
   return (
     <div className="flex h-full min-h-80 flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700">
       <h2 className="text-base font-semibold">Select or create an incident</h2>
-      <p className="mt-2 max-w-md text-sm text-zinc-500">
+      <p className="mt-2 max-w-md text-sm text-zinc-600 dark:text-zinc-400">
         The troubleshooter reads pods, events, logs, the Deployment, Services, config references, NetworkPolicies and
         resource usage (read-only), then an analyzer correlates the evidence into a validated report with an
         assessment, evidence support and read-only next steps.
