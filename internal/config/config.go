@@ -62,7 +62,7 @@ type Auth struct {
 }
 
 var defaultModels = map[string]string{
-	"rules":  "rules-v1",
+	"rules":  "rules-v2", // must match llm.RulesProvider.Name
 	"openai": "gpt-4o-mini",
 	"ollama": "llama3.2",
 }

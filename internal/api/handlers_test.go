@@ -147,7 +147,7 @@ func newHandler(t *testing.T, provider llm.Provider, ready error, rps float64, a
 	policy := domain.TargetPolicy{ClusterName: "local"}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 2, Policy: policy})
 	checks := map[string]func(context.Context) error{"database": func(context.Context) error { return ready }}
-	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth, RuntimeFrom(config.Config{SimulationEnabled: true, ClusterName: "local", LLMProvider: "rules", LLMModel: "rules-v1"}))
+	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth, RuntimeFrom(config.Config{SimulationEnabled: true, ClusterName: "local", LLMProvider: "rules", LLMModel: "rules-v2"}))
 }
 
 func do(t *testing.T, method, url, body string, headers ...string) (*http.Response, map[string]any) {
@@ -328,7 +328,7 @@ func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
 		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout"},
 			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[]}`},
 		{"simulation", map[string]string{},
-			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"analyzer":{"provider":"rules","model":"rules-v1"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"]}`},
+			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"analyzer":{"provider":"rules","model":"rules-v2"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := config.Load(func(k string) string {

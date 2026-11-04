@@ -416,6 +416,10 @@ func (e *Engine) analyze(ctx context.Context, log *slog.Logger, inc domain.Incid
 	analysis.MissingData = withRequiredContext(analysis.MissingData, in.MissingData())
 	analysis.Limitations = withRequiredContext(analysis.Limitations, limits)
 	analysis = analysis.Redacted()
+	// Nothing to fix: no recommendations, whichever analyzer wrote them.
+	if analysis.Verdict == "no_fault_observed" {
+		analysis.RecommendedActions = nil
+	}
 	if err == nil {
 		if verr := analysis.Validate(rec.Evidence, failed); verr != nil {
 			err = fmt.Errorf("%w: %w", llm.ErrInvalidOutput, verr)

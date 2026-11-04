@@ -544,3 +544,20 @@ func TestNetworkPolicyAllowsAreAdditive(t *testing.T) {
 	r = run(t, cluster(t, deny), GetNetworkPolicies, Input{Labels: appLabels})
 	wantSignals(t, r, SignalEgressDenyAll, SignalIngressDenyAll)
 }
+
+// Pilot finding: nothing read is missing data, never a healthy observation.
+func TestEmptyObservationsAreMissingData(t *testing.T) {
+	c := cluster(t, pod("memory-hog-1", nil))
+	c.Client.(*fake.Clientset).PrependReactor("get", "pods/log", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &runtime.Unknown{Raw: []byte("")}, nil
+	})
+	if _, err := Run(context.Background(), GetPodLogs, c, Input{Namespace: ns, Name: "memory-hog-1", Names: []string{"app"}}); err == nil || !strings.Contains(err.Error(), "no log lines") {
+		t.Fatalf("empty logs: %v", err)
+	}
+	c.PodMetrics = func(context.Context, string) ([]kube.PodUsage, error) {
+		return []kube.PodUsage{{Pod: "other-pod", Containers: []kube.ContainerUsage{{Name: "app", MemoryBytes: 1}}}}, nil
+	}
+	if _, err := Run(context.Background(), GetResourceUsage, c, Input{Namespace: ns, Names: []string{"memory-hog-1"}}); err == nil || !strings.Contains(err.Error(), "no usage samples") {
+		t.Fatalf("no samples: %v", err)
+	}
+}

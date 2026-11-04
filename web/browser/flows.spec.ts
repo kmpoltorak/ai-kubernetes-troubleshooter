@@ -25,7 +25,7 @@ const jobStatus = (page: Page) => page.getByRole("region", { name: "Investigatio
 
 test("a sample investigation links citations to evidence and survives a reload", async ({ page }) => {
   await createSample(page, rules, "OOM");
-  await expect(page.getByText("simulation · local · rules/rules-v1")).toBeVisible();
+  await expect(page.getByText("simulation · local · rules/rules-v2")).toBeVisible();
   await expect(page.getByLabel("Scenario")).toHaveValue("oom_killed");
   await page.getByRole("button", { name: "Run investigation" }).click();
   await expect(page.getByRole("heading", { name: /OOMKilled/ })).toBeVisible();
@@ -102,7 +102,7 @@ test("a rejected status read stops polling until the user retries", async ({ pag
 
 test("live mode hides simulation controls and fills the configured cluster", async ({ page }) => {
   await page.goto(live);
-  await expect(page.getByText("live · browser-live · rules/rules-v1")).toBeVisible();
+  await expect(page.getByText("live · browser-live · rules/rules-v2")).toBeVisible();
   await expect(page.getByRole("group", { name: "Sample incidents" })).toHaveCount(0);
   await expect(page.getByLabel("Cluster")).toHaveValue("browser-live");
   await expect(page.locator("#allowed-namespaces option")).toHaveCount(2);

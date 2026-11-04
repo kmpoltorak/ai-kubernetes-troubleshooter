@@ -329,7 +329,6 @@ func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analys
 		verdict: "no_fault_observed", support: "limited",
 		summary: fmt.Sprintf("No known Kubernetes fault was observed for %s in the collected snapshots. Application health, intermittent faults and external dependencies remain unconfirmed.", t.Ref()),
 		causes:  []string{"application-level error not visible in the sampled logs", "intermittent issue not present during the checks", "problem in an external dependency"},
-		actions: []string{"check application metrics and error rates", "re-run the investigation while the problem is occurring"},
 	}
 	if incomplete {
 		f = finding{

@@ -72,8 +72,8 @@ export default function Report({ record }: { record: InvestigationRecord }) {
           </div>
 
           <div className="grid gap-5 xl:grid-cols-2">
-            <div className="card">
-              <h4 className="section-title">Remediation</h4>
+            {(recommendations.length > 0 || commands.length > 0) && <div className="card">
+              {recommendations.length > 0 && <h4 className="section-title">Remediation</h4>}
               <ol className="flex flex-col gap-2 text-sm">
                 {recommendations.map((r) => (
                   <li key={r.id} className="flex items-start gap-2">
@@ -89,7 +89,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
               </ol>
               {commands.length > 0 && (
                 <>
-                  <h4 className="section-title mt-5">Read-only commands</h4>
+                  <h4 className={`section-title ${recommendations.length > 0 ? "mt-5" : ""}`}>Read-only commands</h4>
                   <ul className="flex flex-col gap-1.5">
                     {commands.map((c) => (
                       <CommandLine key={c.id} command={c.command ?? ""} />
@@ -97,7 +97,7 @@ export default function Report({ record }: { record: InvestigationRecord }) {
                   </ul>
                 </>
               )}
-            </div>
+            </div>}
             <div className="card">
               <h4 className="section-title">Possible causes (hypotheses)</h4>
               <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm">

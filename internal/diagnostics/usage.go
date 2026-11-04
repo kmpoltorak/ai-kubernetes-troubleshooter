@@ -78,6 +78,10 @@ func getResourceUsage(ctx context.Context, c kube.Cluster, in Input) (Result, er
 			info.Containers = append(info.Containers, u)
 		}
 	}
+	// No samples (containers not running or not yet scraped) are missing data, not health.
+	if len(info.Containers) == 0 {
+		return Result{}, errors.New("no usage samples for the selected pods: containers not running or not yet scraped")
+	}
 	health := domain.Healthy
 	if len(signals) > 0 {
 		health = domain.Degraded

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 )
 
@@ -280,5 +281,18 @@ func TestRuleCommandsAreSafe(t *testing.T) {
 		if f.rootCause == "" || len(f.actions) == 0 || f.verdict == "" || f.support == "" {
 			t.Errorf("rule %d incomplete: %+v", i, f)
 		}
+	}
+}
+
+// The UI header and /api/v1/runtime show the configured model; reports show the provider name.
+func TestRulesDefaultModelMatchesProviderName(t *testing.T) {
+	cfg, err := config.Load(func(k string) string {
+		return map[string]string{"DATABASE_URL": "postgres://u:p@db.example.net/app"}[k]
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.LLMProvider+"/"+cfg.LLMModel, (RulesProvider{}).Name(); got != want {
+		t.Fatalf("configured analyzer %q, reports say %q", got, want)
 	}
 }

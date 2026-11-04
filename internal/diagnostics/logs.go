@@ -91,6 +91,10 @@ func getPodLogs(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 	if len(info.Streams) == 0 && len(errs) > 0 {
 		return Result{}, errors.Join(errs...)
 	}
+	// Nothing read is missing data, not a clean log.
+	if len(info.Streams) == 0 {
+		return Result{}, errors.New("no log lines available: the containers produced no output")
+	}
 	errorLines, lastError := 0, ""
 	for _, s := range info.Streams {
 		errorLines += len(s.ErrorLines)

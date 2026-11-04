@@ -25,6 +25,7 @@ func TestReportV2EvidenceAndVerdictBoundaries(t *testing.T) {
 		{"strong absence", func(a *Analysis) { a.Verdict = "no_fault_observed" }, "contradicts verdict"},
 		{"inconclusive support", func(a *Analysis) { a.Verdict = "inconclusive"; a.Support = "limited" }, "contradicts verdict"},
 		{"unhealthy absence", func(a *Analysis) { a.Verdict = "no_fault_observed"; a.Support = "limited" }, "unhealthy diagnostics"},
+		{"fault without next step", func(a *Analysis) { a.RecommendedActions = nil }, "recommended_actions is empty"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := validAnalysis()
@@ -38,6 +39,10 @@ func TestReportV2EvidenceAndVerdictBoundaries(t *testing.T) {
 	a.Verdict = "no_fault_observed"
 	a.Support = "limited"
 	collected[0].Health = Healthy
+	if err := a.Validate(collected, nil); err == nil || !strings.Contains(err.Error(), "must not recommend") {
+		t.Fatalf("a healthy result with recommendations must be refused: %v", err)
+	}
+	a.RecommendedActions = nil
 	if err := a.Validate(collected, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -53,8 +53,10 @@ export function reportMarkdown(incident: Incident, record: InvestigationRecord, 
     const actions = report.remediation_actions ?? [];
     const recs = actions.filter((r) => r.kind === "recommendation");
     const commands = actions.filter((r) => r.kind === "diagnostic_command" && r.command);
-    out.push("", "## Recommendations (require human review)", "",
-      recs.length ? recs.map((r) => `${r.position}. ${r.description}${r.requires_approval ? " _(needs approval)_" : ""}`).join("\n") : "_None reported._");
+    if (recs.length) {
+      out.push("", "## Recommendations (require human review)", "",
+        recs.map((r) => `${r.position}. ${r.description}${r.requires_approval ? " _(needs approval)_" : ""}`).join("\n"));
+    }
     if (commands.length) out.push("", "## Read-only commands", "", "```sh", ...commands.map((c) => c.command ?? ""), "```");
   }
   const evidence = new Map((record.evidence ?? []).map((e) => [e.tool_execution_id, e]));

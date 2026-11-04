@@ -38,6 +38,11 @@ test("v2 Markdown keeps verdict, support, citations, gaps and commands", () => {
   assert.match(md, /\| get_resource_usage \| failed \| metrics unavailable \|/);
 });
 
+test("a result without recommendations exports no recommendation section", () => {
+  const healthy = { ...v2, report: { ...v2.report, remediation_actions: [], analysis: { ...v2.report.analysis, verdict: "no_fault_observed", support: "limited" } } };
+  assert.doesNotMatch(reportMarkdown(incident, healthy, meta), /Recommendations|None reported/);
+});
+
 test("legacy Markdown never prints the uncalibrated score", () => {
   const md = reportMarkdown(incident, legacy, meta);
   assert.match(md, /schema v1 \(legacy\)/);
