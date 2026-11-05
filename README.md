@@ -49,7 +49,7 @@ cp .env.example .env
 
 ```bash
 docker compose up --build                          # UI and API on http://localhost:8080
-docker compose --profile ollama up --build         # plus a local Ollama with a model pull
+LLM_PROVIDER=ollama docker compose up --build      # analysis by Ollama running on the host
 ```
 
 Live cluster from Docker, with a kubeconfig for a read-only ServiceAccount
