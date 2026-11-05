@@ -14,8 +14,10 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/metadata"
@@ -184,35 +186,37 @@ const maxListedNames = 500
 // It reads names only and is bounded; diagnostics never depend on it.
 func (c Cluster) ListNames(ctx context.Context, namespace string, kind domain.ResourceType) ([]string, error) {
 	opts := metav1.ListOptions{Limit: maxListedNames}
-	var names []string
+	var list runtime.Object
+	var err error
 	switch kind {
 	case domain.ResourceDeployment:
-		l, err := c.Client.AppsV1().Deployments(namespace).List(ctx, opts)
-		if err != nil {
-			return nil, err
-		}
-		for _, o := range l.Items {
-			names = append(names, o.Name)
-		}
+		list, err = c.Client.AppsV1().Deployments(namespace).List(ctx, opts)
+	case domain.ResourceStatefulSet:
+		list, err = c.Client.AppsV1().StatefulSets(namespace).List(ctx, opts)
+	case domain.ResourceDaemonSet:
+		list, err = c.Client.AppsV1().DaemonSets(namespace).List(ctx, opts)
+	case domain.ResourceJob:
+		list, err = c.Client.BatchV1().Jobs(namespace).List(ctx, opts)
+	case domain.ResourceCronJob:
+		list, err = c.Client.BatchV1().CronJobs(namespace).List(ctx, opts)
 	case domain.ResourceService:
-		l, err := c.Client.CoreV1().Services(namespace).List(ctx, opts)
-		if err != nil {
-			return nil, err
-		}
-		for _, o := range l.Items {
-			names = append(names, o.Name)
-		}
+		list, err = c.Client.CoreV1().Services(namespace).List(ctx, opts)
 	case domain.ResourcePod:
-		l, err := c.Client.CoreV1().Pods(namespace).List(ctx, opts)
-		if err != nil {
-			return nil, err
-		}
-		for _, o := range l.Items {
-			names = append(names, o.Name)
-		}
+		list, err = c.Client.CoreV1().Pods(namespace).List(ctx, opts)
 	default:
 		return nil, fmt.Errorf("unsupported kind %q", kind)
 	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	err = meta.EachListItem(list, func(o runtime.Object) error {
+		m, err := meta.Accessor(o)
+		if err == nil {
+			names = append(names, m.GetName())
+		}
+		return err
+	})
 	slices.Sort(names)
-	return names, nil
+	return names, err
 }

@@ -27,9 +27,14 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get"]
-  # get_deployment; list fills the Name suggestions in the incident form
+  # get_deployment, get_statefulset, get_daemonset; list fills the Name
+  # suggestions in the incident form
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  # get_job, get_cronjob; list finds a CronJob's latest Job and fills the form
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
     verbs: ["get", "list"]
   # get_service: ready endpoints behind a Service
   - apiGroups: ["discovery.k8s.io"]

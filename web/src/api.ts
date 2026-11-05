@@ -2,7 +2,7 @@
 
 export type Health = "healthy" | "degraded" | "down";
 export type Severity = "low" | "medium" | "high" | "critical";
-export type ResourceType = "deployment" | "service" | "pod";
+export type ResourceType = "deployment" | "statefulset" | "daemonset" | "job" | "cronjob" | "service" | "pod";
 
 export interface BuildInfo {
   version: string;
@@ -39,6 +39,8 @@ export interface Runtime {
   allowed_namespaces: string[];
   analyzer: { provider: string; model: string };
   scenarios: string[];
+  /** Kinds an incident can target, in form order; absent before the server lists them. */
+  resource_types?: ResourceType[];
 }
 
 export interface Incident {

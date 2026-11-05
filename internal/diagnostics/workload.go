@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
@@ -180,7 +181,7 @@ func probe(p *corev1.Probe) string {
 
 func isTrue(b *bool) bool { return b != nil && *b }
 
-// ---- Deployment ----
+// ---- Controllers with replicas: Deployment, StatefulSet, DaemonSet ----
 
 type Condition struct {
 	Type    string `json:"type"`
@@ -189,8 +190,10 @@ type Condition struct {
 	Message string `json:"message,omitempty"`
 }
 
-type DeploymentInfo struct {
+// WorkloadInfo describes a pod controller: Deployment, StatefulSet, DaemonSet or Job.
+type WorkloadInfo struct {
 	Name              string            `json:"name"`
+	Kind              string            `json:"kind,omitempty"`
 	DesiredReplicas   int32             `json:"desired_replicas"`
 	ReadyReplicas     int32             `json:"ready_replicas"`
 	AvailableReplicas int32             `json:"available_replicas"`
@@ -200,61 +203,132 @@ type DeploymentInfo struct {
 	Selector          string            `json:"selector"`
 	PodLabels         map[string]string `json:"pod_labels"`
 	Template          PodSpecSummary    `json:"template"`
+	// Job only.
+	Active    int32 `json:"active,omitempty"`
+	Succeeded int32 `json:"succeeded,omitempty"`
+	Failed    int32 `json:"failed,omitempty"`
+}
+
+// workloadNotFound is a valid observation: the target does not exist.
+func workloadNotFound(kind string, in Input) Result {
+	return Result{Subject: strings.ToLower(kind) + "/" + in.Name, Health: domain.Down,
+		Summary: fmt.Sprintf("%s %s not found in %s.", kind, in.Name, in.Namespace),
+		Signals: []string{SignalWorkloadNotFound}, Data: WorkloadInfo{Name: in.Name, Kind: kind}}
+}
+
+// newWorkload fills the fields every controller shares.
+func newWorkload(kind, name string, selector *metav1.LabelSelector, tmpl corev1.PodTemplateSpec) (WorkloadInfo, error) {
+	sel, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return WorkloadInfo{}, fmt.Errorf("%s selector: %w", strings.ToLower(kind), err)
+	}
+	return WorkloadInfo{Name: name, Kind: kind, Selector: sel.String(), PodLabels: tmpl.Labels, Template: summarizeSpec(tmpl.Spec)}, nil
+}
+
+func condition(typ, status, reason, message string) Condition {
+	return Condition{Type: typ, Status: status, Reason: reason, Message: truncate(redact.Text(message), maxMessageBytes)}
+}
+
+// replicaResult rates a controller by ready replicas against the desired count.
+func replicaResult(info WorkloadInfo, signals signalSet) Result {
+	health, summary := domain.Healthy, fmt.Sprintf("%s %s has %d/%d ready replicas.", info.Kind, info.Name, info.ReadyReplicas, info.DesiredReplicas)
+	switch {
+	case info.DesiredReplicas == 0 && info.Kind == "DaemonSet":
+		health = domain.Degraded
+		signals.add(SignalNoEligibleNodes)
+		summary = fmt.Sprintf("DaemonSet %s schedules no pods: no node matches its node selector, affinity and tolerations.", info.Name)
+	case info.DesiredReplicas == 0:
+		health = domain.Degraded
+		signals.add(SignalScaledToZero)
+		summary = fmt.Sprintf("%s %s is scaled to zero replicas.", info.Kind, info.Name)
+	case info.ReadyReplicas == 0:
+		health = domain.Down
+		signals.add(SignalReplicasUnavailable)
+	case info.ReadyReplicas < info.DesiredReplicas:
+		health = domain.Degraded
+		signals.add(SignalReplicasUnavailable)
+	}
+	if !info.RolloutComplete && info.DesiredReplicas > 0 {
+		summary += " Rollout is not complete."
+	}
+	return Result{Subject: strings.ToLower(info.Kind) + "/" + info.Name, Health: health, Summary: summary, Signals: signals, Data: info}
 }
 
 func getDeployment(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
-	subject := "deployment/" + in.Name
 	d, err := c.Client.AppsV1().Deployments(in.Namespace).Get(ctx, in.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return Result{Subject: subject, Health: domain.Down, Summary: fmt.Sprintf("Deployment %s not found in %s.", in.Name, in.Namespace),
-			Signals: []string{SignalWorkloadNotFound}, Data: DeploymentInfo{Name: in.Name}}, nil
+		return workloadNotFound("Deployment", in), nil
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	sel, err := metav1.LabelSelectorAsSelector(d.Spec.Selector)
+	info, err := newWorkload("Deployment", d.Name, d.Spec.Selector, d.Spec.Template)
 	if err != nil {
-		return Result{}, fmt.Errorf("deployment selector: %w", err)
+		return Result{}, err
 	}
-	desired := int32(1)
-	if d.Spec.Replicas != nil {
-		desired = *d.Spec.Replicas
-	}
+	info.DesiredReplicas = ptr.Deref(d.Spec.Replicas, 1)
 	st := d.Status
-	info := DeploymentInfo{
-		Name: d.Name, DesiredReplicas: desired, ReadyReplicas: st.ReadyReplicas, AvailableReplicas: st.AvailableReplicas,
-		UpdatedReplicas: st.UpdatedReplicas, Selector: sel.String(), PodLabels: d.Spec.Template.Labels,
-		Template: summarizeSpec(d.Spec.Template.Spec),
-	}
-	info.RolloutComplete = st.ObservedGeneration >= d.Generation && st.UpdatedReplicas == desired &&
-		st.Replicas == desired && st.AvailableReplicas == desired
+	info.ReadyReplicas, info.AvailableReplicas, info.UpdatedReplicas = st.ReadyReplicas, st.AvailableReplicas, st.UpdatedReplicas
+	info.RolloutComplete = st.ObservedGeneration >= d.Generation && st.UpdatedReplicas == info.DesiredReplicas &&
+		st.Replicas == info.DesiredReplicas && st.AvailableReplicas == info.DesiredReplicas
 
 	var signals signalSet
 	for _, cond := range st.Conditions {
-		info.Conditions = append(info.Conditions, Condition{Type: string(cond.Type), Status: string(cond.Status),
-			Reason: cond.Reason, Message: truncate(redact.Text(cond.Message), maxMessageBytes)})
+		info.Conditions = append(info.Conditions, condition(string(cond.Type), string(cond.Status), cond.Reason, cond.Message))
 		if cond.Type == appsv1.DeploymentProgressing && cond.Reason == "ProgressDeadlineExceeded" {
 			signals.add(SignalRolloutStuck)
 		}
 	}
+	return replicaResult(info, signals), nil
+}
 
-	health, summary := domain.Healthy, fmt.Sprintf("Deployment %s has %d/%d ready replicas.", d.Name, st.ReadyReplicas, desired)
-	switch {
-	case desired == 0:
-		health = domain.Degraded
-		signals.add(SignalScaledToZero)
-		summary = fmt.Sprintf("Deployment %s is scaled to zero replicas.", d.Name)
-	case st.ReadyReplicas == 0:
-		health = domain.Down
-		signals.add(SignalReplicasUnavailable)
-	case st.ReadyReplicas < desired:
-		health = domain.Degraded
-		signals.add(SignalReplicasUnavailable)
+func getStatefulSet(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
+	s, err := c.Client.AppsV1().StatefulSets(in.Namespace).Get(ctx, in.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return workloadNotFound("StatefulSet", in), nil
 	}
-	if !info.RolloutComplete && desired > 0 {
-		summary += " Rollout is not complete."
+	if err != nil {
+		return Result{}, err
 	}
-	return Result{Subject: subject, Health: health, Summary: summary, Signals: signals, Data: info}, nil
+	info, err := newWorkload("StatefulSet", s.Name, s.Spec.Selector, s.Spec.Template)
+	if err != nil {
+		return Result{}, err
+	}
+	info.DesiredReplicas = ptr.Deref(s.Spec.Replicas, 1)
+	st := s.Status
+	info.ReadyReplicas, info.AvailableReplicas, info.UpdatedReplicas = st.ReadyReplicas, st.AvailableReplicas, st.UpdatedReplicas
+	info.RolloutComplete = st.ObservedGeneration >= s.Generation && st.UpdatedReplicas == info.DesiredReplicas &&
+		st.ReadyReplicas == info.DesiredReplicas && (st.UpdateRevision == "" || st.CurrentRevision == st.UpdateRevision)
+	for _, cond := range st.Conditions {
+		info.Conditions = append(info.Conditions, condition(string(cond.Type), string(cond.Status), cond.Reason, cond.Message))
+	}
+	return replicaResult(info, nil), nil
+}
+
+func getDaemonSet(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
+	d, err := c.Client.AppsV1().DaemonSets(in.Namespace).Get(ctx, in.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return workloadNotFound("DaemonSet", in), nil
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	info, err := newWorkload("DaemonSet", d.Name, d.Spec.Selector, d.Spec.Template)
+	if err != nil {
+		return Result{}, err
+	}
+	st := d.Status
+	info.DesiredReplicas, info.ReadyReplicas, info.AvailableReplicas, info.UpdatedReplicas = st.DesiredNumberScheduled, st.NumberReady, st.NumberAvailable, st.UpdatedNumberScheduled
+	info.RolloutComplete = st.ObservedGeneration >= d.Generation && st.UpdatedNumberScheduled == st.DesiredNumberScheduled &&
+		st.NumberAvailable == st.DesiredNumberScheduled
+	for _, cond := range st.Conditions {
+		info.Conditions = append(info.Conditions, condition(string(cond.Type), string(cond.Status), cond.Reason, cond.Message))
+	}
+	r := replicaResult(info, nil)
+	if st.NumberMisscheduled > 0 {
+		r.Summary += fmt.Sprintf(" %d pods run on nodes they should not.", st.NumberMisscheduled)
+	}
+	return r, nil
 }
 
 // ---- Pods ----
@@ -291,10 +365,12 @@ type PodInfo struct {
 }
 
 type PodsInfo struct {
-	Selector string    `json:"selector,omitempty"`
-	Total    int       `json:"total"`
-	Ready    int       `json:"ready"`
-	Pods     []PodInfo `json:"pods"`
+	Selector string `json:"selector,omitempty"`
+	Total    int    `json:"total"`
+	Ready    int    `json:"ready"`
+	// Completed pods (phase Succeeded) finished their work, e.g. Job pods.
+	Completed int       `json:"completed,omitempty"`
+	Pods      []PodInfo `json:"pods"`
 	// Spec is the pod spec summary of the first pod, used when there is no
 	// controller template (pod and service targets).
 	Spec *PodSpecSummary `json:"spec,omitempty"`
@@ -339,25 +415,34 @@ func getPods(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 	for _, p := range pods {
 		pi := podInfo(p)
 		signals.add(pi.Signals...)
-		if pi.Ready {
+		switch {
+		case pi.Ready:
 			info.Ready++
+		case pi.Phase == string(corev1.PodSucceeded):
+			// A Job pod that finished its work is done, not unready.
+			info.Completed++
 		}
 		info.Pods = append(info.Pods, pi)
 	}
 	// Pods with problems first, so the detail cap never drops them; later
 	// steps read logs and metrics only for the pods kept here.
-	healthy := func(p PodInfo) bool { return p.Ready && len(p.Signals) == 0 }
+	healthy := func(p PodInfo) bool {
+		return (p.Ready || p.Phase == string(corev1.PodSucceeded)) && len(p.Signals) == 0
+	}
 	sort.SliceStable(info.Pods, func(i, j int) bool { return !healthy(info.Pods[i]) && healthy(info.Pods[j]) })
 	info.Pods = info.Pods[:min(len(info.Pods), maxPods)]
 
 	health := domain.Healthy
 	switch {
-	case info.Ready == 0:
+	case info.Ready+info.Completed == 0:
 		health = domain.Down
-	case info.Ready < info.Total || len(signals) > 0:
+	case info.Ready+info.Completed < info.Total || len(signals) > 0:
 		health = domain.Degraded
 	}
 	summary := fmt.Sprintf("%d/%d pods ready.", info.Ready, info.Total)
+	if info.Completed > 0 {
+		summary = fmt.Sprintf("%d/%d pods ready, %d completed.", info.Ready, info.Total, info.Completed)
+	}
 	if len(signals) > 0 {
 		summary += " Findings: " + strings.Join(signals, ", ") + "."
 	}

@@ -87,10 +87,7 @@ var rules = []rule{
 					"check imagePullSecrets and registry credentials",
 					"roll back to the last working image if the new tag was never published",
 				},
-				commands: []string{
-					fmt.Sprintf("kubectl describe pod <pod> -n %s", t.Namespace),
-					fmt.Sprintf("kubectl rollout history deployment/%s -n %s", t.ResourceName, t.Namespace),
-				},
+				commands: append([]string{fmt.Sprintf("kubectl describe pod <pod> -n %s", t.Namespace)}, rolloutHistory(t)...),
 			}
 		},
 	},
@@ -241,10 +238,68 @@ var rules = []rule{
 					"verify required environment variables and configuration",
 					"roll back to the previous release if the failure started with a deployment",
 				},
-				commands: []string{
-					fmt.Sprintf("kubectl logs <pod> -n %s --previous", t.Namespace),
-					fmt.Sprintf("kubectl rollout history deployment/%s -n %s", t.ResourceName, t.Namespace),
+				commands: append([]string{fmt.Sprintf("kubectl logs <pod> -n %s --previous", t.Namespace)}, rolloutHistory(t)...),
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalJobDeadlineExceeded) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Job exceeded its activeDeadlineSeconds", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("%s was stopped because it ran longer than its activeDeadlineSeconds; its pods were terminated.", t.Ref()),
+				signals:  []string{diagnostics.SignalJobDeadlineExceeded, diagnostics.SignalJobFailed},
+				causes:   []string{"the work takes longer than the deadline allows", "pods waited too long to be scheduled or to start", "a dependency made the Job hang"},
+				actions:  []string{"compare the Job's run time with activeDeadlineSeconds", "check the pod logs for where the run spent its time"},
+				commands: []string{fmt.Sprintf("kubectl describe job %s -n %s", jobName(t), t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalJobFailed) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Job failed: its pods exited with errors", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary: fmt.Sprintf("%s reached its failure limit (backoffLimit) and stopped retrying.", t.Ref()),
+				signals: []string{diagnostics.SignalJobFailed, diagnostics.SignalContainerExitError, diagnostics.SignalConfigurationError},
+				causes:  []string{"the program exits with an error (input, configuration or a bug)", "a dependency was unavailable during the run", "backoffLimit too low for transient failures"},
+				actions: []string{
+					"read the logs of the failed pods for the error",
+					"fix the cause, then create a new Job run; a failed Job is not retried",
 				},
+				commands: []string{fmt.Sprintf("kubectl describe job %s -n %s", jobName(t), t.Namespace), fmt.Sprintf("kubectl logs <pod> -n %s", t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool {
+			return has(diagnostics.SignalCronJobSuspended, diagnostics.SignalJobSuspended)
+		},
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Suspended: no new runs start", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("%s has spec.suspend set to true, so Kubernetes starts no new runs until it is resumed.", t.Ref()),
+				signals:  []string{diagnostics.SignalCronJobSuspended, diagnostics.SignalJobSuspended},
+				causes:   []string{"suspended on purpose during maintenance or an incident", "a pipeline or operator left it suspended"},
+				actions:  []string{"confirm whether the suspension is intended", "if not, set spec.suspend to false through the normal deployment process"},
+				commands: []string{fmt.Sprintf("kubectl get %s %s -n %s", t.ResourceType, t.ResourceName, t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalNoEligibleNodes) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "DaemonSet matches no nodes", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("%s wants zero pods: no node matches its node selector, affinity and tolerations.", t.Ref()),
+				signals:  []string{diagnostics.SignalNoEligibleNodes},
+				causes:   []string{"node selector or affinity names labels no node carries", "nodes are tainted and the DaemonSet does not tolerate the taints", "the target nodes were removed"},
+				actions:  []string{"compare the DaemonSet's node selector and tolerations with the node labels and taints"},
+				commands: []string{"kubectl get nodes --show-labels"},
 			}
 		},
 	},
@@ -353,6 +408,23 @@ func (RulesProvider) Analyze(_ context.Context, in AnalysisInput) (domain.Analys
 	return a.Redacted(), nil
 }
 
+// rolloutHistory applies to the kinds kubectl can roll back.
+func rolloutHistory(t domain.Target) []string {
+	switch t.ResourceType {
+	case domain.ResourceDeployment, domain.ResourceStatefulSet, domain.ResourceDaemonSet:
+		return []string{fmt.Sprintf("kubectl rollout history %s/%s -n %s", t.ResourceType, t.ResourceName, t.Namespace)}
+	}
+	return nil
+}
+
+// jobName is the Job to describe: the target itself, or "<job>" for a CronJob's run, filled in by refine.
+func jobName(t domain.Target) string {
+	if t.ResourceType == domain.ResourceJob {
+		return t.ResourceName
+	}
+	return "<job>"
+}
+
 var probePathHint = regexp.MustCompile(`(?i)\b404\b|no such file|not found`)
 
 // refine uses what the diagnostics already read: the last logged error, the names of
@@ -389,10 +461,14 @@ func refine(a *domain.Analysis, t domain.Target, in AnalysisInput, has func(...s
 	if has(diagnostics.SignalImageNotFound) && strings.HasPrefix(a.RootCause, "Container image cannot be pulled") {
 		a.Summary += " The registry reports that the image reference was not found."
 	}
-	pod := ""
+	pod, job := "", ""
 	for _, e := range in.Evidence {
-		if kind, name, _ := strings.Cut(e.Subject, "/"); kind == "pod" && pod == "" {
+		kind, name, _ := strings.Cut(e.Subject, "/")
+		if kind == "pod" && pod == "" {
 			pod = name
+		}
+		if kind == "job" && job == "" {
+			job = name
 		}
 	}
 	for _, te := range in.Failed {
@@ -407,6 +483,9 @@ func refine(a *domain.Analysis, t domain.Target, in AnalysisInput, has func(...s
 		}
 		if t.ResourceType == domain.ResourceService {
 			c = strings.ReplaceAll(c, "<service>", t.ResourceName)
+		}
+		if job != "" {
+			c = strings.ReplaceAll(c, "<job>", job)
 		}
 		a.SafeCommands[i] = c
 	}

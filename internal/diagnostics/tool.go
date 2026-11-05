@@ -19,6 +19,10 @@ import (
 const (
 	GetNamespace       = "get_namespace"
 	GetDeployment      = "get_deployment"
+	GetStatefulSet     = "get_statefulset"
+	GetDaemonSet       = "get_daemonset"
+	GetJob             = "get_job"
+	GetCronJob         = "get_cronjob"
 	GetPods            = "get_pods"
 	GetEvents          = "get_events"
 	GetPodLogs         = "get_pod_logs"
@@ -36,6 +40,11 @@ const (
 	SignalReplicasUnavailable  = "ReplicasUnavailable"
 	SignalRolloutStuck         = "RolloutStuck"
 	SignalScaledToZero         = "ScaledToZero"
+	SignalNoEligibleNodes      = "NoEligibleNodes"
+	SignalJobFailed            = "JobFailed"
+	SignalJobDeadlineExceeded  = "JobDeadlineExceeded"
+	SignalJobSuspended         = "JobSuspended"
+	SignalCronJobSuspended     = "CronJobSuspended"
 	SignalNoPods               = "NoPods"
 	SignalCrashLoopBackOff     = "CrashLoopBackOff"
 	SignalImagePullError       = "ImagePullError"
@@ -74,7 +83,7 @@ const (
 // validated before any API call.
 type Input struct {
 	Namespace string `json:"namespace"`
-	// Name is the object the tool inspects (deployment, pod, service,
+	// Name is the object the tool inspects (a workload, pod, service,
 	// configmap or secret).
 	Name string `json:"name,omitempty"`
 	// Names lists related objects: event subjects, containers, pods.
@@ -126,6 +135,10 @@ type Tool func(ctx context.Context, c kube.Cluster, in Input) (Result, error)
 var Registry = map[string]Tool{
 	GetNamespace:       getNamespace,
 	GetDeployment:      getDeployment,
+	GetStatefulSet:     getStatefulSet,
+	GetDaemonSet:       getDaemonSet,
+	GetJob:             getJob,
+	GetCronJob:         getCronJob,
 	GetPods:            getPods,
 	GetEvents:          getEvents,
 	GetPodLogs:         getPodLogs,

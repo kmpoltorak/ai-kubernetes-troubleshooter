@@ -352,3 +352,43 @@ func TestRulesUseLoggedErrorsAndKnownNames(t *testing.T) {
 		}
 	}
 }
+
+// Jobs, CronJobs and DaemonSets fail in their own ways; commands name the right object.
+func TestRulesForControllerKinds(t *testing.T) {
+	analyze := func(kind domain.ResourceType, name string, evidence ...domain.Evidence) domain.Analysis {
+		t.Helper()
+		target := domain.Target{Cluster: "lab", Namespace: "payments", ResourceType: kind, ResourceName: name}
+		a, err := RulesProvider{}.Analyze(context.Background(), AnalysisInput{Incident: domain.Incident{Target: target}, Evidence: evidence})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range a.SafeCommands {
+			if err := domain.ValidateSafeCommand(c); err != nil || strings.Contains(c, "<job>") {
+				t.Errorf("command %q: %v", c, err)
+			}
+		}
+		return a
+	}
+	failed := analyze(domain.ResourceJob, "migrate", ev("get_job", "job/migrate", "JobFailed"), ev("get_pods", "pods/app=migrate", "ContainerExitError"))
+	if failed.RootCause != "Job failed: its pods exited with errors" || !slices.Contains(failed.SafeCommands, "kubectl describe job migrate -n payments") {
+		t.Errorf("failed job: %q %v", failed.RootCause, failed.SafeCommands)
+	}
+	slow := analyze(domain.ResourceCronJob, "nightly", ev("get_cronjob", "cronjob/nightly"), ev("get_job", "job/nightly-29270910", "JobFailed", "JobDeadlineExceeded"))
+	if slow.RootCause != "Job exceeded its activeDeadlineSeconds" || !slices.Contains(slow.SafeCommands, "kubectl describe job nightly-29270910 -n payments") {
+		t.Errorf("cronjob run past its deadline: %q %v", slow.RootCause, slow.SafeCommands)
+	}
+	if a := analyze(domain.ResourceCronJob, "nightly", ev("get_cronjob", "cronjob/nightly", "CronJobSuspended")); a.RootCause != "Suspended: no new runs start" ||
+		!slices.Contains(a.SafeCommands, "kubectl get cronjob nightly -n payments") {
+		t.Errorf("suspended: %q %v", a.RootCause, a.SafeCommands)
+	}
+	if a := analyze(domain.ResourceDaemonSet, "agent", ev("get_daemonset", "daemonset/agent", "NoEligibleNodes")); a.RootCause != "DaemonSet matches no nodes" {
+		t.Errorf("daemonset: %q", a.RootCause)
+	}
+	crash := analyze(domain.ResourceStatefulSet, "db", ev("get_pods", "pods/app=db", "CrashLoopBackOff"))
+	if !slices.Contains(crash.SafeCommands, "kubectl rollout history statefulset/db -n payments") {
+		t.Errorf("statefulset rollout history: %v", crash.SafeCommands)
+	}
+	if pod := analyze(domain.ResourcePod, "db-0", ev("get_pods", "pod/db-0", "CrashLoopBackOff")); slices.ContainsFunc(pod.SafeCommands, func(c string) bool { return strings.Contains(c, "rollout") }) {
+		t.Errorf("a pod has no rollout history: %v", pod.SafeCommands)
+	}
+}

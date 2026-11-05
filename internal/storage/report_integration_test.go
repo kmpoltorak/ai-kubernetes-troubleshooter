@@ -51,9 +51,7 @@ func TestReportV2RoundTripAndGuardedDowngrade(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT analysis::text FROM reports WHERE id=$1`, legacy.Report.ID).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MigrateDown(ctx); err != nil {
-		t.Fatal(err)
-	}
+	migrateDownTo(t, s, 2)
 	if _, err := s.MigrateUp(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +91,7 @@ func TestReportV2RoundTripAndGuardedDowngrade(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT confidence IS NULL FROM reports WHERE id=$1`, done.Report.ID).Scan(&null); err != nil || !null {
 		t.Fatalf("invented score: null=%t %v", null, err)
 	}
+	migrateDownTo(t, s, 3)
 	if err := s.MigrateDown(ctx); err == nil || !strings.Contains(err.Error(), "v2 reports") {
 		t.Fatalf("v2 downgrade accepted: %v", err)
 	}

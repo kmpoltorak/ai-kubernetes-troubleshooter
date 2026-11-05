@@ -79,7 +79,7 @@ func TestCreateValidation(t *testing.T) {
 		{"missing description", func(in *CreateInput) { in.Description = " " }, "description", "required"},
 		{"long description", func(in *CreateInput) { in.Description = strings.Repeat("x", 5001) }, "description", "5000"},
 		{"long title", func(in *CreateInput) { in.Title = strings.Repeat("x", 201) }, "title", "200"},
-		{"bad resource type", func(in *CreateInput) { in.ResourceType = "statefulset" }, "target", "resource_type"},
+		{"bad resource type", func(in *CreateInput) { in.ResourceType = "secret" }, "target", "resource_type"},
 		{"injection name", func(in *CreateInput) { in.ResourceName = "api; kubectl delete ns payments" }, "target", "resource_name"},
 		{"bad namespace", func(in *CreateInput) { in.Namespace = "Payments" }, "target", "namespace"},
 		{"unknown cluster", func(in *CreateInput) { in.Cluster = "prod-eu" }, "target", "not configured"},
