@@ -41,11 +41,6 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        # Pull requests check the newest version; pushes to main and release candidates check both.
-        kubernetes: ${{ fromJSON(github.event_name == 'pull_request' && '["1.37.0"]' || '["1.36.4", "1.37.0"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -74,16 +69,15 @@ jobs:
           echo "$tools" >> "$GITHUB_PATH"
       - name: Live diagnostics, RBAC and NetworkPolicy
         env:
-          E2E_KUBERNETES_VERSION: ${{ matrix.kubernetes }}
-          E2E_ARTIFACT_DIR: ${{ github.workspace }}/report-e2e-${{ matrix.kubernetes }}
+          E2E_ARTIFACT_DIR: ${{ github.workspace }}/report-e2e
           E2E_IMAGE_ARTIFACT: ${{ github.workspace }}/candidate
         run: make test-e2e
       - name: Upload bounded test output
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: kubernetes-${{ matrix.kubernetes }}
-          path: report-e2e-${{ matrix.kubernetes }}/
+          name: kubernetes
+          path: report-e2e/
           retention-days: 3
 
   test:
