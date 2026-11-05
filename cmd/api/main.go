@@ -82,9 +82,10 @@ func run(args []string) error {
 		if err != nil {
 			return fmt.Errorf("SIMULATION_SCENARIO: %w", err)
 		}
+		sim.CustomResources = kube.CustomResourceMap(cfg.CustomResources)
 		clusters = sim
 	} else {
-		cluster, err := kube.Connect(cfg.Kubeconfig, cfg.KubernetesContext)
+		cluster, err := kube.Connect(cfg.Kubeconfig, cfg.KubernetesContext, cfg.CustomResources)
 		if err != nil {
 			return err
 		}
@@ -93,7 +94,7 @@ func run(args []string) error {
 		checks["kubernetes"] = cluster.Ping
 	}
 
-	policy := domain.TargetPolicy{ClusterName: cfg.ClusterName, AllowedNamespaces: cfg.AllowedNamespaces}
+	policy := domain.TargetPolicy{ClusterName: cfg.ClusterName, AllowedNamespaces: cfg.AllowedNamespaces, CustomResources: cfg.CustomKinds()}
 	engine := investigation.NewEngine(store, clusters, llm.FromConfig(cfg), log, investigation.Config{
 		Timeout:       cfg.InvestigationTimeout,
 		MaxConcurrent: cfg.MaxConcurrentInvestigations,

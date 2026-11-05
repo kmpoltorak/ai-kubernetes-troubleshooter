@@ -27,6 +27,7 @@ const (
 	GetPVC             = "get_pvc"
 	GetHPA             = "get_hpa"
 	GetNodes           = "get_nodes"
+	GetCustomResource  = "get_custom_resource"
 	GetPods            = "get_pods"
 	GetEvents          = "get_events"
 	GetPodLogs         = "get_pod_logs"
@@ -39,59 +40,61 @@ const (
 
 // Signals are stable findings the analyzer keys on.
 const (
-	SignalNamespaceNotFound     = "NamespaceNotFound"
-	SignalWorkloadNotFound      = "WorkloadNotFound"
-	SignalReplicasUnavailable   = "ReplicasUnavailable"
-	SignalRolloutStuck          = "RolloutStuck"
-	SignalScaledToZero          = "ScaledToZero"
-	SignalNoEligibleNodes       = "NoEligibleNodes"
-	SignalJobFailed             = "JobFailed"
-	SignalJobDeadlineExceeded   = "JobDeadlineExceeded"
-	SignalJobSuspended          = "JobSuspended"
-	SignalCronJobSuspended      = "CronJobSuspended"
-	SignalIngressBackendMissing = "IngressBackendMissing"
-	SignalIngressPortMismatch   = "IngressPortMismatch"
-	SignalIngressNoAddress      = "IngressNoAddress"
-	SignalPVCMissing            = "PVCMissing"
-	SignalPVCPending            = "PVCPending"
-	SignalPVCLost               = "PVCLost"
-	SignalHPAUnableToScale      = "HPAUnableToScale"
-	SignalHPAMetricsUnavailable = "HPAMetricsUnavailable"
-	SignalHPAAtMaxReplicas      = "HPAAtMaxReplicas"
-	SignalNodeNotReady          = "NodeNotReady"
-	SignalNodePressure          = "NodePressure"
-	SignalNoPods                = "NoPods"
-	SignalCrashLoopBackOff      = "CrashLoopBackOff"
-	SignalImagePullError        = "ImagePullError"
-	SignalImageNotFound         = "ImageNotFound"
-	SignalContainerConfigError  = "ContainerConfigError"
-	SignalOOMKilled             = "OOMKilled"
-	SignalContainerExitError    = "ContainerExitError"
-	SignalFrequentRestarts      = "FrequentRestarts"
-	SignalPodNotReady           = "PodNotReady"
-	SignalUnschedulable         = "Unschedulable"
-	SignalEvicted               = "Evicted"
-	SignalBackOff               = "BackOff"
-	SignalFailedMount           = "FailedMount"
-	SignalFailedScheduling      = "FailedScheduling"
-	SignalFailedPull            = "FailedPull"
-	SignalReadinessProbeFailed  = "ReadinessProbeFailed"
-	SignalLivenessProbeFailed   = "LivenessProbeFailed"
-	SignalDNSResolutionError    = "DNSResolutionError"
-	SignalConnectionRefused     = "ConnectionRefused"
-	SignalConnectionTimeout     = "ConnectionTimeout"
-	SignalConfigurationError    = "ConfigurationError"
-	SignalOutOfMemory           = "OutOfMemory"
-	SignalServiceNotFound       = "ServiceNotFound"
-	SignalSelectorMismatch      = "SelectorMismatch"
-	SignalNoReadyEndpoints      = "NoReadyEndpoints"
-	SignalConfigMapMissing      = "ConfigMapMissing"
-	SignalSecretMissing         = "SecretMissing"
-	SignalEgressDenyAll         = "EgressDenyAll"
-	SignalEgressRestricted      = "EgressRestricted"
-	SignalIngressDenyAll        = "IngressDenyAll"
-	SignalHighMemoryUsage       = "HighMemoryUsage"
-	SignalHighCPUUsage          = "HighCPUUsage"
+	SignalNamespaceNotFound      = "NamespaceNotFound"
+	SignalWorkloadNotFound       = "WorkloadNotFound"
+	SignalReplicasUnavailable    = "ReplicasUnavailable"
+	SignalRolloutStuck           = "RolloutStuck"
+	SignalScaledToZero           = "ScaledToZero"
+	SignalNoEligibleNodes        = "NoEligibleNodes"
+	SignalJobFailed              = "JobFailed"
+	SignalJobDeadlineExceeded    = "JobDeadlineExceeded"
+	SignalJobSuspended           = "JobSuspended"
+	SignalCronJobSuspended       = "CronJobSuspended"
+	SignalIngressBackendMissing  = "IngressBackendMissing"
+	SignalIngressPortMismatch    = "IngressPortMismatch"
+	SignalIngressNoAddress       = "IngressNoAddress"
+	SignalPVCMissing             = "PVCMissing"
+	SignalPVCPending             = "PVCPending"
+	SignalPVCLost                = "PVCLost"
+	SignalHPAUnableToScale       = "HPAUnableToScale"
+	SignalHPAMetricsUnavailable  = "HPAMetricsUnavailable"
+	SignalHPAAtMaxReplicas       = "HPAAtMaxReplicas"
+	SignalNodeNotReady           = "NodeNotReady"
+	SignalNodePressure           = "NodePressure"
+	SignalCustomResourceNotReady = "CustomResourceNotReady"
+	SignalCustomResourceDegraded = "CustomResourceDegraded"
+	SignalNoPods                 = "NoPods"
+	SignalCrashLoopBackOff       = "CrashLoopBackOff"
+	SignalImagePullError         = "ImagePullError"
+	SignalImageNotFound          = "ImageNotFound"
+	SignalContainerConfigError   = "ContainerConfigError"
+	SignalOOMKilled              = "OOMKilled"
+	SignalContainerExitError     = "ContainerExitError"
+	SignalFrequentRestarts       = "FrequentRestarts"
+	SignalPodNotReady            = "PodNotReady"
+	SignalUnschedulable          = "Unschedulable"
+	SignalEvicted                = "Evicted"
+	SignalBackOff                = "BackOff"
+	SignalFailedMount            = "FailedMount"
+	SignalFailedScheduling       = "FailedScheduling"
+	SignalFailedPull             = "FailedPull"
+	SignalReadinessProbeFailed   = "ReadinessProbeFailed"
+	SignalLivenessProbeFailed    = "LivenessProbeFailed"
+	SignalDNSResolutionError     = "DNSResolutionError"
+	SignalConnectionRefused      = "ConnectionRefused"
+	SignalConnectionTimeout      = "ConnectionTimeout"
+	SignalConfigurationError     = "ConfigurationError"
+	SignalOutOfMemory            = "OutOfMemory"
+	SignalServiceNotFound        = "ServiceNotFound"
+	SignalSelectorMismatch       = "SelectorMismatch"
+	SignalNoReadyEndpoints       = "NoReadyEndpoints"
+	SignalConfigMapMissing       = "ConfigMapMissing"
+	SignalSecretMissing          = "SecretMissing"
+	SignalEgressDenyAll          = "EgressDenyAll"
+	SignalEgressRestricted       = "EgressRestricted"
+	SignalIngressDenyAll         = "IngressDenyAll"
+	SignalHighMemoryUsage        = "HighMemoryUsage"
+	SignalHighCPUUsage           = "HighCPUUsage"
 )
 
 // Input is the only way to parameterize a tool. Every name in it is
@@ -108,6 +111,8 @@ type Input struct {
 	Labels map[string]string `json:"labels,omitempty"`
 	// LabelSelector selects pods, e.g. "app=payment-service".
 	LabelSelector string `json:"label_selector,omitempty"`
+	// Resource is the configured custom resource kind, e.g. "rollouts.argoproj.io".
+	Resource string `json:"resource,omitempty"`
 }
 
 // Validate is the last line of defense before input reaches the API.
@@ -124,6 +129,9 @@ func (in Input) Validate() error {
 		if err := domain.ValidateObjectName(n); err != nil {
 			return fmt.Errorf("names entry %q %w", n, err)
 		}
+	}
+	if in.Resource != "" && !domain.ResourceType(in.Resource).Custom() {
+		return fmt.Errorf("resource %q is not a custom resource name", in.Resource)
 	}
 	if len(in.Names) > 50 {
 		return errors.New("names must have at most 50 entries")
@@ -158,6 +166,7 @@ var Registry = map[string]Tool{
 	GetPVC:             getPVC,
 	GetHPA:             getHPA,
 	GetNodes:           getNodes,
+	GetCustomResource:  getCustomResource,
 	GetPods:            getPods,
 	GetEvents:          getEvents,
 	GetPodLogs:         getPodLogs,

@@ -150,3 +150,24 @@ func TestDurableJobConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadCustomResources(t *testing.T) {
+	c, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CUSTOM_RESOURCES": "argoproj.io/v1alpha1/rollouts, postgresql.cnpg.io/v1/clusters"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.CustomKinds(); len(got) != 2 || got[0] != "rollouts.argoproj.io" || got[1] != "clusters.postgresql.cnpg.io" {
+		t.Fatalf("kinds %v", got)
+	}
+	for entry, want := range map[string]string{
+		"apps/v1/deployments":        "custom API group", // built-ins have their own diagnostics
+		"v1/secrets":                 "group/version/resource",
+		"argoproj.io/latest/rollout": "version",
+		"argoproj.io/v1/Rollouts":    "lowercase plural",
+		"argoproj.io/v1/roll;outs":   "lowercase plural",
+	} {
+		if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CUSTOM_RESOURCES": entry})); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v", entry, err)
+		}
+	}
+}

@@ -460,3 +460,32 @@ func TestInvestigateEveryControllerKind(t *testing.T) {
 		}
 	}
 }
+
+// A configured custom resource is read for its status, then its pods; an unconfigured one is refused.
+func TestInvestigateCustomResource(t *testing.T) {
+	kind := domain.ResourceType("rollouts.argoproj.io")
+	clusters := simulation.Clusters{DefaultScenario: "healthy", CustomResources: map[domain.ResourceType]schema.GroupVersionResource{
+		kind: {Group: "argoproj.io", Version: "v1alpha1", Resource: "rollouts"}}}
+	engine := func(allowed ...domain.ResourceType) *Engine {
+		return NewEngine(nil, clusters, llm.RulesProvider{}, slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Config{Timeout: 10 * time.Second, MaxConcurrent: 2, Policy: domain.TargetPolicy{ClusterName: "local", CustomResources: allowed}})
+	}
+	for scenario, want := range map[string]string{"healthy": "No Kubernetes-level fault detected", "crash_loop_backoff": "Container restarts with errors (CrashLoopBackOff)"} {
+		inc := incident(kind, "web")
+		e := engine(kind)
+		e.store = newMemStore(inc)
+		rec, err := e.Investigate(context.Background(), inc.ID, Options{Scenario: scenario})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := tools(rec); got[1] != diagnostics.GetCustomResource || got[2] != diagnostics.GetPods || rec.Report.Analysis.RootCause != want {
+			t.Errorf("%s: plan %v, root cause %q", scenario, got, rec.Report.Analysis.RootCause)
+		}
+	}
+	inc := incident(kind, "web")
+	e := engine()
+	e.store = newMemStore(inc)
+	if _, err := e.Investigate(context.Background(), inc.ID, Options{}); !errors.Is(err, domain.ErrTargetNotAllowed) {
+		t.Fatalf("unconfigured custom resource investigated: %v", err)
+	}
+}

@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/rest"
@@ -44,6 +45,18 @@ type Cluster struct {
 	Metadata metadata.Interface
 	// PodMetrics reads metrics.k8s.io; the fake clientset cannot serve it.
 	PodMetrics func(ctx context.Context, namespace string) ([]PodUsage, error)
+	// Dynamic reads the configured custom resources, and only those.
+	Dynamic         dynamic.Interface
+	CustomResources map[domain.ResourceType]schema.GroupVersionResource
+}
+
+// CustomResourceMap indexes the configured custom resources by incident kind.
+func CustomResourceMap(crs []domain.CustomResource) map[domain.ResourceType]schema.GroupVersionResource {
+	m := make(map[domain.ResourceType]schema.GroupVersionResource, len(crs))
+	for _, cr := range crs {
+		m[cr.Kind()] = schema.GroupVersionResource{Group: cr.Group, Version: cr.Version, Resource: cr.Resource}
+	}
+	return m
 }
 
 type PodUsage struct {
@@ -60,7 +73,7 @@ type ContainerUsage struct {
 // Connect builds a Cluster from a kubeconfig file and context, or from the
 // in-cluster ServiceAccount when no kubeconfig is set and the process runs
 // in a pod. Every API request is counted by method and status code.
-func Connect(kubeconfig, kubeContext string) (Cluster, error) {
+func Connect(kubeconfig, kubeContext string, custom []domain.CustomResource) (Cluster, error) {
 	cfg, err := restConfig(kubeconfig, kubeContext)
 	if err != nil {
 		return Cluster{}, err
@@ -77,7 +90,11 @@ func Connect(kubeconfig, kubeContext string) (Cluster, error) {
 	if err != nil {
 		return Cluster{}, fmt.Errorf("metadata client: %w", err)
 	}
-	return Cluster{Client: client, Metadata: meta, PodMetrics: metricsReader(client)}, nil
+	dyn, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return Cluster{}, fmt.Errorf("dynamic client: %w", err)
+	}
+	return Cluster{Client: client, Metadata: meta, PodMetrics: metricsReader(client), Dynamic: dyn, CustomResources: CustomResourceMap(custom)}, nil
 }
 
 func restConfig(kubeconfig, kubeContext string) (*rest.Config, error) {
@@ -210,7 +227,11 @@ func (c Cluster) ListNames(ctx context.Context, namespace string, kind domain.Re
 	case domain.ResourceHPA:
 		list, err = c.Client.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, opts)
 	default:
-		return nil, fmt.Errorf("unsupported kind %q", kind)
+		gvr, ok := c.CustomResources[kind]
+		if !ok || c.Dynamic == nil {
+			return nil, fmt.Errorf("unsupported kind %q", kind)
+		}
+		list, err = c.Dynamic.Resource(gvr).Namespace(namespace).List(ctx, opts)
 	}
 	if err != nil {
 		return nil, err

@@ -56,7 +56,7 @@ func renderEnv(t *testing.T, env map[string]string, files ...string) (rendered, 
 	cmd := exec.CommandContext(ctx, "docker", append(args, "config", "--format", "json")...)
 	cmd.Dir = "../.."
 	for _, kv := range os.Environ() {
-		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "EXTERNAL_DATABASE_URL" && name != "EXTERNAL_DATABASE_NETWORK" && name != "POSTGRES_PORT" {
+		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "EXTERNAL_DATABASE_URL" && name != "EXTERNAL_DATABASE_NETWORK" && name != "POSTGRES_PORT" && name != "KUBERNETES_CUSTOM_RESOURCES" {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}

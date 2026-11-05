@@ -161,7 +161,7 @@ func TestTargetPolicy(t *testing.T) {
 // A failed read of the target or its pods means health was not observed; optional reads do not.
 func TestHealthUnconfirmedByFailedCoreReads(t *testing.T) {
 	healthy := []Evidence{{Health: Healthy}}
-	for _, tool := range []string{"get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa",
+	for _, tool := range []string{"get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa", "get_custom_resource",
 		"get_service", "get_pods", "get_events", "get_pod_logs"} {
 		if !HealthUnconfirmed(healthy, []ToolExecution{{ToolName: tool}}) {
 			t.Errorf("failed %s does not leave health unconfirmed", tool)
@@ -170,6 +170,27 @@ func TestHealthUnconfirmedByFailedCoreReads(t *testing.T) {
 	for _, tool := range []string{"get_resource_usage", "get_secret_metadata", "get_configmap", "get_pvc", "get_nodes", "get_network_policies"} {
 		if HealthUnconfirmed(healthy, []ToolExecution{{ToolName: tool}}) {
 			t.Errorf("optional %s blocks a healthy verdict", tool)
+		}
+	}
+}
+
+// A custom kind passes validation by shape; only the policy admits configured ones.
+func TestCustomResourceKinds(t *testing.T) {
+	target := Target{Cluster: "local", Namespace: "payments", ResourceType: "rollouts.argoproj.io", ResourceName: "web"}
+	if err := target.Validate(); err != nil {
+		t.Fatalf("custom kind shape: %v", err)
+	}
+	policy := TargetPolicy{ClusterName: "local"}
+	if err := policy.Check(target); !errors.Is(err, ErrTargetNotAllowed) || !strings.Contains(err.Error(), "KUBERNETES_CUSTOM_RESOURCES") {
+		t.Fatalf("unconfigured custom kind admitted: %v", err)
+	}
+	policy.CustomResources = []ResourceType{"rollouts.argoproj.io"}
+	if err := policy.Check(target); err != nil {
+		t.Fatalf("configured custom kind rejected: %v", err)
+	}
+	for _, kind := range []ResourceType{"deployment", "secrets", "Rollouts.argoproj.io", "rollouts..io", "-x.io"} {
+		if kind.Custom() {
+			t.Errorf("%q counted as a custom kind", kind)
 		}
 	}
 }

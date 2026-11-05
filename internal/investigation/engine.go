@@ -303,6 +303,16 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 			podLabels = maps.Clone(pods.Pods[0].Labels)
 			delete(podLabels, "pod-template-hash")
 		}
+	default: // a configured custom resource: its status, then the pods it selects
+		res, ok := r.run(ctx, diagnostics.GetCustomResource, diagnostics.Input{Name: t.ResourceName, Resource: string(t.ResourceType)})
+		if !ok {
+			return r.unobserved(t)
+		}
+		if slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
+			return nil
+		}
+		cr := res.Data.(diagnostics.CustomResourceInfo)
+		selector, podLabels = cr.Selector, cr.PodLabels
 	}
 
 	if t.ResourceType != domain.ResourcePod && selector != "" {

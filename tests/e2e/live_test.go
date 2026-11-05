@@ -25,8 +25,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
@@ -53,7 +56,7 @@ func TestLiveCluster(t *testing.T) {
 		t.Fatal("explicit local fixture image required")
 	}
 	config, err := client.CoreV1().ConfigMaps("troubleshooter").Get(ctx, "troubleshooter-config", metav1.GetOptions{})
-	if err != nil || config.Data["SIMULATION_ENABLED"] != "false" || config.Data["AUTH_ENABLED"] != "false" || config.Data["LLM_PROVIDER"] != "rules" || config.Data["KUBERNETES_ALLOWED_NAMESPACES"] != "payments" {
+	if err != nil || config.Data["SIMULATION_ENABLED"] != "false" || config.Data["AUTH_ENABLED"] != "false" || config.Data["LLM_PROVIDER"] != "rules" || config.Data["KUBERNETES_ALLOWED_NAMESPACES"] != "payments" || config.Data["KUBERNETES_CUSTOM_RESOURCES"] != "example.com/v1/widgets" {
 		t.Fatal("unexpected application configuration")
 	}
 	deployment, err := client.AppsV1().Deployments("troubleshooter").Get(ctx, "troubleshooter", metav1.GetOptions{})
@@ -223,6 +226,37 @@ func TestLiveCluster(t *testing.T) {
 		requireSignal(t, rec, diagnostics.SignalHPAMetricsUnavailable)
 		if a := report(t, rec); a.RootCause != "Autoscaler cannot read its metrics" || !slices.ContainsFunc(rec.ToolExecutions, func(te domain.ToolExecution) bool { return te.ToolName == diagnostics.GetDeployment }) {
 			t.Fatalf("autoscaler: %q; its target must be diagnosed too", a.RootCause)
+		}
+	})
+	t.Run("custom_resource", func(t *testing.T) {
+		dyn, err := dynamic.NewForConfig(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		widgets := dyn.Resource(schema.GroupVersionResource{Group: "example.com", Version: "v1", Resource: "widgets"}).Namespace("payments")
+		var created *unstructured.Unstructured
+		eventually(t, ctx, time.Minute, "widget CRD served", func(ctx context.Context) (bool, error) {
+			created, err = widgets.Create(ctx, &unstructured.Unstructured{Object: map[string]any{"apiVersion": "example.com/v1", "kind": "Widget",
+				"metadata": map[string]any{"name": "storefront"},
+				"spec":     map[string]any{"selector": map[string]any{"matchLabels": map[string]any{"app": "healthy"}}, "apiToken": "e2e-spec-value-not-recorded"}}}, metav1.CreateOptions{})
+			return err == nil, nil
+		})
+		created.Object["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "False", "reason": "BackendUnavailable", "message": "payment provider unreachable"}}}
+		if _, err := widgets.UpdateStatus(ctx, created, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		rec := s.investigate(t, "widgets.example.com", "storefront")
+		requireSignal(t, rec, diagnostics.SignalCustomResourceNotReady)
+		raw, _ := json.Marshal(rec)
+		if a := report(t, rec); a.RootCause != "The resource reports a failing status condition" || strings.Contains(string(raw), "e2e-spec-value-not-recorded") ||
+			!slices.ContainsFunc(rec.Evidence, func(e domain.Evidence) bool { return e.Source == diagnostics.GetPods && e.Health == domain.Healthy }) {
+			t.Fatalf("custom resource: %q; spec values must stay out and its pods must be read", a.RootCause)
+		}
+		var listed struct {
+			Names []string `json:"names"`
+		}
+		if code := s.call(t, ctx, "GET", "/api/v1/targets?namespace=payments&kind=widgets.example.com", nil, &listed); code != 200 || !slices.Contains(listed.Names, "storefront") {
+			t.Fatalf("custom names not listed: %d %v", code, listed.Names)
 		}
 	})
 	t.Run("missing_configmap", func(t *testing.T) {

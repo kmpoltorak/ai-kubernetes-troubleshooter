@@ -325,8 +325,8 @@ func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
 		env  map[string]string
 		want string
 	}{
-		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout"},
-			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
+		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout", "KUBERNETES_CUSTOM_RESOURCES": "argoproj.io/v1alpha1/rollouts"},
+			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler","rollouts.argoproj.io"]}`},
 		{"simulation", map[string]string{},
 			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"analyzer":{"provider":"rules","model":"rules-v2"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
 	} {
@@ -520,7 +520,7 @@ func (s *syncTestJobs) Wait(ctx context.Context, incidentID, id string) (domain.
 }
 
 func TestTargetsListsWithinPolicy(t *testing.T) {
-	rt := Runtime{Mode: "live", ClusterName: "lab", AllowedNamespaces: []string{"payments"}}
+	rt := Runtime{Mode: "live", ClusterName: "lab", AllowedNamespaces: []string{"payments"}, ResourceTypes: []domain.ResourceType{"deployment", "pod", "rollouts.argoproj.io"}}
 	var asked []string
 	list := func(_ context.Context, ns string, kind domain.ResourceType) ([]string, error) {
 		asked = append(asked, ns+"/"+string(kind))
@@ -544,7 +544,10 @@ func TestTargetsListsWithinPolicy(t *testing.T) {
 	if code, body := get("namespace=payments&kind=deployment"); code != 200 || body != `{"names":["checkout","ledger"]}` {
 		t.Fatalf("list: %d %s", code, body)
 	}
-	for _, q := range []string{"namespace=kube-system&kind=deployment", "namespace=payments&kind=secret", "kind=deployment", "namespace=Bad_NS&kind=pod"} {
+	if code, body := get("namespace=payments&kind=rollouts.argoproj.io"); code != 200 || body != `{"names":["checkout","ledger"]}` {
+		t.Fatalf("configured custom resource: %d %s", code, body)
+	}
+	for _, q := range []string{"namespace=kube-system&kind=deployment", "namespace=payments&kind=secret", "kind=deployment", "namespace=Bad_NS&kind=pod", "namespace=payments&kind=widgets.example.com"} {
 		if code, body := get(q); code != 400 || !strings.Contains(body, "validation_failed") {
 			t.Errorf("%s: %d %s", q, code, body)
 		}
@@ -552,7 +555,7 @@ func TestTargetsListsWithinPolicy(t *testing.T) {
 	if code, body := get("namespace=payments&kind=pod"); code != 502 || !strings.Contains(body, "list_failed") || !strings.Contains(body, "forbidden") {
 		t.Fatalf("lister error: %d %s", code, body)
 	}
-	if len(asked) != 2 {
+	if len(asked) != 3 {
 		t.Fatalf("lister called outside the policy: %v", asked)
 	}
 	sim := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, Runtime{Mode: "simulation", ClusterName: "local"}, nil))

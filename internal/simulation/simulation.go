@@ -19,10 +19,13 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	metadatafake "k8s.io/client-go/metadata/fake"
 	k8stesting "k8s.io/client-go/testing"
@@ -45,6 +48,8 @@ var Now = time.Date(2026, 9, 1, 8, 30, 0, 0, time.UTC)
 // Clusters hands out a simulated cluster per investigation.
 type Clusters struct {
 	DefaultScenario string
+	// CustomResources are simulated as a resource selecting the scenario's pods.
+	CustomResources map[domain.ResourceType]schema.GroupVersionResource
 }
 
 func NewClusters(defaultScenario string) (Clusters, error) {
@@ -61,7 +66,37 @@ func (c Clusters) For(target domain.Target, scenario string) (kube.Cluster, stri
 		scenario = c.DefaultScenario
 	}
 	cl, err := Build(scenario, target)
+	if gvr, ok := c.CustomResources[target.ResourceType]; ok && err == nil {
+		err = addCustomResource(&cl, gvr, target)
+	}
 	return cl, scenario, err
+}
+
+// addCustomResource serves the target as a custom resource that selects the
+// scenario's pods and reports Ready from their Deployment.
+func addCustomResource(cl *kube.Cluster, gvr schema.GroupVersionResource, t domain.Target) error {
+	d, err := cl.Client.AppsV1().Deployments(t.Namespace).Get(context.Background(), t.ResourceName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	ready, reason := "True", "AllReplicasReady"
+	if d.Status.ReadyReplicas < ptr.Deref(d.Spec.Replicas, 1) {
+		ready, reason = "False", "ReplicasUnavailable"
+	}
+	obj := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": gvr.GroupVersion().String(), "kind": "Simulated",
+		"metadata": map[string]any{"name": t.ResourceName, "namespace": t.Namespace, "generation": int64(3)},
+		"spec":     map[string]any{"selector": map[string]any{"matchLabels": map[string]any{"app": t.ResourceName}}, "replicas": int64(2)},
+		"status": map[string]any{"observedGeneration": int64(3), "conditions": []any{
+			map[string]any{"type": "Ready", "status": ready, "reason": reason, "message": fmt.Sprintf("%d/%d replicas ready", d.Status.ReadyReplicas, ptr.Deref(d.Spec.Replicas, 1))}}},
+	}}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "SimulatedList"})
+	if err := dyn.Tracker().Create(gvr, obj, t.Namespace); err != nil {
+		return err
+	}
+	cl.Dynamic = dyn
+	cl.CustomResources = map[domain.ResourceType]schema.GroupVersionResource{t.ResourceType: gvr}
+	return nil
 }
 
 // world is the mutable scenario state before it is loaded into fakes.
