@@ -40,8 +40,10 @@ time {
       text-zinc-600 hover:border-indigo-500 hover:text-indigo-700 aria-expanded:border-indigo-500 aria-expanded:text-indigo-700
       dark:border-zinc-500 dark:text-zinc-300 dark:hover:text-indigo-300 dark:aria-expanded:text-indigo-300;
   }
-  .hint-text {
-    @apply block w-full rounded-md bg-zinc-100 px-2.5 py-1.5 text-xs font-normal text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300;
+  /* Overrides the popover's default centring: Hint positions it beside its "?". */
+  .hint-bubble {
+    @apply fixed inset-auto m-0 rounded-lg border-0 bg-zinc-900 px-3 py-2 text-left text-xs leading-relaxed font-normal
+      normal-case tracking-normal text-zinc-50 shadow-lg dark:bg-zinc-100 dark:text-zinc-900;
   }
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white

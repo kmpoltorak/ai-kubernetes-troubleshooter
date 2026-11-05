@@ -84,7 +84,8 @@ scenario. The header shows the mode, cluster name and analyzer; live mode has no
 samples or scenario choice. In the form the cluster is fixed, Namespace is a list
 when `KUBERNETES_ALLOWED_NAMESPACES` is set, and the name field (labelled after the
 Kind, e.g. "Deployment name") suggests objects listed from the cluster (any name can
-still be typed). A "?" next to a field or report term expands a short explanation. A
+still be typed). A "?" next to a field or report term opens a short explanation in a bubble
+(Escape or a click elsewhere closes it). A
 report opens with its conclusion, cited evidence and export buttons; hypotheses,
 sampling limits, diagnostics and the attempt history are collapsed. Outside Docker:
 
