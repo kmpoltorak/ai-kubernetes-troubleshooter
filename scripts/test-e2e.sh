@@ -4,12 +4,8 @@ umask 077
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 cd "$repo"
-version=${E2E_KUBERNETES_VERSION:-1.37.0}
-case "$version" in
-  1.37.0) node_image=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 ;;
-  1.36.4) node_image=kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed ;;
-  *) echo 'E2E_KUBERNETES_VERSION must be 1.36.4 or 1.37.0' >&2; exit 2 ;;
-esac
+version=1.37.0
+node_image=kindest/node:v${version}@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
 for tool in docker kind kubectl go; do command -v "$tool" >/dev/null; done
 case "$(kind version)" in 'kind v0.33.0 '*) ;; *) echo 'kind v0.33.0 is required' >&2; exit 2 ;; esac
 

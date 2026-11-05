@@ -1,9 +1,8 @@
 # Live Kubernetes tests
 
 Run diagnostics, RBAC and NetworkPolicy checks on a disposable single-node kind
-cluster. CI covers Kubernetes **1.36.4** and **1.37.0** on pushes to `main` and
-release candidates, and 1.37.0 on pull requests, Linux amd64, using one shared
-OCI image for every job.
+cluster. CI covers Kubernetes **1.37.0**, Linux amd64, using the same OCI image as
+the other jobs.
 
 ## Run
 
@@ -14,7 +13,6 @@ and verify the release checksum. CI uses kubectl 1.37.0 and verifies both tools.
 
 ```bash
 make test-e2e                                     # Kubernetes 1.37.0
-E2E_KUBERNETES_VERSION=1.36.4 make test-e2e
 ```
 
 The runner builds local source and a fixture image, creates an `akt-e2e-*`

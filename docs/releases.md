@@ -1,9 +1,8 @@
 # Image candidates and releases
 
-CI builds one Linux amd64 OCI archive. The Kubernetes jobs (1.37.0 on pull
-requests, 1.36.4 and 1.37.0 on `main` and releases) download that same artifact,
-verify its checksum and image metadata, and import it directly into kind. They do
-not rebuild the app.
+CI builds one Linux amd64 OCI archive. The Kubernetes job (1.37.0) downloads
+that same artifact, verifies its checksum and image metadata, and imports it
+directly into kind. It does not rebuild the app.
 The loaded configuration ID must match the artifact, the Deployment uses the
 original manifest digest, and the live tests check the compiled build fields.
 
@@ -35,7 +34,7 @@ commit. The **Release** workflow then:
 
 1. requires the version to be `X.Y.Z` and the tag to point at the pushed commit;
 2. runs the whole CI on that commit, including authentication, database
-   integration, browser, security and both Kubernetes versions;
+   integration, browser, security and Kubernetes;
 3. copies the tested OCI archive to
    `ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter:X.Y.Z`, requiring its digest to
    be preserved, and verifies the remote manifest;
