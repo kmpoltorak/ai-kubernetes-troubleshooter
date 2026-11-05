@@ -121,7 +121,8 @@ func TestGetNodes(t *testing.T) {
 			Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "192.0.2.21"}}}}
 	}
 	ready := corev1.NodeCondition{Type: corev1.NodeReady, Status: corev1.ConditionTrue}
-	c := cluster(t, node("ok", ready), node("full", ready, corev1.NodeCondition{Type: corev1.NodeDiskPressure, Status: corev1.ConditionTrue}),
+	k3s := corev1.NodeCondition{Type: "EtcdIsVoter", Status: corev1.ConditionTrue, Reason: "MemberNotLearner"} // healthy k3s control plane
+	c := cluster(t, node("ok", ready, k3s), node("full", ready, corev1.NodeCondition{Type: corev1.NodeDiskPressure, Status: corev1.ConditionTrue}),
 		node("dead", corev1.NodeCondition{Type: corev1.NodeReady, Status: corev1.ConditionUnknown}), node("silent")) // no Ready condition reported
 
 	if r := run(t, c, GetNodes, Input{Names: []string{"ok"}}); r.Health != domain.Healthy || strings.Contains(r.Summary+fmt.Sprint(r.Data), "192.0.2.21") {

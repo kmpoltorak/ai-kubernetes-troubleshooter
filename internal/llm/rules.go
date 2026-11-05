@@ -250,20 +250,6 @@ var rules = []rule{
 		},
 	},
 	{
-		when: func(has func(...string) bool) bool { return has(diagnostics.SignalNodePressure) },
-		build: func(t domain.Target) finding {
-			return finding{
-				rootCause: "Node under resource pressure", severity: domain.SeverityMedium,
-				verdict: "observed_fault", support: "limited",
-				summary:  fmt.Sprintf("A node hosting pods of %s reports memory, disk or PID pressure; the kubelet may evict pods there.", t.Ref()),
-				signals:  []string{diagnostics.SignalNodePressure, diagnostics.SignalEvicted},
-				causes:   []string{"other workloads use most of the node's memory or disk", "images and logs fill the node's disk", "requests understate real usage"},
-				actions:  []string{"check which pods use the node's resources", "free disk space or move workloads to other nodes"},
-				commands: []string{"kubectl describe node <node>", "kubectl top nodes"},
-			}
-		},
-	},
-	{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalDNSResolutionError) },
 		build: func(t domain.Target) finding {
 			return finding{
@@ -432,6 +418,20 @@ var rules = []rule{
 					"verify probe path, port and timing against the application",
 				},
 				commands: []string{fmt.Sprintf("kubectl describe pod <pod> -n %s", t.Namespace), fmt.Sprintf("kubectl logs <pod> -n %s", t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalNodePressure) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Node under resource pressure", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "limited",
+				summary:  fmt.Sprintf("A node hosting pods of %s reports memory, disk or PID pressure; the kubelet may evict pods there.", t.Ref()),
+				signals:  []string{diagnostics.SignalNodePressure, diagnostics.SignalEvicted},
+				causes:   []string{"other workloads use most of the node's memory or disk", "images and logs fill the node's disk", "requests understate real usage"},
+				actions:  []string{"check which pods use the node's resources", "free disk space or move workloads to other nodes"},
+				commands: []string{"kubectl describe node <node>", "kubectl top nodes"},
 			}
 		},
 	},
