@@ -46,6 +46,26 @@ export default function App() {
     }
   }, []);
   const refresh = useCallback(() => loadIncidents(listOffset.current), [loadIncidents]);
+  const [notice, setNotice] = useState("");
+
+  // There is no undo: the dialog names the count, the server skips work in flight.
+  const deleteIncidents = async (ids: string[]) => {
+    const n = ids.length;
+    if (!window.confirm(`Delete ${n} ${n === 1 ? "incident" : "incidents"} with all investigations and reports? This cannot be undone.`)) return false;
+    try {
+      const { deleted, skipped } = await api.deleteIncidents(ids);
+      setNotice(`${deleted.length} deleted${skipped.length ? `; ${skipped.length} skipped (investigation still running, or already deleted)` : ""}.`);
+      if (selected && deleted.includes(selected.id.toLowerCase())) {
+        setSelectedState(null);
+        history.replaceState(null, "", location.pathname);
+      }
+      refresh();
+      return true;
+    } catch (e) {
+      setNotice(`Could not delete: ${(e as Error).message}`);
+      return false;
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -101,11 +121,13 @@ export default function App() {
             onRefresh={refresh}
             page={{ ...listPage, limit: pageSize }}
             onPage={loadIncidents}
+            onDelete={deleteIncidents}
+            notice={notice}
           />
         </aside>
         <section className={`min-w-0 ${selected ? "order-first lg:order-none" : ""}`}>
           {selected ? (
-            <IncidentDetail key={selected.id} id={selected.id} initialScenario={selected.scenario} scenarios={runtime?.scenarios ?? []} build={readiness?.build ?? null} onChanged={refresh} />
+            <IncidentDetail key={selected.id} id={selected.id} initialScenario={selected.scenario} scenarios={runtime?.scenarios ?? []} build={readiness?.build ?? null} onChanged={refresh} onDelete={() => deleteIncidents([selected.id])} />
           ) : (
             <EmptyState />
           )}

@@ -191,3 +191,40 @@ test("the incident list pages through older incidents", async ({ page, request }
   await page.getByRole("button", { name: "Newer incidents" }).click();
   await expect(items).toHaveCount(20);
 });
+
+test("incidents are deleted one at a time and in bulk after confirmation", async ({ page, request }) => {
+  const titles = ["delete one", "delete two", "delete three"];
+  for (const title of titles) {
+    const data = { title, description: "Deletion check", cluster: "local", namespace: "payments", resource_type: "deployment", resource_name: "payment-service" };
+    for (let tries = 0; ; tries++) {
+      const res = await request.post(`${rules}/api/v1/incidents`, { data });
+      if (res.status() === 201) break;
+      expect(res.status() === 429 && tries < 10, `create incident: ${res.status()}`).toBe(true);
+      await page.waitForTimeout(1000);
+    }
+  }
+  await page.goto(rules);
+  const row = (title: string) => page.getByRole("button", { name: new RegExp(`^${title}`) });
+  // Bulk: two checked rows; the dialog names the count.
+  await page.getByRole("checkbox", { name: "Select delete one" }).check();
+  await page.getByRole("checkbox", { name: "Select delete two" }).check();
+  let message = "";
+  page.once("dialog", (d) => { message = d.message(); void d.accept(); });
+  await page.getByRole("button", { name: "Delete selected (2)" }).click();
+  expect(message).toContain("Delete 2 incidents");
+  await expect(page.getByRole("status").filter({ hasText: "2 deleted." })).toBeVisible();
+  await expect(row("delete one")).toHaveCount(0);
+  await expect(row("delete two")).toHaveCount(0);
+
+  // Single, from the detail view: dismissing keeps it, accepting removes it and clears the selection.
+  await row("delete three").click();
+  page.once("dialog", (d) => void d.dismiss());
+  await page.getByRole("button", { name: "Delete incident" }).click();
+  await expect(row("delete three")).toHaveCount(1);
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Delete incident" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "1 deleted." })).toBeVisible();
+  await expect(row("delete three")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Select or create an incident" })).toBeVisible();
+  expect(new URL(page.url()).search).toBe("");
+});

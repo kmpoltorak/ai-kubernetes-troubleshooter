@@ -13,9 +13,10 @@ interface Props {
   scenarios: string[];
   build: BuildInfo | null;
   onChanged: () => void;
+  onDelete: () => void;
 }
 
-export default function IncidentDetail({ id, initialScenario, scenarios, build, onChanged }: Props) {
+export default function IncidentDetail({ id, initialScenario, scenarios, build, onChanged, onDelete }: Props) {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [record, setRecord] = useState<InvestigationRecord | null>(null);
   const [scenario, setScenario] = useState(initialScenario);
@@ -207,6 +208,10 @@ export default function IncidentDetail({ id, initialScenario, scenarios, build, 
           <button type="button" className="btn-primary" onClick={investigate} disabled={!sessionReady || !!storageError || submitting || running || loadingHistory || loadingRecord}>
             {(running || submitting) && <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
             {submitting ? "Submitting…" : running ? "Investigation active" : pending ? "Retry submission" : "Run investigation"}
+          </button>
+          <button type="button" className="btn-danger ml-auto" onClick={onDelete} disabled={submitting || running}
+            title={running ? "An incident with an active investigation cannot be deleted" : undefined}>
+            Delete incident
           </button>
         </div>
         {running && !job && <p role="status" className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">Resuming investigation status…</p>}

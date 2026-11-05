@@ -83,6 +83,7 @@ func New(svc *incidents.Service, jobService JobService, checks map[string]func(c
 	h := &handler{incidents: svc, jobs: jobService, checks: checks, log: log, build: buildinfo.Current()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/incidents", h.createIncident)
+	mux.HandleFunc("POST /api/v1/incidents/delete", h.deleteIncidents)
 	mux.HandleFunc("GET /api/v1/incidents", h.listIncidents)
 	mux.HandleFunc("GET /api/v1/incidents/{id}", h.getIncident)
 	mux.HandleFunc("POST /api/v1/incidents/{id}/investigate", h.investigate)
@@ -130,6 +131,24 @@ func (h *handler) listIncidents(w http.ResponseWriter, r *http.Request) {
 		list = []domain.Incident{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"incidents": list, "offset": offset})
+}
+
+// deleteIncidents removes incidents in bulk (one ID for a single delete). There
+// is no undo; the server log records who deleted which incidents.
+func (h *handler) deleteIncidents(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		IDs []string `json:"ids"`
+	}
+	if !decodeBody(w, r, &in, false) {
+		return
+	}
+	deleted, skipped, err := h.incidents.Delete(r.Context(), in.IDs)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.log.InfoContext(r.Context(), "incidents deleted", "deleted", deleted, "skipped", skipped)
+	writeJSON(w, http.StatusOK, map[string][]string{"deleted": deleted, "skipped": skipped})
 }
 
 func (h *handler) getIncident(w http.ResponseWriter, r *http.Request) {

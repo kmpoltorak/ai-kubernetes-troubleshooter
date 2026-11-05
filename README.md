@@ -184,7 +184,8 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/v1/incidents` | `cluster`, `namespace`, `resource_type` (`deployment`, `service`, `pod`), `resource_name`, `description`, optional `title` |
+| `POST` | `/api/v1/incidents` | `cluster`, `namespace`, `resource_type` (one of `/api/v1/runtime` `resource_types`), `resource_name`, `description`, optional `title` |
+| `POST` | `/api/v1/incidents/delete` | `{"ids": [...]}`, 1–100 UUIDs; deletes each incident with all its investigations, evidence, reports and jobs; returns `{deleted, skipped}` (skipped: work in flight or unknown ID) |
 | `GET` | `/api/v1/incidents?limit=&offset=` | newest first, max 100 |
 | `GET` | `/api/v1/incidents/{id}` | one incident |
 | `POST` | `/api/v1/incidents/{id}/jobs` | optional `{"scenario": "..."}`; UUID `Idempotency-Key` required; `202` + `Location` |
@@ -215,6 +216,11 @@ including a failing readiness response. The UI shows the responding replica's
 version and short revision. See [build metadata](docs/build-metadata.md) for defaults and build arguments.
 
 ## Data deletion
+
+In the UI, tick incidents and choose **Delete selected**, or **Delete incident** in
+the detail view. A browser dialog states the count. Incidents with a queued or
+running investigation are skipped. There is no undo, and the server log records the
+signed-in user and the deleted IDs. Any user admitted by authentication may delete.
 
 `./bin/api purge --before 2026-01-01T00:00:00Z` previews old incidents. Deletion
 requires the preview token; active investigations are skipped. Nothing is deleted

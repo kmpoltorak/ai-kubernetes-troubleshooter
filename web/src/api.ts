@@ -212,6 +212,8 @@ export const api = {
     request<{ incidents: Incident[] }>("GET", `/api/v1/incidents?limit=${limit}&offset=${offset}`).then((r) => r.incidents),
   getIncident: (id: string) => request<Incident>("GET", `/api/v1/incidents/${id}`),
   createIncident: (body: CreateIncident) => request<Incident>("POST", "/api/v1/incidents", body),
+  /** Deletes incidents without work in flight; the rest come back as skipped. */
+  deleteIncidents: (ids: string[]) => request<{ deleted: string[]; skipped: string[] }>("POST", "/api/v1/incidents/delete", { ids }),
   submitJob: (id: string, scenario: string, key: string, signal: AbortSignal) =>
     request<JobRecord>("POST", `/api/v1/incidents/${id}/jobs`, scenario ? { scenario } : {}, { signal, headers: { "Idempotency-Key": key } }),
   job: (id: string, jobID: string, signal: AbortSignal) =>
