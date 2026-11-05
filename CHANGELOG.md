@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.1.0...v1.1.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* place hint bubbles by the client size and wait for resizes in the test ([d059294](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/d059294cf94919ca712215753b4e0f490783b388))
+* show hints in a bubble instead of expanding below ([2d2c7b2](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/2d2c7b2c4737526ffec920f8aea318de7c0a1527))
+* show hints in a bubble instead of expanding below ([cb58565](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/cb58565799c42e0cdd8a7bb1a652e231666bec62))
+
 ## [1.1.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.0.0...v1.1.0) (2026-11-05)
 
 
