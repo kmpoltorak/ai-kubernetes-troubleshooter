@@ -133,7 +133,31 @@ jobs:
       - name: Upgrade, backup and restore
         run: bash scripts/test-upgrade.sh
 
+  # The UI jobs run only when the UI, the API it calls or this workflow changed.
+  # Releases (workflow_call with a version) and pushes without a known base run them always.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.diff.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          ui=true
+          if [ -z "$VERSION" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null &&
+            ! git diff --name-only "$BASE" HEAD | grep -qE '^(web/|internal/api/|scripts/(test-browser|harness)\.sh$|\.github/workflows/ci\.yml$)'; then
+            ui=false
+          fi
+          echo "ui=$ui" | tee -a "$GITHUB_OUTPUT"
+
   web:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -154,6 +178,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
   browser:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

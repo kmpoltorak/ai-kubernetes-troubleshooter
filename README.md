@@ -296,7 +296,9 @@ and incident deletion. They also run axe's automated WCAG 2.1 A/AA rules in ligh
 dark mode, and check that a long title does not widen a 390 px page. See [evaluation commands](docs/evaluation.md)
 for offline checks and the opt-in OpenAI/Ollama tool. The [kind tests](docs/kubernetes-testing.md)
 deploy two API replicas and check live diagnostics, RBAC and NetworkPolicy using
-one shared image in CI. CI also runs govulncheck and `npm audit`.
+one shared image in CI. CI also runs govulncheck and `npm audit`. The UI jobs (`web`,
+`browser`) run only when `web/`, `internal/api/`, the browser test scripts or the CI
+workflow change; releases always run them.
 
 Built with an AI coding assistant. I wrote the spec and reviewed every change.
 
