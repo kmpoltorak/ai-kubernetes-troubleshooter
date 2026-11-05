@@ -114,7 +114,7 @@ test("live mode hides simulation controls and fills the configured cluster", asy
   // The kinds come from the server; a StatefulSet incident passes the API and the database.
   await expect(page.getByLabel("Kind").locator("option")).toHaveText(["Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Service", "Pod", "Ingress", "PersistentVolumeClaim", "HorizontalPodAutoscaler"]);
   await page.getByLabel("Kind").selectOption("statefulset");
-  await page.getByLabel("Name", { exact: true }).fill("checkout-db");
+  await page.getByLabel("StatefulSet name").fill("checkout-db");
   await page.getByRole("button", { name: "Create incident" }).click();
   await expect(page.getByRole("button", { name: "Run investigation" })).toBeEnabled();
   await expect(page.getByText("statefulset/checkout-db").first()).toBeVisible();
@@ -227,4 +227,23 @@ test("incidents are deleted one at a time and in bulk after confirmation", async
   await expect(row("delete three")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Select or create an incident" })).toBeVisible();
   expect(new URL(page.url()).search).toBe("");
+});
+
+test("hints explain confusing fields and the name field follows the kind", async ({ page }) => {
+  await page.goto(rules);
+  const hint = page.getByRole("button", { name: "What is Cluster?" });
+  await expect(hint).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByText(/KUBERNETES_CLUSTER_NAME/)).toHaveCount(0);
+  await hint.click();
+  await expect(page.getByText(/KUBERNETES_CLUSTER_NAME/)).toBeVisible();
+  await expect(hint).toHaveAttribute("aria-expanded", "true");
+  await hint.press("Enter"); // keyboard closes it again
+  await expect(page.getByText(/KUBERNETES_CLUSTER_NAME/)).toHaveCount(0);
+  // The label still names its control, not the "?" next to it.
+  await expect(page.getByLabel("Cluster")).not.toBeEditable();
+  await page.getByLabel("Deployment name").fill("payment-service");
+  await page.getByLabel("Kind").selectOption("job");
+  await expect(page.getByLabel("Job name")).toHaveValue("payment-service");
+  await page.getByRole("button", { name: "What is Job name?" }).click();
+  await expect(page.getByText("The name of the Job in the chosen namespace", { exact: false })).toBeVisible();
 });

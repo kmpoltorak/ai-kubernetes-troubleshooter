@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Field } from "./Hint";
 import { api, type CreateIncident, type Incident, type ResourceType, type Runtime } from "../api";
 
 // Samples load a matching simulation scenario for the first investigation.
@@ -66,6 +67,7 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
     return () => { clearTimeout(timer); controller.abort(); };
   }, [runtime, form.namespace, form.resource_type]);
 
+  const kind = kindLabel[form.resource_type] ?? form.resource_type;
   const set = (key: keyof CreateIncident) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value });
 
   async function submit(e: FormEvent) {
@@ -105,48 +107,44 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
         </div>}
       </div>
       <form onSubmit={submit} className="flex flex-col gap-3" noValidate>
-        <label className="label">
-          <span>
-            Title <span className="font-normal">(optional)</span>
-          </span>
-          <input className="field" value={form.title} onChange={set("title")} maxLength={200} placeholder="payment-service pods keep restarting" />
-        </label>
-        <label className="label">
-          Description
-          <textarea className="field resize-y" rows={3} value={form.description} onChange={set("description")} maxLength={5000} placeholder="What are users seeing?" />
-        </label>
+        <Field label={<>Title <span className="font-normal">(optional)</span></>}>
+          {(id) => <input id={id} className="field" value={form.title} onChange={set("title")} maxLength={200} placeholder="payment-service pods keep restarting" />}
+        </Field>
+        <Field label="Description" hint="What users see and since when. It is stored with the incident and given to the analyzer. Known secret patterns are masked, but do not paste secrets.">
+          {(id) => <textarea id={id} className="field resize-y" rows={3} value={form.description} onChange={set("description")} maxLength={5000} placeholder="What are users seeing?" />}
+        </Field>
         <div className="grid grid-cols-2 gap-3">
-          <label className="label">
-            Cluster
-            <input className="field cursor-default border-transparent bg-zinc-100 font-mono text-zinc-700 dark:border-transparent dark:bg-zinc-800/60 dark:text-zinc-300"
-              value={form.cluster} readOnly title="Set by the installation (KUBERNETES_CLUSTER_NAME)" />
-          </label>
-          <label className="label">
-            Namespace
-            {allowed.length > 0 ? (
-              <select className="field font-mono" value={form.namespace} onChange={set("namespace")}>
+          <Field label="Cluster" hint="Set by this installation (KUBERNETES_CLUSTER_NAME). One installation reads one cluster.">
+            {(id) => <input id={id} className="field cursor-default border-transparent bg-zinc-100 font-mono text-zinc-700 dark:border-transparent dark:bg-zinc-800/60 dark:text-zinc-300"
+              value={form.cluster} readOnly />}
+          </Field>
+          <Field label="Namespace" hint={allowed.length > 0
+            ? "Only the namespaces this installation may read (KUBERNETES_ALLOWED_NAMESPACES)."
+            : "Any namespace the read-only account can read: this installation sets no allowlist."}>
+            {(id) => allowed.length > 0 ? (
+              <select id={id} className="field font-mono" value={form.namespace} onChange={set("namespace")}>
                 {allowed.length > 1 && <option value="">Choose…</option>}
                 {allowed.map((ns) => <option key={ns} value={ns}>{ns}</option>)}
               </select>
             ) : (
-              <input className="field font-mono" value={form.namespace} onChange={set("namespace")} placeholder="payments" spellCheck={false} autoComplete="off" />
+              <input id={id} className="field font-mono" value={form.namespace} onChange={set("namespace")} placeholder="payments" spellCheck={false} autoComplete="off" />
             )}
-          </label>
-          <label className="label">
-            Kind
-            <select className="field" value={form.resource_type} onChange={(e) => setForm({ ...form, resource_type: e.target.value as ResourceType })}>
+          </Field>
+          <Field label="Kind" hint="What the incident is about. A workload (Deployment, StatefulSet, Job…) leads to its pods, an Ingress to its first backend's pods, an autoscaler to the workload it scales. Extra kinds come from KUBERNETES_CUSTOM_RESOURCES.">
+            {(id) => <select id={id} className="field" value={form.resource_type} onChange={(e) => setForm({ ...form, resource_type: e.target.value as ResourceType })}>
               {(runtime?.resource_types ?? [form.resource_type]).map((k) => <option key={k} value={k}>{kindLabel[k] ?? k}</option>)}
-            </select>
-          </label>
-          <label className="label">
-            Name
-            <input className="field font-mono" value={form.resource_name} onChange={set("resource_name")} placeholder="payment-service" spellCheck={false} autoComplete="off" list="target-names" />
-            <datalist id="target-names">{names.list.map((n) => <option key={n} value={n} />)}</datalist>
-          </label>
+            </select>}
+          </Field>
+          <Field label={`${kind} name`} hint={`The name of the ${kind} in the chosen namespace, as kubectl get shows it. Names listed from the cluster are suggested; any name can be typed.`}>
+            {(id) => <>
+              <input id={id} className="field font-mono" value={form.resource_name} onChange={set("resource_name")} placeholder="payment-service" spellCheck={false} autoComplete="off" list="target-names" />
+              <datalist id="target-names">{names.list.map((n) => <option key={n} value={n} />)}</datalist>
+            </>}
+          </Field>
         </div>
         {form.namespace && (names.error
           ? <p className="text-xs text-amber-800 dark:text-amber-300">Could not list names ({names.error}). Type the name.</p>
-          : names.list.length > 0 && <p className="text-xs text-zinc-600 dark:text-zinc-400">{names.list.length} × {kindLabel[form.resource_type] ?? form.resource_type} in {form.namespace}: pick from Name or type one.</p>)}
+          : names.list.length > 0 && <p className="text-xs text-zinc-600 dark:text-zinc-400">{names.list.length} × {kind} in {form.namespace}: pick from {kind} name or type one.</p>)}
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         <button type="submit" className="btn-primary" disabled={busy}>
           {busy ? "Creating…" : "Create incident"}
