@@ -1,7 +1,7 @@
 # Read-only access for the diagnostic tools. The ClusterRole is only a
 # reusable permission set: it is granted per target namespace with a
 # RoleBinding (below), so the ServiceAccount can read nothing elsewhere.
-# Every rule maps to one diagnostic tool; see README "RBAC".
+# Every rule maps to one diagnostic tool; see docs/operations.md "RBAC".
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

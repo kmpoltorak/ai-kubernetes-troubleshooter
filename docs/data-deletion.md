@@ -1,8 +1,10 @@
 # Delete stored incident data
 
 Signed-in users delete chosen incidents from the UI or with
-`POST /api/v1/incidents/delete` (see the [README](../README.md#data-deletion)). This
-page covers the operator command that removes old incidents by date.
+`POST /api/v1/incidents/delete` (see the [API reference](api.md)). Any user admitted
+by authentication may delete; there is no undo, and the server log records the
+signed-in user and the deleted IDs. This page covers the operator command that
+removes old incidents by date.
 
 `api purge` is an operator command using `DATABASE_URL`. It operates across the
 whole database, independent of the server's cluster and namespace allowlist.

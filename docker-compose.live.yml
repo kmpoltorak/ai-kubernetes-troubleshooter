@@ -1,6 +1,6 @@
 # Live mode from Docker: docker compose -f docker-compose.yml -f docker-compose.live.yml up --build
 # KUBECONFIG_FILE must be readable by the container user (uid 65532) and should
-# use a read-only ServiceAccount; see README "Live mode with Docker Compose".
+# use a read-only ServiceAccount; see README "Quick start".
 services:
   app:
     environment:

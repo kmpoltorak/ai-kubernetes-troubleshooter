@@ -1,20 +1,36 @@
 # Operations: upgrade, backup, restore and runbook
 
 For installing a digest-pinned release see [releases](releases.md); for the
-Kubernetes manifests and RBAC see the [README](../README.md#kubernetes-deployment).
+Kubernetes manifests see the [README](../README.md#kubernetes-deployment).
 
 ## Dependencies
 
 | Dependency | Required | Readiness check | When it fails |
 |---|---|---|---|
 | PostgreSQL | always | `database` (ping only) | `/ready` returns `503`; jobs cannot claim, renew or finish |
-| Kubernetes API | live mode | `kubernetes` (`/version`) | `/ready` returns `503`; investigations whose target cannot be read fail |
+| Kubernetes API | live mode | `kubernetes` (`/version`; with [several clusters](clusters.md), at least one must answer) | `/ready` returns `503`; investigations whose target cannot be read fail |
 | OAuth2 Proxy | `AUTH_ENABLED=true` | `authentication` | `/ready` and protected routes return `503` |
 | OpenAI or Ollama | only when selected | none | analysis fails, evidence is kept, `502` on the waiting endpoint |
 | metrics-server, Secret metadata RBAC, node RBAC | optional | none | that diagnostic is recorded as failed, the investigation continues |
 
 `/ready` only pings PostgreSQL, so it can stay ready while writes fail, for
 example when the database disk is full.
+
+## RBAC
+
+The read-only access is defined in
+[`deployments/kubernetes/rbac.yaml`](../deployments/kubernetes/rbac.yaml).
+RBAC grants, per namespace through a RoleBinding: `get, list` on pods,
+services, deployments, statefulsets, daemonsets, jobs, cronjobs, ingresses,
+persistentvolumeclaims and horizontalpodautoscalers (`list` fills the form's name
+suggestions, finds a CronJob's latest Job and a claim's pods); `get` on `pods/log`, configmaps; `list` on events,
+endpointslices, networkpolicies and `metrics.k8s.io/pods`; plus `get` on
+namespaces and nodes (cluster-wide, by name). Nothing else: no write verbs, `pods/exec`, `attach`, `portforward`
+or Secrets. `get secrets` (used as metadata only) is in the opt-in
+[optional/secret-metadata-rbac.yaml](../deployments/kubernetes/optional/secret-metadata-rbac.yaml);
+without it, or without metrics-server, that diagnostic is recorded as failed and
+the investigation continues. If the target itself cannot be read, the
+investigation fails rather than diagnose something it never saw.
 
 ## Upgrade
 
