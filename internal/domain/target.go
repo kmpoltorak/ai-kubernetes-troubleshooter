@@ -16,10 +16,13 @@ const (
 	ResourceCronJob     ResourceType = "cronjob"
 	ResourceService     ResourceType = "service"
 	ResourcePod         ResourceType = "pod"
+	ResourceIngress     ResourceType = "ingress"
+	ResourcePVC         ResourceType = "persistentvolumeclaim"
+	ResourceHPA         ResourceType = "horizontalpodautoscaler"
 )
 
 // ResourceTypes lists every kind an incident can target, in the order the form offers them.
-var ResourceTypes = []ResourceType{ResourceDeployment, ResourceStatefulSet, ResourceDaemonSet, ResourceJob, ResourceCronJob, ResourceService, ResourcePod}
+var ResourceTypes = []ResourceType{ResourceDeployment, ResourceStatefulSet, ResourceDaemonSet, ResourceJob, ResourceCronJob, ResourceService, ResourcePod, ResourceIngress, ResourcePVC, ResourceHPA}
 
 // Target identifies the workload an incident is about: the cluster
 // (ClusterTarget) and the namespaced resource (ResourceTarget).

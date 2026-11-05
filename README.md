@@ -3,7 +3,8 @@
 [![CI](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/actions/workflows/ci.yml/badge.svg)](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/actions/workflows/ci.yml)
 
 A Go service that investigates broken Kubernetes workloads (Deployment,
-StatefulSet, DaemonSet, Job, CronJob, Service or Pod). It runs a fixed, read-only diagnostic plan against the cluster, turns
+StatefulSet, DaemonSet, Job, CronJob, Service, Pod, Ingress,
+PersistentVolumeClaim or HorizontalPodAutoscaler). It runs a fixed, read-only diagnostic plan against the cluster, turns
 the results into structured evidence with signals such as `OOMKilled` or
 `SelectorMismatch`, and has an LLM or a built-in rules engine write a
 assessment of observed faults, hypotheses and missing data, validated before storage. It runs offline
@@ -139,11 +140,15 @@ incident's namespace and name, and the real tools run against it.
 | `network_policy_block` | egress only to DNS, `i/o timeout` to the DB | possible NetworkPolicy restriction; enforcement unconfirmed |
 
 Each scenario builds the target's kind: a StatefulSet, DaemonSet, Job or CronJob
-(with one active run) target gets the same pods and fault. Live mode rejects a
+(with one active run) target gets the same pods and fault; an Ingress, claim or
+autoscaler target leads to that workload. Live mode rejects a
 `scenario` in the request.
 
 **Diagnostics:** `get_namespace`, `get_deployment`, `get_statefulset`,
-`get_daemonset`, `get_job`, `get_cronjob` (and its latest Job), `get_pods`, `get_events`,
+`get_daemonset`, `get_job`, `get_cronjob` (and its latest Job), `get_ingress` (backend
+Services and ports, published address), `get_hpa` (then its Deployment or StatefulSet),
+`get_pvc` (the target or each mounted claim), `get_nodes` (nodes running the pods:
+conditions, taints, capacity; no addresses), `get_pods`, `get_events`,
 `get_pod_logs`, `get_service`, `get_configmap`, `get_secret_metadata`,
 `get_network_policies`, `get_resource_usage`. Evidence is bounded: the last 30
 lines plus error lines per log stream, 50 events, 20 pods with unhealthy ones
@@ -214,10 +219,11 @@ RBAC, ConfigMap (live mode), Deployment (2 replicas, non-root, read-only root
 filesystem, no capabilities, `RuntimeDefault` seccomp), Service and Ingress.
 
 RBAC grants, per namespace through a RoleBinding: `get, list` on pods,
-services, deployments, statefulsets, daemonsets, jobs and cronjobs (`list` fills the
-form's name suggestions and finds a CronJob's latest Job); `get` on `pods/log`, configmaps; `list` on events,
+services, deployments, statefulsets, daemonsets, jobs, cronjobs, ingresses,
+persistentvolumeclaims and horizontalpodautoscalers (`list` fills the form's name
+suggestions, finds a CronJob's latest Job and a claim's pods); `get` on `pods/log`, configmaps; `list` on events,
 endpointslices, networkpolicies and `metrics.k8s.io/pods`; plus `get` on
-namespaces. Nothing else: no write verbs, `pods/exec`, `attach`, `portforward`
+namespaces and nodes (cluster-wide, by name). Nothing else: no write verbs, `pods/exec`, `attach`, `portforward`
 or Secrets. `get secrets` (used as metadata only) is in the opt-in
 [optional/secret-metadata-rbac.yaml](deployments/kubernetes/optional/secret-metadata-rbac.yaml);
 without it, or without metrics-server, that diagnostic is recorded as failed and
@@ -230,7 +236,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 ## Limitations
 
 - Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
-- Not yet diagnosed: HPA, PVCs, Ingress, nodes and custom resources. A CronJob is judged by its latest Job only (found among at most 500 Jobs in the namespace); missed schedules are not detected.
+- Custom resources are not diagnosed yet. A CronJob is judged by its latest Job only (found among at most 500 Jobs in the namespace); missed schedules are not detected. An Ingress is followed to its first existing backend's pods; an autoscaler only to a Deployment or StatefulSet. A Pending claim no pod uses is not called a fault (WaitForFirstConsumer classes bind later); StorageClasses are not read. Nodes are read only when they run the target's pods, so a Pending pod's candidate nodes are not inspected.
 - One cluster per installation; replicas must use the same limits, target policy and analyzer. No remediation is executed.
 - The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`. It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.

@@ -44,6 +44,18 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["list"]
+  # get_ingress; list fills the form
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
+  # get_pvc; list fills the form
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list"]
+  # get_hpa; list fills the form
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
   # get_resource_usage (only when metrics-server is installed)
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods"]
@@ -59,6 +71,31 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get"]
+---
+# get_nodes: conditions, taints and allocatable capacity of the nodes running
+# the target's pods. Nodes are cluster-scoped, so this needs a
+# ClusterRoleBinding; it only allows reading Node objects by name.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: troubleshooter-node-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: troubleshooter-node-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: troubleshooter-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: troubleshooter
+    namespace: troubleshooter
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

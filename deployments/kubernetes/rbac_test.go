@@ -61,8 +61,13 @@ func TestRBACIsReadOnlyAndLeastPrivilege(t *testing.T) {
 					t.Errorf("%s %s: wildcard group or non-resource URL", file, o.Metadata.Name)
 				}
 			}
-			if o.Kind == "ClusterRoleBinding" && o.RoleRef.Name != "troubleshooter-namespace-reader" {
-				t.Errorf("%s: only the namespace reader may be bound cluster-wide, got %s", file, o.RoleRef.Name)
+			if o.Kind == "ClusterRoleBinding" && o.RoleRef.Name != "troubleshooter-namespace-reader" && o.RoleRef.Name != "troubleshooter-node-reader" {
+				t.Errorf("%s: only the namespace and node readers may be bound cluster-wide, got %s", file, o.RoleRef.Name)
+			}
+			// Cluster-wide roles read exactly one cluster-scoped kind by name.
+			if want, ok := map[string]string{"troubleshooter-namespace-reader": "namespaces", "troubleshooter-node-reader": "nodes"}[o.Metadata.Name]; ok && o.Kind == "ClusterRole" &&
+				(len(o.Rules) != 1 || !slices.Equal(o.Rules[0].Resources, []string{want}) || !slices.Equal(o.Rules[0].Verbs, []string{"get"})) {
+				t.Errorf("%s: %s must only get %s: %+v", file, o.Metadata.Name, want, o.Rules)
 			}
 			if o.RoleRef.Name == "cluster-admin" || o.RoleRef.Name == "admin" || o.RoleRef.Name == "edit" {
 				t.Errorf("%s: binds built-in role %s", file, o.RoleRef.Name)

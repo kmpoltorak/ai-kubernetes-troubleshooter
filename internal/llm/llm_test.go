@@ -392,3 +392,47 @@ func TestRulesForControllerKinds(t *testing.T) {
 		t.Errorf("a pod has no rollout history: %v", pod.SafeCommands)
 	}
 }
+
+// Ingress, claims, autoscalers and nodes: each finding names the object to inspect.
+func TestRulesForIngressStorageAutoscalingAndNodes(t *testing.T) {
+	analyze := func(kind domain.ResourceType, name string, evidence ...domain.Evidence) domain.Analysis {
+		t.Helper()
+		target := domain.Target{Cluster: "lab", Namespace: "payments", ResourceType: kind, ResourceName: name}
+		a, err := RulesProvider{}.Analyze(context.Background(), AnalysisInput{Incident: domain.Incident{Target: target}, Evidence: evidence})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range a.SafeCommands {
+			if err := domain.ValidateSafeCommand(c); err != nil {
+				t.Errorf("command %q: %v", c, err)
+			}
+		}
+		return a
+	}
+	for _, tc := range []struct {
+		kind     domain.ResourceType
+		name     string
+		evidence []domain.Evidence
+		root     string
+		command  string
+	}{
+		{domain.ResourceIngress, "shop", []domain.Evidence{ev("get_ingress", "ingress/shop", "IngressBackendMissing", "IngressNoAddress")},
+			"Ingress routes to a Service that does not exist", "kubectl describe ingress shop -n payments"},
+		{domain.ResourceIngress, "shop", []domain.Evidence{ev("get_ingress", "ingress/shop", "IngressNoAddress")},
+			"Ingress has no address: no controller admitted it", "kubectl get ingressclass"},
+		{domain.ResourceStatefulSet, "db", []domain.Evidence{ev("get_pods", "pods/app=db", "Unschedulable"), ev("get_pvc", "persistentvolumeclaim/data-db-0", "PVCPending")},
+			"PersistentVolumeClaim is not bound (Pending)", "kubectl describe pvc data-db-0 -n payments"},
+		{domain.ResourceDeployment, "api", []domain.Evidence{ev("get_pods", "pods/app=api", "PodNotReady"), ev("get_nodes", "node/worker-2", "NodeNotReady")},
+			"Node running the pods is NotReady", "kubectl describe node worker-2"},
+		{domain.ResourceHPA, "api", []domain.Evidence{ev("get_hpa", "horizontalpodautoscaler/api", "HPAMetricsUnavailable")},
+			"Autoscaler cannot read its metrics", "kubectl describe hpa api -n payments"},
+		// The autoscaler's missing target is explained by its condition, not as a missing autoscaler.
+		{domain.ResourceHPA, "api", []domain.Evidence{ev("get_hpa", "horizontalpodautoscaler/api", "HPAUnableToScale"), ev("get_deployment", "deployment/gone", "WorkloadNotFound")},
+			"Autoscaler cannot scale its target", "kubectl describe hpa api -n payments"},
+	} {
+		a := analyze(tc.kind, tc.name, tc.evidence...)
+		if a.RootCause != tc.root || !slices.Contains(a.SafeCommands, tc.command) {
+			t.Errorf("%s/%s %v: %q %v", tc.kind, tc.name, tc.evidence[0].Signals, a.RootCause, a.SafeCommands)
+		}
+	}
+}

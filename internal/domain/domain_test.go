@@ -157,3 +157,19 @@ func TestTargetPolicy(t *testing.T) {
 		t.Fatalf("namespace outside allowlist: %v", err)
 	}
 }
+
+// A failed read of the target or its pods means health was not observed; optional reads do not.
+func TestHealthUnconfirmedByFailedCoreReads(t *testing.T) {
+	healthy := []Evidence{{Health: Healthy}}
+	for _, tool := range []string{"get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa",
+		"get_service", "get_pods", "get_events", "get_pod_logs"} {
+		if !HealthUnconfirmed(healthy, []ToolExecution{{ToolName: tool}}) {
+			t.Errorf("failed %s does not leave health unconfirmed", tool)
+		}
+	}
+	for _, tool := range []string{"get_resource_usage", "get_secret_metadata", "get_configmap", "get_pvc", "get_nodes", "get_network_policies"} {
+		if HealthUnconfirmed(healthy, []ToolExecution{{ToolName: tool}}) {
+			t.Errorf("optional %s blocks a healthy verdict", tool)
+		}
+	}
+}

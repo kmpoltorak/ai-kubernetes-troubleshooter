@@ -64,7 +64,9 @@ func (a Analysis) MarshalJSON() ([]byte, error) {
 func HealthUnconfirmed(evidence []Evidence, failed []ToolExecution) bool {
 	for _, te := range failed {
 		switch te.ToolName {
-		case "get_namespace", "get_deployment", "get_service", "get_pods", "get_events", "get_pod_logs":
+		// The target and its pods. References (configmaps, secrets, claims), nodes and metrics are optional.
+		case "get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa",
+			"get_service", "get_pods", "get_events", "get_pod_logs":
 			return true
 		}
 	}

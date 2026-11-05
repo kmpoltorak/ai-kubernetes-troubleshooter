@@ -17,16 +17,19 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	authorizationv1 "k8s.io/api/authorization/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/diagnostics"
@@ -137,6 +140,10 @@ func TestLiveCluster(t *testing.T) {
 		if a := report(t, rec); a.Verdict != "no_fault_observed" || !slices.ContainsFunc(rec.ToolExecutions, func(te domain.ToolExecution) bool { return te.ToolName == diagnostics.GetStatefulSet && te.Error == "" }) {
 			t.Fatalf("healthy statefulset: %s", a.Verdict)
 		}
+		// The node running the pod is read through the cluster-wide node reader.
+		if !slices.ContainsFunc(rec.Evidence, func(e domain.Evidence) bool { return e.Source == diagnostics.GetNodes && e.Health == domain.Healthy }) {
+			t.Fatal("node of a healthy pod not read as healthy")
+		}
 		var listed struct {
 			Names []string `json:"names"`
 		}
@@ -163,6 +170,59 @@ func TestLiveCluster(t *testing.T) {
 		requireSignal(t, rec, diagnostics.SignalContainerExitError)
 		if a := report(t, rec); a.Verdict != "observed_fault" || a.RootCause != "Job failed: its pods exited with errors" {
 			t.Fatalf("failed job: %s %q", a.Verdict, a.RootCause)
+		}
+	})
+	t.Run("ingress_missing_backend", func(t *testing.T) {
+		path := networkingv1.PathTypePrefix
+		route := func(svc string) networkingv1.HTTPIngressPath {
+			return networkingv1.HTTPIngressPath{Path: "/" + svc, PathType: &path, Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: svc, Port: networkingv1.ServiceBackendPort{Number: 80}}}}
+		}
+		if _, err := client.NetworkingV1().Ingresses("payments").Create(ctx, &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "shop"},
+			Spec: networkingv1.IngressSpec{Rules: []networkingv1.IngressRule{{Host: "shop.example.com", IngressRuleValue: networkingv1.IngressRuleValue{
+				HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{route("healthy"), route("no-such-service")}}}}}}}, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		rec := s.investigate(t, domain.ResourceIngress, "shop")
+		requireSignal(t, rec, diagnostics.SignalIngressBackendMissing)
+		requireSignal(t, rec, diagnostics.SignalIngressNoAddress) // kind runs no ingress controller
+		if a := report(t, rec); a.RootCause != "Ingress routes to a Service that does not exist" || !slices.ContainsFunc(rec.ToolExecutions, func(te domain.ToolExecution) bool { return te.ToolName == diagnostics.GetPodLogs }) {
+			t.Fatalf("ingress: %q; the existing backend's pods must still be read", a.RootCause)
+		}
+	})
+	t.Run("pending_claim", func(t *testing.T) {
+		class := "no-such-class"
+		if _, err := client.CoreV1().PersistentVolumeClaims("payments").Create(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "ledger-data"},
+			Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &class, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}}}}, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		s.deployment(t, "ledger", func(p *corev1.PodSpec) {
+			p.Volumes = []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "ledger-data"}}}}
+		})
+		s.pod(t, "app=ledger", func(p corev1.Pod) bool { return p.Status.Phase == corev1.PodPending })
+		rec := s.investigate(t, domain.ResourceDeployment, "ledger")
+		requireSignal(t, rec, diagnostics.SignalPVCPending)
+		if a := report(t, rec); a.RootCause != "PersistentVolumeClaim is not bound (Pending)" || !slices.Contains(a.SafeCommands, "kubectl describe pvc ledger-data -n payments") {
+			t.Fatalf("pending claim: %q %v", a.RootCause, a.SafeCommands)
+		}
+	})
+	t.Run("autoscaler_without_metrics", func(t *testing.T) {
+		if _, err := client.AutoscalingV2().HorizontalPodAutoscalers("payments").Create(ctx, &autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: metav1.ObjectMeta{Name: "healthy"},
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: "healthy"}, MaxReplicas: 3,
+				Metrics: []autoscalingv2.MetricSpec{{Type: autoscalingv2.ResourceMetricSourceType, Resource: &autoscalingv2.ResourceMetricSource{Name: corev1.ResourceCPU,
+					Target: autoscalingv2.MetricTarget{Type: autoscalingv2.UtilizationMetricType, AverageUtilization: ptr.To[int32](80)}}}}}}, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, ctx, 3*time.Minute, "autoscaler reports missing metrics", func(ctx context.Context) (bool, error) {
+			h, err := client.AutoscalingV2().HorizontalPodAutoscalers("payments").Get(ctx, "healthy", metav1.GetOptions{})
+			return err == nil && slices.ContainsFunc(h.Status.Conditions, func(c autoscalingv2.HorizontalPodAutoscalerCondition) bool {
+				return c.Type == autoscalingv2.ScalingActive && c.Status == corev1.ConditionFalse
+			}), err
+		})
+		rec := s.investigate(t, domain.ResourceHPA, "healthy")
+		requireSignal(t, rec, diagnostics.SignalHPAMetricsUnavailable)
+		if a := report(t, rec); a.RootCause != "Autoscaler cannot read its metrics" || !slices.ContainsFunc(rec.ToolExecutions, func(te domain.ToolExecution) bool { return te.ToolName == diagnostics.GetDeployment }) {
+			t.Fatalf("autoscaler: %q; its target must be diagnosed too", a.RootCause)
 		}
 	})
 	t.Run("missing_configmap", func(t *testing.T) {

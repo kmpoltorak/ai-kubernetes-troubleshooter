@@ -107,7 +107,7 @@ func TestInvestigateDeploymentPlan(t *testing.T) {
 	want := []string{
 		diagnostics.GetNamespace, diagnostics.GetDeployment, diagnostics.GetPods, diagnostics.GetEvents,
 		diagnostics.GetPodLogs, diagnostics.GetPodLogs, diagnostics.GetService, diagnostics.GetConfigMap,
-		diagnostics.GetSecretMetadata, diagnostics.GetNetworkPolicies, diagnostics.GetResourceUsage,
+		diagnostics.GetSecretMetadata, diagnostics.GetNetworkPolicies, diagnostics.GetNodes, diagnostics.GetResourceUsage,
 	}
 	if got := tools(rec); !slices.Equal(got, want) {
 		t.Fatalf("plan:\n got %v\nwant %v", got, want)
@@ -422,7 +422,8 @@ func TestReportIdentifiesActuallyTruncatedLogSamples(t *testing.T) {
 	}
 }
 
-// Every pod controller reaches its pods: a healthy one is called healthy, a crashing one is diagnosed.
+// Every kind except Service and Pod (tested above) reaches its pods: a healthy
+// target is called healthy, a crashing one is diagnosed, and the nodes are read.
 func TestInvestigateEveryControllerKind(t *testing.T) {
 	first := map[domain.ResourceType][]string{
 		domain.ResourceDeployment:  {diagnostics.GetDeployment},
@@ -430,6 +431,9 @@ func TestInvestigateEveryControllerKind(t *testing.T) {
 		domain.ResourceDaemonSet:   {diagnostics.GetDaemonSet},
 		domain.ResourceJob:         {diagnostics.GetJob},
 		domain.ResourceCronJob:     {diagnostics.GetCronJob, diagnostics.GetJob},
+		domain.ResourceIngress:     {diagnostics.GetIngress, diagnostics.GetService},
+		domain.ResourcePVC:         {diagnostics.GetPVC, diagnostics.GetPods},
+		domain.ResourceHPA:         {diagnostics.GetHPA, diagnostics.GetDeployment},
 	}
 	for kind, controller := range first {
 		for scenario, want := range map[string]string{"healthy": "no_fault_observed", "crash_loop_backoff": "observed_fault"} {
@@ -440,7 +444,7 @@ func TestInvestigateEveryControllerKind(t *testing.T) {
 					t.Fatal(err)
 				}
 				got := tools(rec)
-				if !slices.Equal(got[1:1+len(controller)], controller) || !slices.Contains(got, diagnostics.GetPods) || !slices.Contains(got, diagnostics.GetPodLogs) {
+				if !slices.Equal(got[1:1+len(controller)], controller) || !slices.Contains(got, diagnostics.GetPods) || !slices.Contains(got, diagnostics.GetPodLogs) || !slices.Contains(got, diagnostics.GetNodes) {
 					t.Fatalf("plan %v does not read the controller and its pods", got)
 				}
 				a := rec.Report.Analysis

@@ -112,7 +112,7 @@ test("live mode hides simulation controls and fills the configured cluster", asy
   // This server's cluster is unreachable: listing fails visibly and typing a name still works.
   await expect(page.getByText(/Could not list names .*Type the name\./)).toBeVisible();
   // The kinds come from the server; a StatefulSet incident passes the API and the database.
-  await expect(page.getByLabel("Kind").locator("option")).toHaveText(["Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Service", "Pod"]);
+  await expect(page.getByLabel("Kind").locator("option")).toHaveText(["Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Service", "Pod", "Ingress", "PersistentVolumeClaim", "HorizontalPodAutoscaler"]);
   await page.getByLabel("Kind").selectOption("statefulset");
   await page.getByLabel("Name", { exact: true }).fill("checkout-db");
   await page.getByRole("button", { name: "Create incident" }).click();

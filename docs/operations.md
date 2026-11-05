@@ -11,7 +11,7 @@ Kubernetes manifests and RBAC see the [README](../README.md#kubernetes-deploymen
 | Kubernetes API | live mode | `kubernetes` (`/version`) | `/ready` returns `503`; investigations whose target cannot be read fail |
 | OAuth2 Proxy | `AUTH_ENABLED=true` | `authentication` | `/ready` and protected routes return `503` |
 | OpenAI or Ollama | only when selected | none | analysis fails, evidence is kept, `502` on the waiting endpoint |
-| metrics-server, Secret metadata RBAC | optional | none | that diagnostic is recorded as failed, the investigation continues |
+| metrics-server, Secret metadata RBAC, node RBAC | optional | none | that diagnostic is recorded as failed, the investigation continues |
 
 `/ready` only pings PostgreSQL, so it can stay ready while writes fail, for
 example when the database disk is full.
@@ -75,7 +75,7 @@ active jobs or v2 reports exist.
 | `429 busy` on submission | `jobs_queue_depth` vs `JOB_QUEUE_CAPACITY`, `jobs_active` | Wait for `Retry-After`, add capacity, or raise the limit consistently on every replica |
 | Job stays `running` | `stage` and `deadline_at` on the job endpoint, worker logs | A lease expires after 30s; another worker retries before analysis or ends it failed. Nothing changes while no worker runs |
 | Job failed after stage `analyzing` | `llm_failures_total`, provider status and billing | Not retried automatically; the outcome can be unknown. Submit with a new `Idempotency-Key` |
-| Diagnostic `get_resource_usage` or `get_secret_metadata` failed | metrics-server, optional RBAC | Expected without them; install them if you need that evidence |
+| Diagnostic `get_resource_usage`, `get_secret_metadata` or `get_nodes` failed | metrics-server, optional RBAC, the `troubleshooter-node-reader` binding | Expected without them; install them if you need that evidence |
 | Legacy `running` attempt without `job_id` | investigation history | Written before durable jobs; it is never repaired, and `api purge` skips its incident |
 
 ## Verification

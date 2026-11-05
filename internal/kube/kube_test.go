@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -47,6 +49,8 @@ func TestListNamesPerKindAndNamespace(t *testing.T) {
 		&corev1.Service{ObjectMeta: meta("payments", "checkout-svc")}, &corev1.Pod{ObjectMeta: meta("payments", "ledger-abc")},
 		&appsv1.StatefulSet{ObjectMeta: meta("payments", "db")}, &appsv1.DaemonSet{ObjectMeta: meta("payments", "agent")},
 		&batchv1.Job{ObjectMeta: meta("payments", "migrate")}, &batchv1.CronJob{ObjectMeta: meta("payments", "nightly")},
+		&networkingv1.Ingress{ObjectMeta: meta("payments", "web")}, &corev1.PersistentVolumeClaim{ObjectMeta: meta("payments", "data")},
+		&autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: meta("payments", "api")},
 	)}
 	want := map[domain.ResourceType][]string{
 		domain.ResourceDeployment:  {"checkout", "ledger"},
@@ -56,6 +60,9 @@ func TestListNamesPerKindAndNamespace(t *testing.T) {
 		domain.ResourceDaemonSet:   {"agent"},
 		domain.ResourceJob:         {"migrate"},
 		domain.ResourceCronJob:     {"nightly"},
+		domain.ResourceIngress:     {"web"},
+		domain.ResourcePVC:         {"data"},
+		domain.ResourceHPA:         {"api"},
 	}
 	for _, kind := range domain.ResourceTypes {
 		got, err := c.ListNames(context.Background(), "payments", kind)
