@@ -61,6 +61,8 @@ KUBECONFIG_FILE=$HOME/.kube/troubleshooter.yaml KUBERNETES_CLUSTER_NAME=lab \
   docker compose -f docker-compose.yml -f docker-compose.live.yml up --build
 ```
 
+Several clusters from one installation: see [several clusters](docs/clusters.md).
+
 An existing PostgreSQL instead of the bundled one: create a database owned by the
 app's user (the app applies its migrations at start), then start only the app.
 The URL must be reachable from inside the container; add the live override as above.
@@ -80,9 +82,10 @@ EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@atlas-db:5432/troubles
 ```
 
 The UI's sample buttons fill in an incident and pick the matching simulation
-scenario. The header shows the mode, cluster name and analyzer; live mode has no
-samples or scenario choice. In the form the cluster is fixed, Namespace is a list
-when `KUBERNETES_ALLOWED_NAMESPACES` is set, and the name field (labelled after the
+scenario. The header shows the mode, cluster (or the cluster count and which ones are
+unreachable) and analyzer; live mode has no samples or scenario choice. In the form
+the cluster is fixed (a list when several are configured), Namespace is a list
+when the cluster has allowed namespaces, and the name field (labelled after the
 Kind, e.g. "Deployment name") suggests objects listed from the cluster (any name can
 still be typed). A "?" next to a field or report term opens a short explanation in a bubble
 (Escape or a click elsewhere closes it). A
@@ -112,6 +115,7 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 | `SIMULATION_SCENARIO` | `healthy` | default scenario |
 | `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |
 | `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
+| `KUBERNETES_CLUSTERS_FILE` | empty | YAML list of clusters, each with its kubeconfig, context and allowed namespaces; replaces `KUBERNETES_CLUSTER_NAME`, `KUBERNETES_CONTEXT` and `KUBERNETES_ALLOWED_NAMESPACES` ([several clusters](docs/clusters.md)) |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see below) |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `ollama` |
@@ -196,9 +200,10 @@ API and metrics clients use JWTs. An unavailable auth proxy returns `503`.
 | `GET` | `/api/v1/incidents/{id}/investigations?limit=&offset=` | all attempts, newest first, default 20/max 100, with `has_more` |
 | `GET` | `/api/v1/incidents/{id}/investigations/{investigationID}` | one attempt, including failed/running attempts without a report |
 | `GET` | `/api/v1/incidents/{id}/report` | latest completed investigation with evidence and report |
-| `GET` | `/api/v1/runtime` | `mode`, `cluster_name`, `allowed_namespaces`, `analyzer` (`provider`, `model`), `scenarios` (simulation only), `resource_types` (the form's Kind list); no URLs or keys; requires login when auth is on |
-| `GET` | `/api/v1/targets?namespace=&kind=` | `{names}`: objects of a supported kind in an allowed namespace for the form (live: listed from the cluster, at most 500; simulation: empty); `502 list_failed` when listing fails |
-| `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`), Prometheus |
+| `GET` | `/api/v1/runtime` | `mode`, `clusters` (`name`, `allowed_namespaces`), `cluster_name` and `allowed_namespaces` (the first cluster), `analyzer` (`provider`, `model`), `scenarios` (simulation only), `resource_types` (the form's Kind list); no URLs or keys; requires login when auth is on |
+| `GET` | `/api/v1/clusters` | `{clusters: [{name, status}]}`, status `ok`, `unreachable` or `simulated`; pings each cluster's API server |
+| `GET` | `/api/v1/targets?cluster=&namespace=&kind=` | `{names}`: objects of a supported kind in an allowed namespace for the form (`cluster` may be omitted when only one is configured) (live: listed from the cluster, at most 500; simulation: empty); `502 list_failed` when listing fails |
+| `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`; with several clusters, at least one must answer), Prometheus |
 
 API errors are `{"error": {"code", "message"}, "request_id"}`: `400`
 `validation_failed` / `invalid_json` (including a target outside the policy),
@@ -262,7 +267,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 
 - Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
 - Custom resources are judged by the condition names above; a controller using other names is not interpreted, and a resource without conditions or phase is `inconclusive`. Pods are found only through a label selector, not owner references. A configured resource the cluster does not serve fails its investigations. A CronJob is judged by its latest Job only (found among at most 500 Jobs in the namespace); missed schedules are not detected. An Ingress is followed to its first existing backend's pods; an autoscaler only to a Deployment or StatefulSet. A Pending claim no pod uses is not called a fault (WaitForFirstConsumer classes bind later); StorageClasses are not read. Nodes are read only when they run the target's pods, so a Pending pod's candidate nodes are not inspected.
-- One cluster per installation; replicas must use the same limits, target policy and analyzer. No remediation is executed.
+- Clusters of one installation share custom resources, limits and analyzer; replicas must use the same limits, target policy and analyzer. Kubeconfig changes need a restart. No remediation is executed.
 - The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`; the "?" hints need the Popover API (Chrome 114, Safari 17, Firefox 125). It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
 - Live CI uses single-node kind on Kubernetes 1.37.0, Linux amd64; other Kubernetes versions are untested. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI. Browser tests run in Chromium only; Firefox and Safari are untested.

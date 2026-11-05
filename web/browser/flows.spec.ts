@@ -48,12 +48,16 @@ test("a reload during analysis resumes the job and keeps the failed attempt's ev
   await expect(page.getByText("Latest successful report:")).toHaveCount(0);
 });
 
-test("live mode hides simulation controls and fills the configured cluster", async ({ page }) => {
+test("live mode with two clusters shows their state and each cluster's namespaces", async ({ page }) => {
   await page.goto(live);
-  await expect(page.getByText("live · browser-live · rules/rules-v2")).toBeVisible();
+  await expect(page.getByText("live · 2 clusters · rules/rules-v2")).toBeVisible();
   await expect(page.getByRole("group", { name: "Sample incidents" })).toHaveCount(0);
-  await expect(page.getByLabel("Cluster")).toHaveValue("browser-live");
-  await expect(page.getByLabel("Cluster")).not.toBeEditable();
+  // Both clusters' API servers refuse connections: the header names them.
+  await expect(page.getByText("browser-live, browser-edge unreachable · 0/2 reachable")).toBeVisible();
+  await expect(page.getByLabel("Cluster").locator("option")).toHaveText(["Choose…", "browser-live (unreachable)", "browser-edge (unreachable)"]);
+  await page.getByLabel("Cluster").selectOption("browser-edge");
+  await expect(page.getByLabel("Namespace")).toHaveValue("orders");
+  await page.getByLabel("Cluster").selectOption("browser-live");
   await expect(page.getByLabel("Namespace").locator("option")).toHaveText(["Choose…", "payments", "checkout"]);
   await page.getByLabel("Description").fill("Checkout returns 503 after the release.");
   await page.getByLabel("Namespace").selectOption("payments");

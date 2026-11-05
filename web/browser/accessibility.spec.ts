@@ -36,6 +36,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     // "_" keeps the strings unbreakable and outside the base64 blob redaction.
     await page.getByLabel("Title (optional)").fill("x_".repeat(100));
     await page.getByLabel("Description").fill("y_".repeat(150));
+    await page.getByLabel("Cluster").selectOption("browser-live");
     await page.getByLabel("Namespace").selectOption("payments");
     await page.getByLabel("Deployment name").fill("checkout");
     await page.getByRole("button", { name: "Create incident" }).click();

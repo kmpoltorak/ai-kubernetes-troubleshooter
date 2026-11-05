@@ -90,7 +90,7 @@ else
 fi
 
 cp -R deployments/kubernetes "$work/base"
-cp tests/e2e/postgres.yaml tests/e2e/custom-resource.yaml "$work/"
+cp tests/e2e/postgres.yaml tests/e2e/custom-resource.yaml tests/e2e/clusters.yaml "$work/"
 password=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 printf 'POSTGRES_PASSWORD=%s\nDATABASE_URL=postgres://troubleshooter:%s@postgres:5432/troubleshooter?sslmode=disable\n' "$password" "$password" > "$work/database.env"
 unset password
@@ -105,6 +105,10 @@ secretGenerator:
   - name: troubleshooter-secrets
     namespace: troubleshooter
     envs: [database.env]
+configMapGenerator:
+  - name: troubleshooter-clusters
+    namespace: troubleshooter
+    files: [clusters.yaml]
 generatorOptions:
   disableNameSuffixHash: true
 patches:
@@ -118,6 +122,12 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Never
+      - op: add
+        path: /spec/template/spec/volumes
+        value: [{name: clusters, configMap: {name: troubleshooter-clusters}}]
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts
+        value: [{name: clusters, mountPath: /etc/troubleshooter, readOnly: true}]
   - target:
       kind: ConfigMap
       name: troubleshooter-config
@@ -125,6 +135,13 @@ patches:
       - op: add
         path: /data/KUBERNETES_CUSTOM_RESOURCES
         value: example.com/v1/widgets
+      - op: remove
+        path: /data/KUBERNETES_CLUSTER_NAME
+      - op: remove
+        path: /data/KUBERNETES_ALLOWED_NAMESPACES
+      - op: add
+        path: /data/KUBERNETES_CLUSTERS_FILE
+        value: /etc/troubleshooter/clusters.yaml
 EOF
 k create namespace payments
 k apply -k "$work" > "$artifacts/apply.txt"

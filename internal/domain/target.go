@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 )
@@ -72,11 +73,11 @@ func (t Target) Validate() error {
 // Ref renders the target as "kind/name", the format used in reports.
 func (t Target) Ref() string { return string(t.ResourceType) + "/" + t.ResourceName }
 
-// TargetPolicy restricts which cluster and namespaces may be investigated.
+// TargetPolicy restricts which clusters and namespaces may be investigated.
 type TargetPolicy struct {
-	ClusterName string
-	// AllowedNamespaces is empty when every namespace is allowed.
-	AllowedNamespaces []string
+	// Clusters maps each configured cluster name to its allowed namespaces;
+	// an empty list allows every namespace in that cluster.
+	Clusters map[string][]string
 	// CustomResources are the custom kinds an incident may target.
 	CustomResources []ResourceType
 }
@@ -85,11 +86,12 @@ type TargetPolicy struct {
 var ErrTargetNotAllowed = errors.New("target not allowed")
 
 func (p TargetPolicy) Check(t Target) error {
-	if t.Cluster != p.ClusterName {
-		return fmt.Errorf("%w: cluster %q is not configured (available: %q)", ErrTargetNotAllowed, t.Cluster, p.ClusterName)
+	allowed, ok := p.Clusters[t.Cluster]
+	if !ok {
+		return fmt.Errorf("%w: cluster %q is not configured (available: %q)", ErrTargetNotAllowed, t.Cluster, slices.Sorted(maps.Keys(p.Clusters)))
 	}
-	if len(p.AllowedNamespaces) > 0 && !slices.Contains(p.AllowedNamespaces, t.Namespace) {
-		return fmt.Errorf("%w: namespace %q is not in the allowed namespaces", ErrTargetNotAllowed, t.Namespace)
+	if len(allowed) > 0 && !slices.Contains(allowed, t.Namespace) {
+		return fmt.Errorf("%w: namespace %q is not in the allowed namespaces of cluster %q", ErrTargetNotAllowed, t.Namespace, t.Cluster)
 	}
 	if t.ResourceType.Custom() && !slices.Contains(p.CustomResources, t.ResourceType) {
 		return fmt.Errorf("%w: custom resource %q is not configured (KUBERNETES_CUSTOM_RESOURCES)", ErrTargetNotAllowed, t.ResourceType)

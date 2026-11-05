@@ -52,7 +52,7 @@ func newQueuedIntegrationServer(t *testing.T, provider llm.Provider, cfg jobs.Co
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	policy := domain.TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"payments"}}
+	policy := domain.TargetPolicy{Clusters: map[string][]string{"local": {"payments"}}}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 10 * time.Second, MaxConcurrent: 4, Policy: policy})
 	scheduler := jobs.New(store, engine, log, cfg)
 	if workers {

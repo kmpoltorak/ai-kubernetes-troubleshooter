@@ -145,10 +145,10 @@ func newHandler(t *testing.T, provider llm.Provider, ready error, rps float64, a
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy := domain.TargetPolicy{ClusterName: "local"}
+	policy := domain.TargetPolicy{Clusters: map[string][]string{"local": nil}}
 	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 2, Policy: policy})
 	checks := map[string]func(context.Context) error{"database": func(context.Context) error { return ready }}
-	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth, RuntimeFrom(config.Config{SimulationEnabled: true, ClusterName: "local", LLMProvider: "rules", LLMModel: "rules-v2"}), nil)
+	return New(incidents.NewService(store, policy), &syncTestJobs{engine: engine}, checks, log, rps, auth, RuntimeFrom(config.Config{SimulationEnabled: true, Clusters: []config.Cluster{{Name: "local"}}, LLMProvider: "rules", LLMModel: "rules-v2"}), nil)
 }
 
 func do(t *testing.T, method, url, body string, headers ...string) (*http.Response, map[string]any) {
@@ -327,9 +327,9 @@ func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
 		want string
 	}{
 		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout", "KUBERNETES_CUSTOM_RESOURCES": "argoproj.io/v1alpha1/rollouts"},
-			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler","rollouts.argoproj.io"]}`},
+			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"clusters":[{"name":"prod","allowed_namespaces":["payments","checkout"]}],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler","rollouts.argoproj.io"]}`},
 		{"simulation", map[string]string{},
-			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"analyzer":{"provider":"rules","model":"rules-v2"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
+			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"clusters":[{"name":"prod","allowed_namespaces":[]}],"analyzer":{"provider":"rules","model":"rules-v2"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := config.Load(func(k string) string {
@@ -520,55 +520,100 @@ func (s *syncTestJobs) Wait(ctx context.Context, incidentID, id string) (domain.
 	return s.Get(ctx, incidentID, id)
 }
 
-func TestTargetsListsWithinPolicy(t *testing.T) {
-	rt := Runtime{Mode: "live", ClusterName: "lab", AllowedNamespaces: []string{"payments"}, ResourceTypes: []domain.ResourceType{"deployment", "pod", "rollouts.argoproj.io"}}
-	var asked []string
-	list := func(_ context.Context, ns string, kind domain.ResourceType) ([]string, error) {
-		asked = append(asked, ns+"/"+string(kind))
-		if kind == domain.ResourcePod {
-			return nil, errors.New("pods is forbidden: User \"system:serviceaccount:troubleshooter:troubleshooter\" cannot list")
-		}
-		return []string{"checkout", "ledger"}, nil
+// fakeClusters records listing calls and answers pings from a fixed table.
+type fakeClusters struct {
+	asked []string
+	pings map[string]error
+}
+
+func (f *fakeClusters) ListNames(_ context.Context, cluster, ns string, kind domain.ResourceType) ([]string, error) {
+	f.asked = append(f.asked, cluster+"/"+ns+"/"+string(kind))
+	if kind == domain.ResourcePod {
+		return nil, errors.New("pods is forbidden: User \"system:serviceaccount:troubleshooter:troubleshooter\" cannot list")
 	}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, rt, list))
-	t.Cleanup(srv.Close)
-	get := func(query string) (int, string) {
-		resp, err := http.Get(srv.URL + "/api/v1/targets?" + query)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return resp.StatusCode, strings.TrimSpace(string(body))
-	}
-	if code, body := get("namespace=payments&kind=deployment"); code != 200 || body != `{"names":["checkout","ledger"]}` {
-		t.Fatalf("list: %d %s", code, body)
-	}
-	if code, body := get("namespace=payments&kind=rollouts.argoproj.io"); code != 200 || body != `{"names":["checkout","ledger"]}` {
-		t.Fatalf("configured custom resource: %d %s", code, body)
-	}
-	for _, q := range []string{"namespace=kube-system&kind=deployment", "namespace=payments&kind=secret", "kind=deployment", "namespace=Bad_NS&kind=pod", "namespace=payments&kind=widgets.example.com"} {
-		if code, body := get(q); code != 400 || !strings.Contains(body, "validation_failed") {
-			t.Errorf("%s: %d %s", q, code, body)
-		}
-	}
-	if code, body := get("namespace=payments&kind=pod"); code != 502 || !strings.Contains(body, "list_failed") || !strings.Contains(body, "forbidden") {
-		t.Fatalf("lister error: %d %s", code, body)
-	}
-	if len(asked) != 3 {
-		t.Fatalf("lister called outside the policy: %v", asked)
-	}
-	sim := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, Runtime{Mode: "simulation", ClusterName: "local"}, nil))
-	t.Cleanup(sim.Close)
-	resp, err := http.Get(sim.URL + "/api/v1/targets?namespace=payments&kind=service")
+	return []string{cluster + "-checkout", cluster + "-ledger"}, nil
+}
+
+func (f *fakeClusters) Ping(context.Context) map[string]error { return f.pings }
+
+func get(t *testing.T, url string) (int, string) {
+	t.Helper()
+	resp, err := http.Get(url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || strings.TrimSpace(string(body)) != `{"names":[]}` {
-		t.Fatalf("simulation: %d %s", resp.StatusCode, body)
+	return resp.StatusCode, strings.TrimSpace(string(body))
+}
+
+func TestTargetsListsWithinPolicy(t *testing.T) {
+	kinds := []domain.ResourceType{"deployment", "pod", "rollouts.argoproj.io"}
+	two := Runtime{Mode: "live", Clusters: []RuntimeCluster{{Name: "lab", AllowedNamespaces: []string{"payments"}}, {Name: "prod", AllowedNamespaces: []string{"orders"}}}, ResourceTypes: kinds}
+	live := &fakeClusters{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, two, live))
+	t.Cleanup(srv.Close)
+	targets := srv.URL + "/api/v1/targets?"
+	if code, body := get(t, targets+"cluster=lab&namespace=payments&kind=deployment"); code != 200 || body != `{"names":["lab-checkout","lab-ledger"]}` {
+		t.Fatalf("list: %d %s", code, body)
+	}
+	if code, body := get(t, targets+"cluster=prod&namespace=orders&kind=rollouts.argoproj.io"); code != 200 || body != `{"names":["prod-checkout","prod-ledger"]}` {
+		t.Fatalf("second cluster, custom resource: %d %s", code, body)
+	}
+	for _, q := range []string{
+		"cluster=lab&namespace=orders&kind=deployment", // allowed in prod, not in lab
+		"cluster=prod&namespace=payments&kind=deployment",
+		"namespace=payments&kind=deployment", // two clusters: the cluster is required
+		"cluster=staging&namespace=payments&kind=deployment",
+		"cluster=lab&namespace=kube-system&kind=deployment", "cluster=lab&namespace=payments&kind=secret",
+		"cluster=lab&kind=deployment", "cluster=lab&namespace=Bad_NS&kind=pod", "cluster=lab&namespace=payments&kind=widgets.example.com",
+	} {
+		if code, body := get(t, targets+q); code != 400 || !strings.Contains(body, "validation_failed") {
+			t.Errorf("%s: %d %s", q, code, body)
+		}
+	}
+	if code, body := get(t, targets+"cluster=lab&namespace=payments&kind=pod"); code != 502 || !strings.Contains(body, "list_failed") || !strings.Contains(body, "forbidden") {
+		t.Fatalf("lister error: %d %s", code, body)
+	}
+	if len(live.asked) != 3 {
+		t.Fatalf("lister called outside the policy: %v", live.asked)
+	}
+
+	one := Runtime{Mode: "live", Clusters: []RuntimeCluster{{Name: "lab"}}, ResourceTypes: kinds}
+	single := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, one, &fakeClusters{}))
+	t.Cleanup(single.Close)
+	if code, body := get(t, single.URL+"/api/v1/targets?namespace=payments&kind=deployment"); code != 200 || !strings.Contains(body, "lab-checkout") {
+		t.Fatalf("one cluster without the cluster parameter: %d %s", code, body)
+	}
+
+	sim := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, Runtime{Mode: "simulation", Clusters: []RuntimeCluster{{Name: "local"}}}, nil))
+	t.Cleanup(sim.Close)
+	if code, body := get(t, sim.URL+"/api/v1/targets?namespace=payments&kind=service"); code != 200 || body != `{"names":[]}` {
+		t.Fatalf("simulation: %d %s", code, body)
+	}
+}
+
+func TestClusterStatus(t *testing.T) {
+	rt := RuntimeFrom(config.Config{Clusters: []config.Cluster{{Name: "lab", Kubeconfig: "/kube/lab.yaml", Context: "lab-ro"}, {Name: "prod"}, {Name: "edge"}}})
+	live := &fakeClusters{pings: map[string]error{"lab": nil, "prod": errors.New("dial tcp 192.0.2.10:6443: connect: connection refused")}}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, rt, live))
+	t.Cleanup(srv.Close)
+	// edge was not pinged at all: unknown counts as unreachable, never as ok.
+	if code, body := get(t, srv.URL+"/api/v1/clusters"); code != 200 ||
+		body != `{"clusters":[{"name":"lab","status":"ok"},{"name":"prod","status":"unreachable"},{"name":"edge","status":"unreachable"}]}` {
+		t.Fatalf("status: %d %s", code, body)
+	}
+	_, runtime := get(t, srv.URL+"/api/v1/runtime")
+	if strings.Contains(runtime, "/kube/") || strings.Contains(runtime, "lab-ro") || !strings.Contains(runtime, `"cluster_name":"lab"`) ||
+		!strings.Contains(runtime, `"clusters":[{"name":"lab","allowed_namespaces":[]},{"name":"prod","allowed_namespaces":[]},{"name":"edge","allowed_namespaces":[]}]`) {
+		t.Fatalf("runtime: %s", runtime)
+	}
+	sim := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, Runtime{Clusters: []RuntimeCluster{{Name: "local"}}}, nil))
+	t.Cleanup(sim.Close)
+	if _, body := get(t, sim.URL+"/api/v1/clusters"); body != `{"clusters":[{"name":"local","status":"simulated"}]}` {
+		t.Fatalf("simulation: %s", body)
 	}
 }
 

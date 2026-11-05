@@ -2,6 +2,9 @@ package config
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +22,7 @@ func TestLoadDefaults(t *testing.T) {
 	if c.HTTPPort != 8080 || c.LLMProvider != "rules" || c.LLMModel != "rules-v2" ||
 		!c.SimulationEnabled || c.SimulationScenario != "healthy" || c.LogLevel != slog.LevelInfo ||
 		c.InvestigationTimeout != 90*time.Second || c.MaxConcurrentInvestigations != 4 ||
-		c.ClusterName != "local" || c.AllowedNamespaces != nil || c.RateLimitRPS != 5 || c.Auth.Enabled {
+		len(c.Clusters) != 1 || c.Clusters[0].Name != "local" || c.Clusters[0].AllowedNamespaces != nil || c.RateLimitRPS != 5 || c.Auth.Enabled {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }
@@ -107,8 +110,64 @@ func TestLoadAllowedNamespaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(c.AllowedNamespaces, "|") != "payments|orders" {
-		t.Fatalf("got %q", c.AllowedNamespaces)
+	if strings.Join(c.Clusters[0].AllowedNamespaces, "|") != "payments|orders" {
+		t.Fatalf("got %q", c.Clusters[0].AllowedNamespaces)
+	}
+}
+
+func TestLoadClustersFile(t *testing.T) {
+	write := func(body string) string {
+		path := filepath.Join(t.TempDir(), "clusters.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	path := write(`clusters:
+  - name: lab
+    kubeconfig: /kube/lab.yaml
+    allowed_namespaces: [payments]
+  - name: prod
+    kubeconfig: /kube/prod.yaml
+    context: prod-ro
+`)
+	c, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTERS_FILE": path}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Cluster{{Name: "lab", Kubeconfig: "/kube/lab.yaml", AllowedNamespaces: []string{"payments"}}, {Name: "prod", Kubeconfig: "/kube/prod.yaml", Context: "prod-ro"}}
+	if !reflect.DeepEqual(c.Clusters, want) {
+		t.Fatalf("clusters: %+v", c.Clusters)
+	}
+	if s := c.String(); !strings.Contains(s, "clusters=[lab prod]") || strings.Contains(s, "/kube/") || strings.Contains(s, "prod-ro") {
+		t.Fatalf("String shows paths or contexts: %s", s)
+	}
+
+	for _, tt := range []struct{ name, body, want string }{
+		{"repeated name", "clusters: [{name: lab}, {name: lab}]", `"lab" is repeated`},
+		{"bad name", "clusters: [{name: Lab Cluster}]", "clusters[0].name"},
+		{"bad namespace", "clusters: [{name: lab, allowed_namespaces: [Bad_NS]}]", `"Bad_NS"`},
+		{"typo in a field", "clusters: [{name: lab, allowed_namespace: [payments]}]", "allowed_namespace"},
+		{"no clusters", "clusters: []", "at least one cluster"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTERS_FILE": write(tt.body)})); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("want %q, got %v", tt.want, err)
+			}
+		})
+	}
+	for _, v := range singleClusterVars {
+		e := map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTERS_FILE": path, v: "payments"}
+		if _, err := Load(env(e)); err == nil || !strings.Contains(err.Error(), "cannot be combined with "+v) {
+			t.Fatalf("%s set with the file: %v", v, err)
+		}
+	}
+	// KUBECONFIG is often set in the shell; entries without their own kubeconfig read it.
+	if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTERS_FILE": path, "KUBECONFIG": "/home/example/.kube/config"})); err != nil {
+		t.Fatalf("KUBECONFIG with the file: %v", err)
+	}
+	if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTERS_FILE": "/does/not/exist"})); err == nil || !strings.Contains(err.Error(), "not readable") {
+		t.Fatalf("missing file: %v", err)
 	}
 }
 

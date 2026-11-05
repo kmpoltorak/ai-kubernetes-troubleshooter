@@ -140,8 +140,13 @@ func (s *suite) call(t *testing.T, ctx context.Context, method, path string, bod
 
 func (s *suite) investigate(t *testing.T, kind domain.ResourceType, name string) domain.InvestigationRecord {
 	t.Helper()
+	return s.investigateIn(t, "local", "payments", kind, name)
+}
+
+func (s *suite) investigateIn(t *testing.T, cluster, namespace string, kind domain.ResourceType, name string) domain.InvestigationRecord {
+	t.Helper()
 	var inc domain.Incident
-	body := map[string]string{"cluster": "local", "namespace": "payments", "resource_type": string(kind), "resource_name": name, "description": "Live cluster fixture"}
+	body := map[string]string{"cluster": cluster, "namespace": namespace, "resource_type": string(kind), "resource_name": name, "description": "Live cluster fixture"}
 	if code := s.call(t, s.ctx, "POST", "/api/v1/incidents", body, &inc); code != 201 || !domain.IsUUID(inc.ID) {
 		t.Fatalf("create incident: HTTP %d", code)
 	}

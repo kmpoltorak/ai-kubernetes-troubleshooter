@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Readiness, type Incident, type Runtime } from "./api";
+import { api, type ClusterState, type Readiness, type Incident, type Runtime } from "./api";
 import BuildLabel from "./components/BuildLabel";
 import CreateIncidentForm from "./components/CreateIncidentForm";
 import IncidentList from "./components/IncidentList";
@@ -24,6 +24,8 @@ export default function App() {
     history.replaceState(null, "", `?incident=${encodeURIComponent(sel.id)}`);
   };
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  // "unavailable" when the last status check failed: the header says so instead of going blank.
+  const [clusters, setClusters] = useState<ClusterState[] | "unavailable" | null>(null);
   const [runtime, setRuntime] = useState<Runtime | null>(null);
   const [runtimeError, setRuntimeError] = useState("");
 
@@ -70,12 +72,18 @@ export default function App() {
   useEffect(() => {
     refresh();
     const controller = new AbortController();
-    const check = () =>
+    const check = () => {
       api.readiness(controller.signal).then((body) => {
         if (!controller.signal.aborted) setReadiness(body);
       }, () => {
         if (!controller.signal.aborted) setReadiness({ checks: { api: "unreachable" } });
       });
+      api.clusters(controller.signal).then((list) => {
+        if (!controller.signal.aborted) setClusters(list);
+      }, () => {
+        if (!controller.signal.aborted) setClusters("unavailable");
+      });
+    };
     check();
     const t = setInterval(check, 30_000);
     return () => { clearInterval(t); controller.abort(); };
@@ -94,8 +102,9 @@ export default function App() {
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
-              {runtime ? `${runtime.mode} · ${runtime.cluster_name} · ${runtime.analyzer.provider}/${runtime.analyzer.model}` : runtimeError && `settings unavailable: ${runtimeError}`}
+              {runtime ? `${runtime.mode} · ${runtime.clusters.length === 1 ? runtime.clusters[0].name : `${runtime.clusters.length} clusters`} · ${runtime.analyzer.provider}/${runtime.analyzer.model}` : runtimeError && `settings unavailable: ${runtimeError}`}
             </span>
+            {runtime?.mode === "live" && <ClusterPill clusters={clusters} />}
             <a href="/metrics" target="_blank" rel="noopener" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
               Metrics
             </a>
@@ -108,6 +117,7 @@ export default function App() {
         <aside className="flex min-w-0 flex-col gap-5">
           {runtime || runtimeError ? <CreateIncidentForm
             runtime={runtime}
+            clusters={Array.isArray(clusters) ? clusters : null}
             onCreated={(inc, scenario) => {
               setSelected({ id: inc.id, scenario });
               loadIncidents(0);
@@ -145,6 +155,22 @@ function StatusPill({ ready }: { ready: Record<string, string> | null }) {
       : failing.length === 0
         ? [`ready · ${Object.keys(ready).join(", ")}`, "text-emerald-700 dark:text-emerald-400"]
         : [`${failing.join(", ")} unavailable`, "text-red-600 dark:text-red-400"];
+  return <Pill text={text} cls={cls} />;
+}
+
+// Names the unreachable clusters; the checks repeat with readiness every 30 s.
+function ClusterPill({ clusters }: { clusters: ClusterState[] | "unavailable" | null }) {
+  if (!clusters) return null;
+  if (clusters === "unavailable") return <Pill text="cluster status unavailable" cls="text-red-600 dark:text-red-400" />;
+  const down = clusters.filter((c) => c.status === "unreachable").map((c) => c.name);
+  const n = clusters.length;
+  const [text, cls] = down.length === 0
+    ? [`${n} ${n === 1 ? "cluster" : "clusters"} reachable`, "text-emerald-700 dark:text-emerald-400"]
+    : [`${down.join(", ")} unreachable · ${n - down.length}/${n} reachable`, "text-red-600 dark:text-red-400"];
+  return <Pill text={text} cls={cls} />;
+}
+
+function Pill({ text, cls }: { text: string; cls: string }) {
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs font-medium dark:border-zinc-700 ${cls}`}>
       <span className="size-1.5 rounded-full bg-current" />

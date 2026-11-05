@@ -94,7 +94,7 @@ func TestJobStopsOnDatabaseConnectionLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	engine := investigation.NewEngine(store, clusters, llm.RulesProvider{}, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{ClusterName: "local"}})
+	engine := investigation.NewEngine(store, clusters, llm.RulesProvider{}, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{Clusters: map[string][]string{"local": nil}}})
 	runner.Engine = engine
 	svc := jobs.New(store, runner, log, jobs.Config{MaxConcurrent: 1, Lease: time.Second, Poll: 10 * time.Millisecond})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -179,7 +179,7 @@ func TestJobCompletionCanStopAnInFlightHeartbeat(t *testing.T) {
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	provider := &finishDuringHeartbeat{finish: make(chan struct{})}
-	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{ClusterName: "local"}})
+	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{Clusters: map[string][]string{"local": nil}}})
 	svc := jobs.New(store, engine, log, jobs.Config{MaxConcurrent: 1, Lease: 3 * time.Second, Poll: 10 * time.Millisecond})
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()

@@ -53,7 +53,7 @@ func workerEngine(t *testing.T, s *storage.Store, p llm.Provider) *investigation
 	if err != nil {
 		t.Fatal(err)
 	}
-	return investigation.NewEngine(s, clusters, p, slog.New(slog.NewTextHandler(io.Discard, nil)), investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{ClusterName: "local"}})
+	return investigation.NewEngine(s, clusters, p, slog.New(slog.NewTextHandler(io.Discard, nil)), investigation.Config{Timeout: 5 * time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{Clusters: map[string][]string{"local": nil}}})
 }
 func workerIncident(t *testing.T, s *storage.Store, pool *pgxpool.Pool) domain.Incident {
 	t.Helper()

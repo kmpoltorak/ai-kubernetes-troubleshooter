@@ -36,7 +36,9 @@ The Deployment uses the original manifest digest. Only the fixture is rebuilt.
 Cases cover healthy targets (including a StatefulSet and its node), a failed
 Job, an Ingress with a missing backend, a Pending claim, an autoscaler without
 metrics, a custom resource reporting `Ready=False`, missing configuration, failed readiness, invalid images, Service selectors, denied reads, optional diagnostics and actual TCP
-NetworkPolicy enforcement. Fixture changes use an administrator client; the
+NetworkPolicy enforcement. The app reads the kind cluster under two names from a
+[clusters file](clusters.md), each with its own namespaces, to check routing and the
+per-cluster policy. Fixture changes use an administrator client; the
 application keeps the base read-only ServiceAccount. One case temporarily adds
 the existing optional Secret metadata grant, then restores it. That grant also
 allows value reads with other clients: RBAC cannot grant metadata-only access.

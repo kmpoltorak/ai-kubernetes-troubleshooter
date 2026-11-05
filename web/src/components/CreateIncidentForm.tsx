@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Field } from "./Hint";
-import { api, type CreateIncident, type Incident, type ResourceType, type Runtime } from "../api";
+import { api, type ClusterState, type CreateIncident, type Incident, type ResourceType, type Runtime } from "../api";
 
 // Samples load a matching simulation scenario for the first investigation.
 const PRESETS: Record<string, { label: string; incident: CreateIncident }> = {
@@ -44,11 +44,17 @@ const kindLabel: Record<string, string> = {
 };
 
 // Samples exist only in simulation; live mode never offers them.
-export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Runtime | null; onCreated: (inc: Incident, scenario: string) => void }) {
-  const cluster = runtime?.cluster_name ?? "";
-  const allowed = runtime?.allowed_namespaces ?? [];
-  const empty: CreateIncident = { title: "", description: "", cluster, namespace: allowed.length === 1 ? allowed[0] : "", resource_type: "deployment", resource_name: "" };
+export default function CreateIncidentForm({ runtime, clusters: states, onCreated }: {
+  runtime: Runtime | null; clusters: ClusterState[] | null; onCreated: (inc: Incident, scenario: string) => void;
+}) {
+  const clusters = runtime?.clusters ?? [];
+  const namespacesOf = (name: string) => clusters.find((c) => c.name === name)?.allowed_namespaces ?? [];
+  const only = (list: string[]) => (list.length === 1 ? list[0] : "");
+  const cluster = only(clusters.map((c) => c.name));
+  const empty: CreateIncident = { title: "", description: "", cluster, namespace: only(namespacesOf(cluster)), resource_type: "deployment", resource_name: "" };
   const [form, setForm] = useState<CreateIncident>(empty);
+  const allowed = namespacesOf(form.cluster);
+  const unreachable = new Set(states?.filter((s) => s.status === "unreachable").map((s) => s.name));
   const [preset, setPreset] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,15 +63,15 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
   // Name suggestions come from the cluster; typing a name stays possible when listing fails.
   useEffect(() => {
     setNames({ list: [], error: "" });
-    if (!runtime || !form.namespace) return;
+    if (!runtime || !form.cluster || !form.namespace) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      api.targets(form.namespace, form.resource_type, controller.signal).then(
+      api.targets(form.cluster, form.namespace, form.resource_type, controller.signal).then(
         (list) => setNames({ list, error: "" }),
         (e) => { if (!controller.signal.aborted) setNames({ list: [], error: (e as Error).message }); });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [runtime, form.namespace, form.resource_type]);
+  }, [runtime, form.cluster, form.namespace, form.resource_type]);
 
   const kind = kindLabel[form.resource_type] ?? form.resource_type;
   const set = (key: keyof CreateIncident) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value });
@@ -96,7 +102,7 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
               key={key}
               type="button"
               onClick={() => {
-                setForm({ ...p.incident, cluster });
+                setForm({ ...p.incident, cluster: clusters[0]?.name ?? "" });
                 setPreset(key);
               }}
               className="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs hover:border-indigo-500 dark:border-zinc-700"
@@ -114,12 +120,20 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
           {(id) => <textarea id={id} className="field resize-y" rows={3} value={form.description} onChange={set("description")} maxLength={5000} placeholder="What are users seeing?" />}
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Cluster" hint="Set by this installation (KUBERNETES_CLUSTER_NAME). One installation reads one cluster.">
-            {(id) => <input id={id} className="field cursor-default border-transparent bg-zinc-100 font-mono text-zinc-700 dark:border-transparent dark:bg-zinc-800/60 dark:text-zinc-300"
-              value={form.cluster} readOnly />}
+          <Field label="Cluster" hint="The clusters this installation reads (KUBERNETES_CLUSTERS_FILE, or KUBERNETES_CLUSTER_NAME for one). An unreachable cluster can still be chosen; its investigation reports the error.">
+            {(id) => clusters.length > 1 ? (
+              <select id={id} className="field font-mono" value={form.cluster}
+                onChange={(e) => { const c = e.target.value; setForm({ ...form, cluster: c, namespace: only(namespacesOf(c)), resource_name: "" }); }}>
+                <option value="">Choose…</option>
+                {clusters.map((c) => <option key={c.name} value={c.name}>{c.name}{unreachable.has(c.name) ? " (unreachable)" : ""}</option>)}
+              </select>
+            ) : (
+              <input id={id} className="field cursor-default border-transparent bg-zinc-100 font-mono text-zinc-700 dark:border-transparent dark:bg-zinc-800/60 dark:text-zinc-300"
+                value={form.cluster} readOnly />
+            )}
           </Field>
           <Field label="Namespace" hint={allowed.length > 0
-            ? "Only the namespaces this installation may read (KUBERNETES_ALLOWED_NAMESPACES)."
+            ? "Only the namespaces this installation may read in the chosen cluster."
             : "Any namespace the read-only account can read: this installation sets no allowlist."}>
             {(id) => allowed.length > 0 ? (
               <select id={id} className="field font-mono" value={form.namespace} onChange={set("namespace")}>
@@ -127,7 +141,7 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
                 {allowed.map((ns) => <option key={ns} value={ns}>{ns}</option>)}
               </select>
             ) : (
-              <input id={id} className="field font-mono" value={form.namespace} onChange={set("namespace")} placeholder="payments" spellCheck={false} autoComplete="off" />
+              <input id={id} className="field font-mono" value={form.namespace} onChange={set("namespace")} placeholder={form.cluster ? "payments" : "Choose a cluster first"} disabled={!form.cluster} spellCheck={false} autoComplete="off" />
             )}
           </Field>
           <Field label="Kind" hint="What the incident is about. A workload (Deployment, StatefulSet, Job…) leads to its pods, an Ingress to its first backend's pods, an autoscaler to the workload it scales. Extra kinds come from KUBERNETES_CUSTOM_RESOURCES.">
