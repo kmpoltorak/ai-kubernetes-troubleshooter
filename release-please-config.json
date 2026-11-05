@@ -8,6 +8,5 @@
     ".": {
       "package-name": "ai-kubernetes-troubleshooter"
     }
-  },
-  "last-release-sha": "ac9ebdcf2e6b0f6a35eb0da606082510bc0d6dd2"
+  }
 }
