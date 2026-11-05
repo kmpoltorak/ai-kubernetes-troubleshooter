@@ -149,7 +149,7 @@ export default function CreateIncidentForm({ runtime, clusters: states, onCreate
               {(runtime?.resource_types ?? [form.resource_type]).map((k) => <option key={k} value={k}>{kindLabel[k] ?? k}</option>)}
             </select>}
           </Field>
-          <Field label={`${kind} name`} hint={`The name of the ${kind} in the chosen namespace, as kubectl get shows it. Names listed from the cluster are suggested; any name can be typed.`}>
+          <Field label="Name" hint={`The name of the ${kind} in the chosen namespace, as kubectl get shows it. Names listed from the cluster are suggested; any name can be typed.`}>
             {(id) => <>
               <input id={id} className="field font-mono" value={form.resource_name} onChange={set("resource_name")} placeholder="payment-service" spellCheck={false} autoComplete="off" list="target-names" />
               <datalist id="target-names">{names.list.map((n) => <option key={n} value={n} />)}</datalist>

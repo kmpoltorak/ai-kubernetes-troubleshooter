@@ -38,7 +38,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.getByLabel("Description").fill("y_".repeat(150));
     await page.getByLabel("Cluster").selectOption("browser-live");
     await page.getByLabel("Namespace").selectOption("payments");
-    await page.getByLabel("Deployment name").fill("checkout");
+    await page.getByLabel("Name", { exact: true }).fill("checkout");
     await page.getByRole("button", { name: "Create incident" }).click();
     await expect(page.getByRole("heading", { level: 2, name: /^(x_)+$/ })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
