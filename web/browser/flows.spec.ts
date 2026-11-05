@@ -258,9 +258,10 @@ test("hints explain confusing fields and the name field follows the kind", async
   await expect(page.getByText("The name of the Job in the chosen namespace", { exact: false })).toBeVisible();
   // On a phone the right-hand field's bubble is pulled back inside the screen.
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.documentElement.clientWidth <= 390); // the resize has reached the page
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "What is Job name?" }).click();
   const phone = (await page.getByText("The name of the Job in the chosen namespace", { exact: false }).boundingBox())!;
   expect(phone.x).toBeGreaterThanOrEqual(0);
-  expect(phone.x + phone.width).toBeLessThanOrEqual(390);
+  expect(phone.x + phone.width).toBeLessThanOrEqual(await page.evaluate(() => document.documentElement.clientWidth));
 });
