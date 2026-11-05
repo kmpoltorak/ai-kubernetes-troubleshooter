@@ -276,7 +276,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 - Exports are created in the browser; the server does not record who exported what.
 - Empty observations count as missing data: no log lines (core) or no usage samples (optional). A healthy workload whose containers write no logs is therefore `inconclusive`, not `no_fault_observed`.
 - The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
-- Upgrades are tested from commit `06db1ed` (schema 1), not from a published release. The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
+- Upgrades are tested from commit `06db1ed` (schema 1) and from the newest published release, built from its tag's source (not its image). The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
 - Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).
 
 ## Development
@@ -286,7 +286,7 @@ make test               # unit tests with the race detector
 make test-auth          # real OAuth2 Proxy + disposable OIDC provider; requires Docker
 make test-integration   # starts a disposable PostgreSQL container, runs -tags integration
 make test-e2e           # disposable kind: live diagnostics, RBAC and NetworkPolicy
-make test-upgrade       # baseline upgrade, two-replica migration, pg_dump/pg_restore; requires Docker
+make test-upgrade       # baseline and last-release upgrades, two-replica migration, pg_dump/pg_restore; requires Docker
 make test-browser       # Playwright/Chromium on the real binary; needs Docker and `npx playwright install chromium`
 make lint               # gofmt, golangci-lint (includes go vet checks)
 cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck and build (Node 22)
@@ -294,7 +294,8 @@ cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck 
 
 Unit tests use synthetic clusters and model responses; integration tests exercise
 PostgreSQL, API requests and worker recovery. The upgrade test compares API reads
-before and after a real backup and restore. The browser tests drive the embedded UI
+before and after a real backup and restore, and upgrades a database written by the
+previous release. The browser tests drive the embedded UI
 in Chromium on the essentials only: a report with evidence links and a reload, a
 reload during a failing analysis, the live-mode form through the API and database,
 and incident deletion. They also run axe's automated WCAG 2.1 A/AA rules in light and
