@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -193,7 +194,7 @@ func (p *parser) clusters() []Cluster {
 			p.fail(key, "cannot be combined with "+v+"; configure every cluster in the file")
 		}
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		p.fail(key, "is not readable: "+err.Error())
 		return nil
