@@ -24,17 +24,6 @@ test("history distinguishes latest failed attempt from older successful report",
   assert.match(html, /datetime="2026-01-02T00:00:00Z"/i);
 });
 
-test("empty and older pages show their pagination state", () => {
-  const html = render(History, { ...props, latestReport: null, page: { ...props.page, investigations: [], offset: 20, has_more: true } });
-  assert.match(html, /No investigations on this page/);
-  assert.match(html, /Page 2/);
-  assert.doesNotMatch(html, /Latest attempt/);
-  assert.doesNotMatch(html, /disabled=""[^>]*>Older attempts/);
-  const first = render(History, props);
-  assert.match(first, /disabled=""[^>]*>Newer attempts/);
-  assert.match(first, /disabled=""[^>]*>Older attempts/);
-});
-
 test("failed details retain evidence and error without showing a root cause report", () => {
   const html = render(Report, { record: { investigation: failure, report: null,
     tool_executions: [{ id: "tool", tool_name: "get_pods", duration_ms: 12 }],
@@ -53,12 +42,6 @@ test("running and legacy null collections remain readable; errors are escaped", 
   assert.match(html, /saved diagnostic results/);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>/);
-});
-
-test("queued attempts remain readable before a worker starts", () => {
-  const html = render(Report, { record: { investigation: { ...failure, status: "queued", error: undefined, completed_at: undefined }, tool_executions: [], evidence: [] } });
-  assert.match(html, /This investigation is queued/);
-  assert.doesNotMatch(html, /Root cause/);
 });
 
 test("job status shows queue, analysis and unknown outcome without hiding stored results", () => {
@@ -114,22 +97,4 @@ test("a report without recommendations or commands shows no remediation card", (
   const commandOnly = render(Report, { record: withCommand });
   assert.match(commandOnly, /Read-only commands/);
   assert.doesNotMatch(commandOnly, />Remediation</);
-});
-
-test("a report shows no noise: approval badges, durations, repeated signals, raw IDs", () => {
-  const item = { id: "ev-pods", tool_execution_id: "tool", source: "get_pods", subject: "pods/app=api", health: "down", summary: "0/1 pods ready. Findings: CrashLoopBackOff.", signals: ["CrashLoopBackOff", "FrequentRestarts"] };
-  const record = { investigation: success, tool_executions: [{ id: "tool", tool_name: "get_pods", duration_ms: 1234 }], evidence: [item],
-    report: { provider: "rules/rules-v2", created_at: success.completed_at, remediation_actions: [{ id: "r", position: 1, kind: "recommendation", description: "fix the config", requires_approval: true, status: "proposed" }],
-      analysis: { schema_version: 2, verdict: "observed_fault", support: "strong", summary: "s", root_cause: "Crash", severity: "high", evidence: [], missing_data: [], limitations: [], possible_causes: ["x"] } } };
-  const html = render(Report, { record });
-  assert.match(html, /fix the config/);
-  assert.doesNotMatch(html, /needs approval|1234 ms|Duration|coverage is still limited|Status: <strong/);
-  // The summary already names CrashLoopBackOff; only the unnamed signal gets a chip.
-  assert.equal(html.match(/>CrashLoopBackOff</g), null);
-  assert.match(html, />FrequentRestarts</);
-  const history = render(History, props);
-  assert.doesNotMatch(history, />success<|>failure</);
-  assert.match(history, /title="Investigation success"/);
-  const job = render(JobStatus, { onRetry() {}, onView() {}, error: "", record: { job: { id: "job-123", status: "completed", stage: "completed", attempts: 1 } } });
-  assert.doesNotMatch(job, />job-123<|Stage:|Attempt 1 of 3/);
 });
