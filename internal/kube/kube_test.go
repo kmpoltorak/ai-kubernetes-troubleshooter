@@ -11,6 +11,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
@@ -72,5 +76,20 @@ func TestListNamesPerKindAndNamespace(t *testing.T) {
 	}
 	if _, err := c.ListNames(context.Background(), "payments", "secret"); err == nil {
 		t.Fatal("an unsupported kind must not be listed")
+	}
+}
+
+func TestListNamesOfConfiguredCustomResource(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "rollouts"}
+	obj := func(name string) *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{"apiVersion": "argoproj.io/v1alpha1", "kind": "Rollout", "metadata": map[string]any{"name": name, "namespace": "payments"}}}
+	}
+	c := Cluster{Dynamic: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "RolloutList"}, obj("web"), obj("api")),
+		CustomResources: CustomResourceMap([]domain.CustomResource{{Group: "argoproj.io", Version: "v1alpha1", Resource: "rollouts"}})}
+	if got, err := c.ListNames(context.Background(), "payments", "rollouts.argoproj.io"); err != nil || !slices.Equal(got, []string{"api", "web"}) {
+		t.Fatalf("custom names: %v %v", got, err)
+	}
+	if _, err := c.ListNames(context.Background(), "payments", "widgets.example.com"); err == nil {
+		t.Fatal("an unconfigured custom resource was listed")
 	}
 }

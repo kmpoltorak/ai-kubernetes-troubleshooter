@@ -492,6 +492,22 @@ var rules = []rule{
 		},
 	},
 	{
+		when: func(has func(...string) bool) bool {
+			return has(diagnostics.SignalCustomResourceNotReady, diagnostics.SignalCustomResourceDegraded)
+		},
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "The resource reports a failing status condition", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("%s reports itself as not ready or failing in its own status; the cited condition carries its controller's reason.", t.Ref()),
+				signals:  []string{diagnostics.SignalCustomResourceNotReady, diagnostics.SignalCustomResourceDegraded},
+				causes:   []string{"its controller could not apply the desired state (see the condition reason)", "a dependency the controller manages is failing", "the controller itself is down or misconfigured"},
+				actions:  []string{"read the condition reason and message, then the controller's logs", "check the events of the resource for the controller's errors"},
+				commands: []string{fmt.Sprintf("kubectl describe %s %s -n %s", t.ResourceType, t.ResourceName, t.Namespace)},
+			}
+		},
+	},
+	{
 		when: func(has func(...string) bool) bool { return has(diagnostics.SignalConnectionRefused) },
 		build: func(t domain.Target) finding {
 			return finding{

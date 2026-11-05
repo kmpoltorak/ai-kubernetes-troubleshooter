@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,9 @@ type Config struct {
 	// AllowedNamespaces restricts investigations; empty allows any namespace
 	// the ServiceAccount can read.
 	AllowedNamespaces []string
+	// CustomResources are extra kinds (group/version/resource) read through
+	// the dynamic client: status and selector only.
+	CustomResources []domain.CustomResource
 
 	LLMMaxInputBytes int
 	LLMProvider      string
@@ -119,6 +123,14 @@ func Load(getenv func(string) string) (Config, error) {
 			p.fail("KUBERNETES_ALLOWED_NAMESPACES", fmt.Sprintf("entry %q %s", ns, err))
 		}
 	}
+	for _, entry := range p.list("KUBERNETES_CUSTOM_RESOURCES") {
+		cr, err := parseCustomResource(entry)
+		if err != nil {
+			p.fail("KUBERNETES_CUSTOM_RESOURCES", fmt.Sprintf("entry %q %s", entry, err))
+			continue
+		}
+		c.CustomResources = append(c.CustomResources, cr)
+	}
 	if _, ok := defaultModels[c.LLMProvider]; !ok {
 		p.fail("LLM_PROVIDER", "must be one of rules, openai, ollama")
 	} else if c.LLMModel == "" {
@@ -153,6 +165,38 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid configuration: %w", errors.Join(p.errs...))
 	}
 	return c, nil
+}
+
+// CustomKinds lists the configured custom resources as incident kinds.
+func (c Config) CustomKinds() []domain.ResourceType {
+	kinds := make([]domain.ResourceType, 0, len(c.CustomResources))
+	for _, cr := range c.CustomResources {
+		kinds = append(kinds, cr.Kind())
+	}
+	return kinds
+}
+
+var apiVersion = regexp.MustCompile(`^v[0-9]+((alpha|beta)[0-9]+)?$`)
+
+// parseCustomResource reads "group/version/resource", e.g. argoproj.io/v1alpha1/rollouts.
+// The group must contain a dot: built-in kinds use their own diagnostics.
+func parseCustomResource(entry string) (domain.CustomResource, error) {
+	parts := strings.Split(entry, "/")
+	if len(parts) != 3 {
+		return domain.CustomResource{}, errors.New("must be group/version/resource, e.g. argoproj.io/v1alpha1/rollouts")
+	}
+	cr := domain.CustomResource{Group: parts[0], Version: parts[1], Resource: parts[2]}
+	switch {
+	case !strings.Contains(cr.Group, ".") || domain.ValidateObjectName(cr.Group) != nil:
+		return cr, errors.New("group must be a DNS subdomain with a dot (custom API group)")
+	case !apiVersion.MatchString(cr.Version):
+		return cr, errors.New("version must look like v1, v1beta1 or v1alpha2")
+	case domain.ValidateNamespace(cr.Resource) != nil:
+		return cr, errors.New("resource must be the lowercase plural name, e.g. rollouts")
+	case !cr.Kind().Custom():
+		return cr, errors.New("is not a valid custom resource name")
+	}
+	return cr, nil
 }
 
 // String renders the configuration with secrets redacted, safe for logs.

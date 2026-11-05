@@ -65,7 +65,7 @@ func HealthUnconfirmed(evidence []Evidence, failed []ToolExecution) bool {
 	for _, te := range failed {
 		switch te.ToolName {
 		// The target and its pods. References (configmaps, secrets, claims), nodes and metrics are optional.
-		case "get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa",
+		case "get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa", "get_custom_resource",
 			"get_service", "get_pods", "get_events", "get_pod_logs":
 			return true
 		}
@@ -113,7 +113,7 @@ func (a Analysis) Validate(collected []Evidence, failed []ToolExecution) error {
 	}
 	for _, r := range a.AffectedResources {
 		kind, name, ok := strings.Cut(r, "/")
-		if !ok || !resourceKind.MatchString(kind) || ValidateObjectName(name) != nil {
+		if !ok || !resourceKind.MatchString(kind) && !ResourceType(kind).Custom() || ValidateObjectName(name) != nil {
 			errs = append(errs, fmt.Errorf("affected resource %q must be kind/name", r))
 		}
 	}

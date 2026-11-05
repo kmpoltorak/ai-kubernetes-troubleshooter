@@ -436,3 +436,19 @@ func TestRulesForIngressStorageAutoscalingAndNodes(t *testing.T) {
 		}
 	}
 }
+
+func TestRulesForCustomResource(t *testing.T) {
+	target := domain.Target{Cluster: "lab", Namespace: "payments", ResourceType: "rollouts.argoproj.io", ResourceName: "web"}
+	a, err := RulesProvider{}.Analyze(context.Background(), AnalysisInput{Incident: domain.Incident{Target: target},
+		Evidence: []domain.Evidence{ev("get_custom_resource", "rollouts.argoproj.io/web", "CustomResourceNotReady")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.RootCause != "The resource reports a failing status condition" || !slices.Contains(a.SafeCommands, "kubectl describe rollouts.argoproj.io web -n payments") ||
+		!slices.Contains(a.AffectedResources, "rollouts.argoproj.io/web") {
+		t.Fatalf("custom resource: %q %v %v", a.RootCause, a.SafeCommands, a.AffectedResources)
+	}
+	if err := domain.ValidateSafeCommand(a.SafeCommands[0]); err != nil {
+		t.Fatal(err)
+	}
+}

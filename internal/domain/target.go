@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 )
 
@@ -24,6 +25,22 @@ const (
 // ResourceTypes lists every kind an incident can target, in the order the form offers them.
 var ResourceTypes = []ResourceType{ResourceDeployment, ResourceStatefulSet, ResourceDaemonSet, ResourceJob, ResourceCronJob, ResourceService, ResourcePod, ResourceIngress, ResourcePVC, ResourceHPA}
 
+var customKind = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$`)
+
+// Custom reports whether the kind has the shape of a custom resource, "resource.group"
+// as kubectl names it (rollouts.argoproj.io). Whether it is configured is the policy's call.
+func (rt ResourceType) Custom() bool {
+	return len(rt) <= 253 && customKind.MatchString(string(rt)) && !slices.Contains(ResourceTypes, rt)
+}
+
+// CustomResource is an operator-configured kind read through the dynamic client.
+type CustomResource struct {
+	Group, Version, Resource string
+}
+
+// Kind is the name incidents use for the resource.
+func (c CustomResource) Kind() ResourceType { return ResourceType(c.Resource + "." + c.Group) }
+
 // Target identifies the workload an incident is about: the cluster
 // (ClusterTarget) and the namespaced resource (ResourceTarget).
 type Target struct {
@@ -43,8 +60,8 @@ func (t Target) Validate() error {
 	if err := ValidateNamespace(t.Namespace); err != nil {
 		errs = append(errs, fmt.Errorf("namespace %w", err))
 	}
-	if !slices.Contains(ResourceTypes, t.ResourceType) {
-		errs = append(errs, fmt.Errorf("resource_type must be one of %v", ResourceTypes))
+	if !slices.Contains(ResourceTypes, t.ResourceType) && !t.ResourceType.Custom() {
+		errs = append(errs, fmt.Errorf("resource_type must be one of %v or a configured custom resource (resource.group)", ResourceTypes))
 	}
 	if err := ValidateObjectName(t.ResourceName); err != nil {
 		errs = append(errs, fmt.Errorf("resource_name %w", err))
@@ -60,6 +77,8 @@ type TargetPolicy struct {
 	ClusterName string
 	// AllowedNamespaces is empty when every namespace is allowed.
 	AllowedNamespaces []string
+	// CustomResources are the custom kinds an incident may target.
+	CustomResources []ResourceType
 }
 
 // ErrTargetNotAllowed marks targets outside the policy.
@@ -71,6 +90,9 @@ func (p TargetPolicy) Check(t Target) error {
 	}
 	if len(p.AllowedNamespaces) > 0 && !slices.Contains(p.AllowedNamespaces, t.Namespace) {
 		return fmt.Errorf("%w: namespace %q is not in the allowed namespaces", ErrTargetNotAllowed, t.Namespace)
+	}
+	if t.ResourceType.Custom() && !slices.Contains(p.CustomResources, t.ResourceType) {
+		return fmt.Errorf("%w: custom resource %q is not configured (KUBERNETES_CUSTOM_RESOURCES)", ErrTargetNotAllowed, t.ResourceType)
 	}
 	return nil
 }

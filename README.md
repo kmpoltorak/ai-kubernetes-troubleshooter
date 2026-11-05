@@ -111,6 +111,7 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 | `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |
 | `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
+| `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see below) |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `ollama` |
 | `LLM_MODEL` | per provider | `gpt-4o-mini`, `llama3.2` |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized OpenAI/Ollama request body; overflow fails analysis without sending, preserving evidence |
@@ -156,6 +157,22 @@ first. Events match the exact target, its pods or its ReplicaSets, so `payment`
 never picks up `payment-worker`. The rules analyzer quotes the last logged error as an
 observation (not a confirmed cause), names missing ConfigMaps or Secrets, and fills
 known pod and Service names into its read-only commands.
+
+**Custom resources:** each `KUBERNETES_CUSTOM_RESOURCES` entry becomes a Kind in
+the form. `get_custom_resource` keeps only metadata, `status.conditions`,
+`status.phase`, the generations and the pod selector (`spec.selector.matchLabels`
+or `status.selector`); no other spec or status value is stored. A failing condition
+(`Ready`, `Available`, `Healthy`, `Synced`, `Succeeded`, `Progressing`, `Reconciled`
+False; `Degraded`, `Failed`, `Stalled`, `Error`, `ReconcileError` True) or a failed
+phase is a finding. Then the selected pods run through the usual checks. Grant
+read access per namespace, as [the e2e fixture](tests/e2e/custom-resource.yaml) does:
+
+```yaml
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts"]
+    verbs: ["get", "list"]
+```
 
 **Authentication:** `AUTH_ENABLED=false` supports local/test/minikube without SSO.
 Enable it with the [OIDC setup](docs/authentication.md); the backend checks each
@@ -236,7 +253,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 ## Limitations
 
 - Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
-- Custom resources are not diagnosed yet. A CronJob is judged by its latest Job only (found among at most 500 Jobs in the namespace); missed schedules are not detected. An Ingress is followed to its first existing backend's pods; an autoscaler only to a Deployment or StatefulSet. A Pending claim no pod uses is not called a fault (WaitForFirstConsumer classes bind later); StorageClasses are not read. Nodes are read only when they run the target's pods, so a Pending pod's candidate nodes are not inspected.
+- Custom resources are judged by the condition names above; a controller using other names is not interpreted, and a resource without conditions or phase is `inconclusive`. Pods are found only through a label selector, not owner references. A configured resource the cluster does not serve fails its investigations. A CronJob is judged by its latest Job only (found among at most 500 Jobs in the namespace); missed schedules are not detected. An Ingress is followed to its first existing backend's pods; an autoscaler only to a Deployment or StatefulSet. A Pending claim no pod uses is not called a fault (WaitForFirstConsumer classes bind later); StorageClasses are not read. Nodes are read only when they run the target's pods, so a Pending pod's candidate nodes are not inspected.
 - One cluster per installation; replicas must use the same limits, target policy and analyzer. No remediation is executed.
 - The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`. It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.

@@ -94,7 +94,7 @@ else
 fi
 
 cp -R deployments/kubernetes "$work/base"
-cp tests/e2e/postgres.yaml "$work/postgres.yaml"
+cp tests/e2e/postgres.yaml tests/e2e/custom-resource.yaml "$work/"
 password=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 printf 'POSTGRES_PASSWORD=%s\nDATABASE_URL=postgres://troubleshooter:%s@postgres:5432/troubleshooter?sslmode=disable\n' "$password" "$password" > "$work/database.env"
 unset password
@@ -104,6 +104,7 @@ kind: Kustomization
 resources:
   - base
   - postgres.yaml
+  - custom-resource.yaml
 secretGenerator:
   - name: troubleshooter-secrets
     namespace: troubleshooter
@@ -121,6 +122,13 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Never
+  - target:
+      kind: ConfigMap
+      name: troubleshooter-config
+    patch: |-
+      - op: add
+        path: /data/KUBERNETES_CUSTOM_RESOURCES
+        value: example.com/v1/widgets
 EOF
 k create namespace payments
 k apply -k "$work" > "$artifacts/apply.txt"

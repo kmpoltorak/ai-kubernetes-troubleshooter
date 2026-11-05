@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -60,11 +61,16 @@ type Analyzer struct {
 // RuntimeFrom selects the UI-relevant settings; empty namespaces mean all readable ones.
 func RuntimeFrom(cfg config.Config) Runtime {
 	rt := Runtime{Mode: "live", ClusterName: cfg.ClusterName, AllowedNamespaces: append([]string{}, cfg.AllowedNamespaces...),
-		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel}, Scenarios: []string{}, ResourceTypes: domain.ResourceTypes}
+		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel}, Scenarios: []string{}, ResourceTypes: append(slices.Clone(domain.ResourceTypes), cfg.CustomKinds()...)}
 	if cfg.SimulationEnabled {
 		rt.Mode, rt.Scenarios = "simulation", simulation.Scenarios
 	}
 	return rt
+}
+
+// CustomKinds are the configured custom resources among the form's kinds.
+func (r Runtime) CustomKinds() []domain.ResourceType {
+	return slices.DeleteFunc(slices.Clone(r.ResourceTypes), func(k domain.ResourceType) bool { return !k.Custom() })
 }
 
 // TargetLister lists object names for the incident form; nil lists nothing (simulation).
@@ -186,7 +192,7 @@ func (h *handler) getReport(w http.ResponseWriter, r *http.Request) {
 
 // listTargets offers names for the incident form within the same target policy as incidents.
 func (h *handler) listTargets(runtime Runtime, list TargetLister) http.HandlerFunc {
-	policy := domain.TargetPolicy{ClusterName: runtime.ClusterName, AllowedNamespaces: runtime.AllowedNamespaces}
+	policy := domain.TargetPolicy{ClusterName: runtime.ClusterName, AllowedNamespaces: runtime.AllowedNamespaces, CustomResources: runtime.CustomKinds()}
 	return func(w http.ResponseWriter, r *http.Request) {
 		// The name is a placeholder: only namespace and kind come from the request.
 		t := domain.Target{Cluster: runtime.ClusterName, Namespace: r.URL.Query().Get("namespace"),
