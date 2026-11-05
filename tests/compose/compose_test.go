@@ -117,6 +117,19 @@ func TestClustersOverrideMountsDirectoryReadOnly(t *testing.T) {
 	}
 }
 
+func TestOllamaRunsOnTheHost(t *testing.T) {
+	r, stderr, err := renderEnv(t, nil, "docker-compose.yml")
+	if err != nil {
+		t.Fatalf("render: %v %s", err, stderr)
+	}
+	if _, ok := r.Services["ollama"]; ok {
+		t.Fatal("Ollama container is back: on CPU it timed out every evaluation")
+	}
+	if got := r.Services["app"].Environment["OLLAMA_BASE_URL"]; got != "http://host.docker.internal:11434" {
+		t.Fatalf("OLLAMA_BASE_URL: %q", got)
+	}
+}
+
 func TestDefaultComposeStaysInSimulation(t *testing.T) {
 	r, stderr, err := render(t, "", "docker-compose.yml")
 	if err != nil {
