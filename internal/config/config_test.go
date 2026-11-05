@@ -92,6 +92,8 @@ func TestLoadErrors(t *testing.T) {
 		{"bad env", map[string]string{"DATABASE_URL": "x", "APP_ENV": "staging"}, "APP_ENV"},
 		{"bad cluster name", map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTER_NAME": "Prod Cluster"}, "KUBERNETES_CLUSTER_NAME"},
 		{"bad namespace", map[string]string{"DATABASE_URL": "x", "KUBERNETES_ALLOWED_NAMESPACES": "payments,Bad_NS"}, `"Bad_NS"`},
+		{"reasoning without openai", map[string]string{"DATABASE_URL": "x", "LLM_REASONING_EFFORT": "medium"}, "LLM_REASONING_EFFORT"},
+		{"bad reasoning effort", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "k", "LLM_REASONING_EFFORT": "Medium!"}, "LLM_REASONING_EFFORT"},
 		{"zero rate limit", map[string]string{"DATABASE_URL": "x", "RATE_LIMIT_RPS": "0"}, "RATE_LIMIT_RPS"},
 		{"zero concurrency", map[string]string{"DATABASE_URL": "x", "MAX_CONCURRENT_INVESTIGATIONS": "0"}, "MAX_CONCURRENT_INVESTIGATIONS"},
 	}
@@ -168,6 +170,13 @@ func TestLoadClustersFile(t *testing.T) {
 	}
 	if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTERS_FILE": "/does/not/exist"})); err == nil || !strings.Contains(err.Error(), "not readable") {
 		t.Fatalf("missing file: %v", err)
+	}
+}
+
+func TestLoadReasoningEffort(t *testing.T) {
+	c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "k", "LLM_MODEL": "gpt-6-luna", "LLM_REASONING_EFFORT": "medium"}))
+	if err != nil || c.LLMReasoningEffort != "medium" {
+		t.Fatalf("got %q, %v", c.LLMReasoningEffort, err)
 	}
 }
 

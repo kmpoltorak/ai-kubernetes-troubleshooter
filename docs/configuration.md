@@ -25,6 +25,7 @@ see [several clusters](clusters.md).
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see [custom resources](#custom-resources)) |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `ollama` |
 | `LLM_MODEL` | per provider | `gpt-4o-mini`, `llama3.2` |
+| `LLM_REASONING_EFFORT` | empty | OpenAI reasoning models (e.g. `gpt-6-luna`): `low`, `medium`, `high`; sent instead of temperature 0, which they reject |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized OpenAI/Ollama request body; overflow fails analysis without sending, preserving evidence |
 | `LLM_TIMEOUT` | `60s` | per LLM request |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |

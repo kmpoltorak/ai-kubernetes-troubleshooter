@@ -20,10 +20,19 @@ type OpenAIProvider struct {
 	apiKey        string
 	model         string
 	client        *http.Client
+	// reasoningEffort is sent to reasoning models, which accept only the default
+	// temperature; empty sends temperature 0 instead.
+	reasoningEffort string
 }
 
 func NewOpenAIProvider(baseURL, apiKey, model string, timeout time.Duration) *OpenAIProvider {
 	return &OpenAIProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, baseURL: baseURL, apiKey: apiKey, model: model, client: &http.Client{Timeout: timeout}}
+}
+
+// WithReasoningEffort sets reasoning_effort (e.g. medium) for reasoning models.
+func (p *OpenAIProvider) WithReasoningEffort(effort string) *OpenAIProvider {
+	p.reasoningEffort = effort
+	return p
 }
 
 func (p *OpenAIProvider) Name() string { return "openai/" + p.model }
@@ -58,9 +67,8 @@ func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 		return result, err
 	}
 	req := map[string]any{
-		"model":       p.model,
-		"messages":    msgs,
-		"temperature": 0,
+		"model":    p.model,
+		"messages": msgs,
 		"response_format": map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
@@ -69,6 +77,11 @@ func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 				"schema": analysisSchema,
 			},
 		},
+	}
+	if p.reasoningEffort != "" {
+		req["reasoning_effort"] = p.reasoningEffort
+	} else {
+		req["temperature"] = 0
 	}
 	if maxOutputTokens > 0 {
 		req["max_completion_tokens"] = maxOutputTokens

@@ -45,7 +45,7 @@ func (in AnalysisInput) MissingData() []string {
 func FromConfig(cfg config.Config) Provider {
 	switch cfg.LLMProvider {
 	case "openai":
-		p := NewOpenAIProvider(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.LLMModel, cfg.LLMTimeout)
+		p := NewOpenAIProvider(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.LLMModel, cfg.LLMTimeout).WithReasoningEffort(cfg.LLMReasoningEffort)
 		if cfg.LLMMaxInputBytes > 0 {
 			p.maxInputBytes = cfg.LLMMaxInputBytes
 		}

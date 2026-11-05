@@ -43,10 +43,12 @@ type Config struct {
 	LLMMaxInputBytes int
 	LLMProvider      string
 	LLMModel         string
-	LLMTimeout       time.Duration
-	OpenAIAPIKey     string
-	OpenAIBaseURL    string
-	OllamaBaseURL    string
+	// LLMReasoningEffort is OpenAI's reasoning_effort; empty for non-reasoning models.
+	LLMReasoningEffort string
+	LLMTimeout         time.Duration
+	OpenAIAPIKey       string
+	OpenAIBaseURL      string
+	OllamaBaseURL      string
 
 	SimulationEnabled  bool
 	SimulationScenario string
@@ -98,6 +100,7 @@ func Load(getenv func(string) string) (Config, error) {
 		DatabaseURL:                 p.str("DATABASE_URL", ""),
 		LLMProvider:                 strings.ToLower(p.str("LLM_PROVIDER", "rules")),
 		LLMModel:                    p.str("LLM_MODEL", ""),
+		LLMReasoningEffort:          p.str("LLM_REASONING_EFFORT", ""),
 		LLMMaxInputBytes:            p.int("LLM_MAX_INPUT_BYTES", DefaultLLMMaxInputBytes),
 		LLMTimeout:                  p.duration("LLM_TIMEOUT", 60*time.Second),
 		OpenAIAPIKey:                p.str("OPENAI_API_KEY", ""),
@@ -139,6 +142,9 @@ func Load(getenv func(string) string) (Config, error) {
 		p.fail("LLM_PROVIDER", "must be one of rules, openai, ollama")
 	} else if c.LLMModel == "" {
 		c.LLMModel = defaultModels[c.LLMProvider]
+	}
+	if c.LLMReasoningEffort != "" && (c.LLMProvider != "openai" || !reasoningEffort.MatchString(c.LLMReasoningEffort)) {
+		p.fail("LLM_REASONING_EFFORT", "must be a lowercase word such as low, medium or high, with LLM_PROVIDER=openai")
 	}
 	if c.LLMProvider == "openai" && c.OpenAIAPIKey == "" {
 		p.fail("OPENAI_API_KEY", "is required when LLM_PROVIDER=openai")
@@ -234,6 +240,8 @@ func (c Config) CustomKinds() []domain.ResourceType {
 	}
 	return kinds
 }
+
+var reasoningEffort = regexp.MustCompile(`^[a-z]{1,16}$`)
 
 var apiVersion = regexp.MustCompile(`^v[0-9]+((alpha|beta)[0-9]+)?$`)
 
