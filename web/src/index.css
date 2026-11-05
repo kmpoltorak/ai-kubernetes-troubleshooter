@@ -42,7 +42,7 @@ time {
   }
   /* Overrides the popover's default centring: Hint positions it beside its "?". */
   .hint-bubble {
-    @apply fixed inset-auto m-0 rounded-lg border-0 bg-zinc-900 px-3 py-2 text-left text-xs leading-relaxed font-normal
+    @apply fixed inset-auto m-0 w-72 max-w-[calc(100vw-1rem)] rounded-lg border-0 bg-zinc-900 px-3 py-2 text-left text-xs leading-relaxed font-normal
       normal-case tracking-normal text-zinc-50 shadow-lg dark:bg-zinc-100 dark:text-zinc-900;
   }
   .btn-primary {

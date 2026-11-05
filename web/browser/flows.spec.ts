@@ -260,7 +260,16 @@ test("hints explain confusing fields and the name field follows the kind", async
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => document.documentElement.clientWidth <= 390); // the resize has reached the page
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "What is Job name?" }).click();
+  // Measured in the same task as the click: before the asynchronous toggle event,
+  // so a bubble placed only on toggle would be caught showing unplaced.
+  const firstFrame = await page.evaluate(() => {
+    const button = [...document.querySelectorAll<HTMLButtonElement>("button.hint")].find((b) => b.textContent?.includes("Job name"))!;
+    button.click();
+    const box = document.getElementById(button.getAttribute("aria-controls")!)!.getBoundingClientRect();
+    return { left: box.left, right: box.right, width: document.documentElement.clientWidth };
+  });
+  expect(firstFrame.left).toBeGreaterThanOrEqual(0);
+  expect(firstFrame.right).toBeLessThanOrEqual(firstFrame.width);
   const phone = (await page.getByText("The name of the Job in the chosen namespace", { exact: false }).boundingBox())!;
   expect(phone.x).toBeGreaterThanOrEqual(0);
   expect(phone.x + phone.width).toBeLessThanOrEqual(await page.evaluate(() => document.documentElement.clientWidth));

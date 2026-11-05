@@ -14,28 +14,32 @@ export function Hint({ topic, children }: { topic: string; children: ReactNode }
   useEffect(() => {
     const el = bubble.current;
     if (!el) return;
-    // Below the "?" when it fits, otherwise above; always inside the viewport.
-    const place = () => {
+    // Horizontal place and width are set in beforetoggle, which runs before the
+    // bubble shows; toggle runs after it (asynchronously), when its height is
+    // known, and only flips it above the "?" when it does not fit below.
+    const rect = () => button.current!.getBoundingClientRect();
+    const before = (e: Event) => {
+      if ((e as ToggleEvent).newState !== "open") return;
       // clientWidth/Height leave out scrollbars, so the bubble never sits under one.
-      const b = button.current!.getBoundingClientRect(), { clientWidth: vw, clientHeight: vh } = document.documentElement;
+      const b = rect(), vw = document.documentElement.clientWidth;
       const width = Math.min(288, vw - 16);
       el.style.width = `${width}px`;
       el.style.left = `${Math.min(Math.max(8, b.left + b.width / 2 - width / 2), vw - width - 8)}px`;
-      const below = b.bottom + 6, height = el.offsetHeight;
-      el.style.top = `${below + height > vh - 8 && b.top - 6 - height > 8 ? b.top - 6 - height : below}px`;
+      el.style.top = `${b.bottom + 6}px`;
     };
     const hide = () => el.hidePopover();
     const toggle = (e: Event) => {
       const isOpen = (e as ToggleEvent).newState === "open";
       setOpen(isOpen);
-      if (isOpen) {
-        place();
-        window.addEventListener("scroll", hide, { capture: true, once: true });
-        window.addEventListener("resize", hide, { once: true });
-      }
+      if (!isOpen) return;
+      const b = rect(), height = el.offsetHeight;
+      if (b.bottom + 6 + height > document.documentElement.clientHeight - 8 && b.top - 6 - height > 8) el.style.top = `${b.top - 6 - height}px`;
+      window.addEventListener("scroll", hide, { capture: true, once: true });
+      window.addEventListener("resize", hide, { once: true });
     };
+    el.addEventListener("beforetoggle", before);
     el.addEventListener("toggle", toggle);
-    return () => { el.removeEventListener("toggle", toggle); window.removeEventListener("scroll", hide, { capture: true }); window.removeEventListener("resize", hide); };
+    return () => { el.removeEventListener("beforetoggle", before); el.removeEventListener("toggle", toggle); window.removeEventListener("scroll", hide, { capture: true }); window.removeEventListener("resize", hide); };
   }, []);
 
   return (
