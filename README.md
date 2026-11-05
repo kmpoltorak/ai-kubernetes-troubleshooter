@@ -71,6 +71,8 @@ EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@db.example.net:5432/tr
   docker compose up --build -d --no-deps app
 ```
 
+The guides in [docs/](docs/) are also served by the app at `/docs/` (the **Docs**
+link in the UI header), behind the same login as the UI.
 In simulation, the UI's sample buttons fill in an incident and pick a scenario.
 In live mode the form offers the configured clusters and namespaces and suggests
 object names from the cluster. A "?" next to a field or report term explains it.

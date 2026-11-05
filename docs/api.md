@@ -20,6 +20,7 @@ and `/ready` requires login ([authentication](authentication.md)).
 | `GET` | `/api/v1/runtime` | `mode`, `clusters` (`name`, `allowed_namespaces`), `cluster_name` and `allowed_namespaces` (the first cluster), `analyzer` (`provider`, `model`), `scenarios` (simulation only), `resource_types` (the form's Kind list); no URLs or keys; requires login when auth is on |
 | `GET` | `/api/v1/clusters` | `{clusters: [{name, status}]}`, status `ok`, `unreachable` or `simulated`; pings each cluster's API server |
 | `GET` | `/api/v1/targets?cluster=&namespace=&kind=` | `{names}`: objects of a supported kind in an allowed namespace for the form (`cluster` may be omitted when only one is configured) (live: listed from the cluster, at most 500; simulation: empty); `502 list_failed` when listing fails |
+| `GET` | `/docs/`, `/docs/{guide}` | these guides rendered as HTML; links to files outside `docs/` open on GitHub |
 | `GET` | `/health`, `/ready`, `/metrics` | liveness, readiness (database and Kubernetes `/version`; with several clusters, at least one must answer), Prometheus |
 
 ## Errors

@@ -125,6 +125,7 @@ func New(svc *incidents.Service, jobService JobService, checks map[string]func(c
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /ready", h.readiness)
 	mux.Handle("GET /metrics", promhttp.Handler())
+	registerDocs(mux)
 	registerUI(mux)
 	return recoverPanics(log, securityHeaders(withRequestIDs(rateLimit(rps, auth.Enabled, authenticate(auth, log, observe(log, mux))))))
 }
