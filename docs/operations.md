@@ -84,5 +84,10 @@ active jobs or v2 reports exist.
 published release), writes a legacy report, starts two current replicas against
 that database at once and checks that exactly one applies the migrations. It then
 writes a v2 report, runs `pg_dump` and `pg_restore` into a new database on
-PostgreSQL 17 and requires identical API reads before and after. CI runs it in
-the `integration` job. Requires Docker, Go, curl, jq and Git.
+PostgreSQL 17 and requires identical API reads before and after. Last, it builds
+the newest release tag that is not the tested commit (`UPGRADE_RELEASE` overrides
+it), lets that release write a report, starts the current build on its database
+and requires the pending migrations, the same report and a new v2 report. CI runs
+it in the `integration` job, so a release candidate is upgraded from the previous
+release before it is published. Requires Docker, Go, curl, jq, Git and access to
+the repository's tags.

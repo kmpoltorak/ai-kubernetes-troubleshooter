@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Upgrades a schema-1 database written by a baseline commit, starts two current
 # replicas at once against it, backs it up with pg_dump, restores it into a new
-# database and requires identical API reads before and after the restore.
+# database and requires identical API reads before and after the restore. Then
+# upgrades a database written by the newest published release to this commit.
 set -Eeuo pipefail
 umask 077
 
@@ -10,6 +11,11 @@ cd "$repo"
 # Merge of PR #24: the last commit before migration 0002. Not a published release.
 baseline=${UPGRADE_BASELINE:-06db1ed6668f6af45e20c69bbc55be1218935985}
 port=${UPGRADE_PORT_BASE:-18180}
+# The newest release tag not at this commit: a release candidate upgrades from its predecessor.
+# ponytail: assumes lightweight tags (release-please); annotated tags would need the peeled ^{} line.
+release=${UPGRADE_RELEASE:-$(git ls-remote --tags origin 'v*' |
+  awk -v head="$(git rev-parse HEAD)" '$1 != head && $2 !~ /\^\{\}$/ {sub("refs/tags/", "", $2); print $2}' | sort -V | tail -1)}
+[ -n "$release" ] || { echo 'no published release tag found' >&2; exit 1; }
 for tool in docker go curl jq git tar; do command -v "$tool" >/dev/null; done
 
 # shellcheck source=scripts/harness.sh
@@ -52,6 +58,10 @@ if ! git cat-file -e "$baseline^{commit}" 2>/dev/null; then git fetch -q --depth
 mkdir "$work/baseline"
 git archive "$baseline" | tar -x -C "$work/baseline"
 (cd "$work/baseline" && CGO_ENABLED=0 go build -o "$work/api-old" ./cmd/api)
+if ! git cat-file -e "$release^{commit}" 2>/dev/null; then git fetch -q --depth 1 origin "refs/tags/$release:refs/tags/$release"; fi
+mkdir "$work/release"
+git archive "$release" | tar -x -C "$work/release"
+(cd "$work/release" && CGO_ENABLED=0 go build -o "$work/api-release" ./cmd/api)
 CGO_ENABLED=0 go build -o "$work/api-new" ./cmd/api
 
 echo "baseline $baseline writes a legacy report"
@@ -90,4 +100,22 @@ ready $((port + 3))
 snapshot $((port + 3)) "$work/after"
 diff -r "$work/before" "$work/after"
 stop_all
-echo "upgrade, two-replica migration and restore: PASS"
+
+echo "release $release writes a report; this commit upgrades its database"
+docker exec "$db" createdb -U akt release
+start "$work/api-release" $((port + 4)) release
+ready $((port + 4))
+rel_id=$(api -X POST "http://127.0.0.1:$((port + 4))/api/v1/incidents" -d @docs/examples/oom_killed.json | jq -er .id)
+api -X POST "http://127.0.0.1:$((port + 4))/api/v1/incidents/$rel_id/investigate" -d '{"scenario":"oom_killed"}' >/dev/null
+api "http://127.0.0.1:$((port + 4))/api/v1/incidents/$rel_id/report" | jq -S .report > "$work/release-report.json"
+stop_all
+release_migrations=$(find "$work/release/migrations" -name '*.up.sql' | wc -l)
+pending=$(($(wc -l <<< "$versions") - release_migrations))
+start "$work/api-new" $((port + 5)) release
+ready $((port + 5))
+[ "$(applied $((port + 5)))" = "$pending" ]
+api "http://127.0.0.1:$((port + 5))/api/v1/incidents/$rel_id/report" | jq -S .report | diff "$work/release-report.json" -
+api -X POST "http://127.0.0.1:$((port + 5))/api/v1/incidents/$rel_id/investigate" -d '{"scenario":"crash_loop_backoff"}' \
+  | jq -e '.report.analysis.schema_version == 2' >/dev/null
+stop_all
+echo "upgrade, two-replica migration, restore and release $release upgrade: PASS"
