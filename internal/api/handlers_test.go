@@ -326,9 +326,9 @@ func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
 		want string
 	}{
 		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout"},
-			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod"]}`},
+			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
 		{"simulation", map[string]string{},
-			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"analyzer":{"provider":"rules","model":"rules-v2"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod"]}`},
+			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"analyzer":{"provider":"rules","model":"rules-v2"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := config.Load(func(k string) string {

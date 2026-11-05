@@ -12,6 +12,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -440,6 +441,36 @@ func (w *world) controller() []runtime.Object {
 	return []runtime.Object{d}
 }
 
+// targetObject adds the Ingress, claim or autoscaler a target names; each leads to the scenario's workload.
+func (w *world) targetObject() []runtime.Object {
+	meta := metav1.ObjectMeta{Name: w.app, Namespace: w.ns}
+	switch w.kind {
+	case domain.ResourceIngress:
+		return []runtime.Object{&networkingv1.Ingress{ObjectMeta: meta,
+			Spec: networkingv1.IngressSpec{IngressClassName: ptr.To("nginx"), Rules: []networkingv1.IngressRule{{Host: w.app + ".example.com",
+				IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{{
+					Path: "/", PathType: ptr.To(networkingv1.PathTypePrefix),
+					Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: w.app, Port: networkingv1.ServiceBackendPort{Number: 80}}}}}}}}}},
+			Status: networkingv1.IngressStatus{LoadBalancer: networkingv1.IngressLoadBalancerStatus{Ingress: []networkingv1.IngressLoadBalancerIngress{{IP: "192.0.2.10"}}}}}}
+	case domain.ResourcePVC:
+		for _, p := range w.pods {
+			p.Spec.Volumes = append(p.Spec.Volumes, corev1.Volume{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: w.app}}})
+		}
+		return []runtime.Object{&corev1.PersistentVolumeClaim{ObjectMeta: meta,
+			Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: ptr.To("standard"), AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")}}},
+			Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound, Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")}}}}
+	case domain.ResourceHPA:
+		return []runtime.Object{&autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: meta,
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: w.app},
+				MinReplicas: ptr.To[int32](2), MaxReplicas: 6},
+			Status: autoscalingv2.HorizontalPodAutoscalerStatus{CurrentReplicas: 2, DesiredReplicas: 2, Conditions: []autoscalingv2.HorizontalPodAutoscalerCondition{
+				{Type: autoscalingv2.AbleToScale, Status: corev1.ConditionTrue, Reason: "ReadyForNewScale"},
+				{Type: autoscalingv2.ScalingActive, Status: corev1.ConditionTrue, Reason: "ValidMetricFound"}}}}}
+	}
+	return nil
+}
+
 // job runs the scenario's pods as one Job run, still active.
 func (w *world) job(meta metav1.ObjectMeta) *batchv1.Job {
 	d := w.deploy
@@ -456,6 +487,13 @@ func (w *world) cluster() (kube.Cluster, error) {
 		w.service, w.endpointSlice(),
 	}
 	objs = append(objs, w.controller()...)
+	objs = append(objs, w.targetObject()...)
+	for _, name := range []string{"worker-1", "worker-2"} {
+		objs = append(objs, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}, Status: corev1.NodeStatus{
+			Conditions:  []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue, Reason: "KubeletReady"}},
+			Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("16Gi")},
+			NodeInfo:    corev1.NodeSystemInfo{KubeletVersion: "v1.37.0"}}})
+	}
 	if w.configMap != nil {
 		objs = append(objs, w.configMap)
 	}

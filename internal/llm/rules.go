@@ -57,7 +57,8 @@ var rules = []rule{
 	},
 	{
 		when: func(has func(...string) bool) bool {
-			return has(diagnostics.SignalWorkloadNotFound, diagnostics.SignalServiceNotFound)
+			// An autoscaler whose target is missing is explained by its own condition below.
+			return has(diagnostics.SignalWorkloadNotFound, diagnostics.SignalServiceNotFound) && !has(diagnostics.SignalHPAUnableToScale)
 		},
 		build: func(t domain.Target) finding {
 			return finding{
@@ -68,6 +69,34 @@ var rules = []rule{
 				causes:   []string{"resource deleted or renamed", "typo in the resource name", "deployment not applied yet"},
 				actions:  []string{"verify the resource name", "check recent deletions and pipeline runs for the namespace"},
 				commands: []string{fmt.Sprintf("kubectl get %ss -n %s", t.ResourceType, t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalIngressBackendMissing) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Ingress routes to a Service that does not exist", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("%s sends traffic to a backend Service that is missing in %s, so those requests cannot be served.", t.Ref(), t.Namespace),
+				signals:  []string{diagnostics.SignalIngressBackendMissing},
+				causes:   []string{"Service renamed or deleted without updating the Ingress", "Ingress applied before the Service", "typo in the backend name"},
+				actions:  []string{"compare the Ingress backends with the Services in the namespace", "create the Service or point the backend at the right one"},
+				commands: []string{fmt.Sprintf("kubectl describe ingress %s -n %s", nameOf(t, domain.ResourceIngress), t.Namespace), fmt.Sprintf("kubectl get services -n %s", t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalIngressPortMismatch) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Ingress backend port is not exposed by the Service", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("%s names a Service port that the Service does not expose, so the controller has nowhere to send the traffic.", t.Ref()),
+				signals:  []string{diagnostics.SignalIngressPortMismatch},
+				causes:   []string{"Service port renamed or renumbered", "the Ingress uses the container port instead of the Service port"},
+				actions:  []string{"match the backend port number or name to a port the Service exposes"},
+				commands: []string{fmt.Sprintf("kubectl describe ingress %s -n %s", nameOf(t, domain.ResourceIngress), t.Namespace), fmt.Sprintf("kubectl get services -n %s -o wide", t.Namespace)},
 			}
 		},
 	},
@@ -125,6 +154,62 @@ var rules = []rule{
 		},
 	},
 	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalPVCMissing) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "PersistentVolumeClaim not found", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("A PersistentVolumeClaim used by %s does not exist, so its pods cannot mount the volume.", t.Ref()),
+				signals:  []string{diagnostics.SignalPVCMissing, diagnostics.SignalFailedMount, diagnostics.SignalFailedScheduling},
+				causes:   []string{"claim deleted or never created", "claim name in the pod template does not match", "StatefulSet volumeClaimTemplates renamed"},
+				actions:  []string{"create the claim or fix the claim name in the pod template", "check whether the data still exists on a released PersistentVolume before recreating"},
+				commands: []string{fmt.Sprintf("kubectl get pvc -n %s", t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalPVCLost) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "PersistentVolumeClaim lost its volume", severity: domain.SeverityCritical,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("A claim used by %s is Lost: the PersistentVolume it was bound to no longer exists.", t.Ref()),
+				signals:  []string{diagnostics.SignalPVCLost},
+				causes:   []string{"the PersistentVolume was deleted", "the storage backend removed the disk"},
+				actions:  []string{"find out what deleted the volume before changing anything", "restore the data from backup into a new claim"},
+				commands: []string{fmt.Sprintf("kubectl describe pvc <persistentvolumeclaim> -n %s", t.Namespace), "kubectl get pv"},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalPVCPending) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "PersistentVolumeClaim is not bound (Pending)", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("Pods of %s wait for a claim that has no volume yet, so they cannot be scheduled or started.", t.Ref()),
+				signals:  []string{diagnostics.SignalPVCPending, diagnostics.SignalFailedScheduling, diagnostics.SignalUnschedulable},
+				causes:   []string{"the StorageClass does not exist or has no working provisioner", "no PersistentVolume matches the size, access mode or selector", "the volume's zone does not match the nodes"},
+				actions:  []string{"read the claim's events for the provisioner's message", "verify the StorageClass name and that its provisioner is running"},
+				commands: []string{fmt.Sprintf("kubectl describe pvc <persistentvolumeclaim> -n %s", t.Namespace), "kubectl get storageclass"},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalNodeNotReady) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Node running the pods is NotReady", severity: domain.SeverityHigh,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("A node hosting pods of %s is not Ready, so its pods cannot run or report their state.", t.Ref()),
+				signals:  []string{diagnostics.SignalNodeNotReady},
+				causes:   []string{"kubelet stopped or lost contact with the API server", "the node ran out of resources or crashed", "network partition between the node and the control plane"},
+				actions:  []string{"check the node's conditions and kubelet logs", "let the pods reschedule elsewhere if the node does not recover"},
+				commands: []string{"kubectl describe node <node>", "kubectl get nodes"},
+			}
+		},
+	},
+	{
 		when: func(has func(...string) bool) bool {
 			return has(diagnostics.SignalUnschedulable, diagnostics.SignalFailedScheduling)
 		},
@@ -161,6 +246,20 @@ var rules = []rule{
 					fmt.Sprintf("kubectl top pod -n %s", t.Namespace),
 					fmt.Sprintf("kubectl describe pod <pod> -n %s", t.Namespace),
 				},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalNodePressure) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Node under resource pressure", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "limited",
+				summary:  fmt.Sprintf("A node hosting pods of %s reports memory, disk or PID pressure; the kubelet may evict pods there.", t.Ref()),
+				signals:  []string{diagnostics.SignalNodePressure, diagnostics.SignalEvicted},
+				causes:   []string{"other workloads use most of the node's memory or disk", "images and logs fill the node's disk", "requests understate real usage"},
+				actions:  []string{"check which pods use the node's resources", "free disk space or move workloads to other nodes"},
+				commands: []string{"kubectl describe node <node>", "kubectl top nodes"},
 			}
 		},
 	},
@@ -252,7 +351,7 @@ var rules = []rule{
 				signals:  []string{diagnostics.SignalJobDeadlineExceeded, diagnostics.SignalJobFailed},
 				causes:   []string{"the work takes longer than the deadline allows", "pods waited too long to be scheduled or to start", "a dependency made the Job hang"},
 				actions:  []string{"compare the Job's run time with activeDeadlineSeconds", "check the pod logs for where the run spent its time"},
-				commands: []string{fmt.Sprintf("kubectl describe job %s -n %s", jobName(t), t.Namespace)},
+				commands: []string{fmt.Sprintf("kubectl describe job %s -n %s", nameOf(t, domain.ResourceJob), t.Namespace)},
 			}
 		},
 	},
@@ -269,7 +368,7 @@ var rules = []rule{
 					"read the logs of the failed pods for the error",
 					"fix the cause, then create a new Job run; a failed Job is not retried",
 				},
-				commands: []string{fmt.Sprintf("kubectl describe job %s -n %s", jobName(t), t.Namespace), fmt.Sprintf("kubectl logs <pod> -n %s", t.Namespace)},
+				commands: []string{fmt.Sprintf("kubectl describe job %s -n %s", nameOf(t, domain.ResourceJob), t.Namespace), fmt.Sprintf("kubectl logs <pod> -n %s", t.Namespace)},
 			}
 		},
 	},
@@ -333,6 +432,62 @@ var rules = []rule{
 					"verify probe path, port and timing against the application",
 				},
 				commands: []string{fmt.Sprintf("kubectl describe pod <pod> -n %s", t.Namespace), fmt.Sprintf("kubectl logs <pod> -n %s", t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalHPAMetricsUnavailable) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Autoscaler cannot read its metrics", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("The HorizontalPodAutoscaler for %s cannot compute a replica count, so it does not scale.", t.Ref()),
+				signals:  []string{diagnostics.SignalHPAMetricsUnavailable},
+				causes:   []string{"metrics-server is not installed or not ready", "containers have no resource requests for the scaled metric", "the custom metrics adapter is missing"},
+				actions:  []string{"check that the metrics API answers", "set resource requests on every container if scaling on CPU or memory"},
+				commands: []string{fmt.Sprintf("kubectl describe hpa %s -n %s", nameOf(t, domain.ResourceHPA), t.Namespace), "kubectl get apiservices"},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalHPAUnableToScale) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Autoscaler cannot scale its target", severity: domain.SeverityMedium,
+				verdict: "observed_fault", support: "strong",
+				summary:  fmt.Sprintf("The HorizontalPodAutoscaler for %s cannot change the replica count of its target.", t.Ref()),
+				signals:  []string{diagnostics.SignalHPAUnableToScale},
+				causes:   []string{"the scale target does not exist or was renamed", "the autoscaler lacks permission to update the scale subresource"},
+				actions:  []string{"verify scaleTargetRef names an existing workload", "read the AbleToScale condition message"},
+				commands: []string{fmt.Sprintf("kubectl describe hpa %s -n %s", nameOf(t, domain.ResourceHPA), t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalHPAAtMaxReplicas) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Autoscaler is held at its maximum replicas", severity: domain.SeverityMedium,
+				verdict: "suspected_fault", support: "limited",
+				summary:  fmt.Sprintf("The HorizontalPodAutoscaler for %s wants more replicas than maxReplicas allows; demand may exceed capacity.", t.Ref()),
+				signals:  []string{diagnostics.SignalHPAAtMaxReplicas},
+				causes:   []string{"load above what maxReplicas was sized for", "each replica handles less than expected", "the scaled metric does not track the real load"},
+				actions:  []string{"compare current load with the capacity at maxReplicas", "raise maxReplicas only if the cluster has room"},
+				commands: []string{fmt.Sprintf("kubectl describe hpa %s -n %s", nameOf(t, domain.ResourceHPA), t.Namespace), fmt.Sprintf("kubectl top pod -n %s", t.Namespace)},
+			}
+		},
+	},
+	{
+		when: func(has func(...string) bool) bool { return has(diagnostics.SignalIngressNoAddress) },
+		build: func(t domain.Target) finding {
+			return finding{
+				rootCause: "Ingress has no address: no controller admitted it", severity: domain.SeverityMedium,
+				verdict: "suspected_fault", support: "limited",
+				summary:  fmt.Sprintf("%s has no published address. Either no ingress controller handles its class, or the controller does not publish status.", t.Ref()),
+				signals:  []string{diagnostics.SignalIngressNoAddress},
+				causes:   []string{"ingressClassName names a class no controller serves", "no ingress controller is installed", "the controller is down"},
+				actions:  []string{"check that an ingress controller for this class is running", "compare ingressClassName with the classes in the cluster"},
+				commands: []string{"kubectl get ingressclass", fmt.Sprintf("kubectl describe ingress %s -n %s", nameOf(t, domain.ResourceIngress), t.Namespace)},
 			}
 		},
 	},
@@ -417,12 +572,12 @@ func rolloutHistory(t domain.Target) []string {
 	return nil
 }
 
-// jobName is the Job to describe: the target itself, or "<job>" for a CronJob's run, filled in by refine.
-func jobName(t domain.Target) string {
-	if t.ResourceType == domain.ResourceJob {
+// nameOf names the target when it is of kind, else a "<kind>" placeholder that refine fills from the evidence.
+func nameOf(t domain.Target, kind domain.ResourceType) string {
+	if t.ResourceType == kind {
 		return t.ResourceName
 	}
-	return "<job>"
+	return "<" + string(kind) + ">"
 }
 
 var probePathHint = regexp.MustCompile(`(?i)\b404\b|no such file|not found`)
@@ -461,31 +616,32 @@ func refine(a *domain.Analysis, t domain.Target, in AnalysisInput, has func(...s
 	if has(diagnostics.SignalImageNotFound) && strings.HasPrefix(a.RootCause, "Container image cannot be pulled") {
 		a.Summary += " The registry reports that the image reference was not found."
 	}
-	pod, job := "", ""
-	for _, e := range in.Evidence {
-		kind, name, _ := strings.Cut(e.Subject, "/")
-		if kind == "pod" && pod == "" {
-			pod = name
-		}
-		if kind == "job" && job == "" {
-			job = name
+	// Known names fill placeholders; evidence carrying a finding is preferred.
+	names := map[string]string{}
+	for _, flagged := range []bool{true, false} {
+		for _, e := range in.Evidence {
+			kind, name, _ := strings.Cut(e.Subject, "/")
+			if _, ok := names[kind]; !ok && (!flagged || len(e.Signals) > 0) {
+				names[kind] = name
+			}
 		}
 	}
 	for _, te := range in.Failed {
 		var input struct{ Name string }
-		if pod == "" && te.ToolName == diagnostics.GetPodLogs && json.Unmarshal(te.Input, &input) == nil {
-			pod = input.Name
+		if names["pod"] == "" && te.ToolName == diagnostics.GetPodLogs && json.Unmarshal(te.Input, &input) == nil {
+			names["pod"] = input.Name
 		}
 	}
+	// get_service's subject names the workload it searched from, not necessarily a Service.
+	delete(names, "service")
+	if t.ResourceType == domain.ResourceService {
+		names["service"] = t.ResourceName
+	}
 	for i, c := range a.SafeCommands {
-		if pod != "" {
-			c = strings.ReplaceAll(c, "<pod>", pod)
-		}
-		if t.ResourceType == domain.ResourceService {
-			c = strings.ReplaceAll(c, "<service>", t.ResourceName)
-		}
-		if job != "" {
-			c = strings.ReplaceAll(c, "<job>", job)
+		for kind, name := range names {
+			if name != "" {
+				c = strings.ReplaceAll(c, "<"+kind+">", name)
+			}
 		}
 		a.SafeCommands[i] = c
 	}

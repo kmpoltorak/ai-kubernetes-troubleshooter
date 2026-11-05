@@ -2,7 +2,7 @@
 
 export type Health = "healthy" | "degraded" | "down";
 export type Severity = "low" | "medium" | "high" | "critical";
-export type ResourceType = "deployment" | "statefulset" | "daemonset" | "job" | "cronjob" | "service" | "pod";
+export type ResourceType = "deployment" | "statefulset" | "daemonset" | "job" | "cronjob" | "service" | "pod" | "ingress" | "persistentvolumeclaim" | "horizontalpodautoscaler";
 
 export interface BuildInfo {
   version: string;

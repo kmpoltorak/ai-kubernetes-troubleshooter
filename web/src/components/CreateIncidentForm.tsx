@@ -39,6 +39,7 @@ const PRESETS: Record<string, { label: string; incident: CreateIncident }> = {
 
 const kindLabel: Record<string, string> = {
   deployment: "Deployment", statefulset: "StatefulSet", daemonset: "DaemonSet", job: "Job", cronjob: "CronJob", service: "Service", pod: "Pod",
+  ingress: "Ingress", persistentvolumeclaim: "PersistentVolumeClaim", horizontalpodautoscaler: "HorizontalPodAutoscaler",
 };
 
 // Samples exist only in simulation; live mode never offers them.

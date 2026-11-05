@@ -214,6 +214,20 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 	var pods diagnostics.PodsInfo
 
 	subjects := []string{t.ResourceName}
+	// An autoscaler is diagnosed with the workload it scales.
+	if t.ResourceType == domain.ResourceHPA {
+		res, ok := r.run(ctx, diagnostics.GetHPA, diagnostics.Input{Name: t.ResourceName})
+		if !ok {
+			return r.unobserved(t)
+		}
+		h, found := res.Data.(diagnostics.HPAInfo)
+		kind, followed := scaleTargets[h.TargetKind]
+		if !found || !followed {
+			return nil // ponytail: other scale targets (ReplicaSet, custom) are not followed
+		}
+		subjects = append(subjects, h.TargetName)
+		t.ResourceType, t.ResourceName = kind, h.TargetName
+	}
 	switch t.ResourceType {
 	case domain.ResourceDeployment, domain.ResourceStatefulSet, domain.ResourceDaemonSet, domain.ResourceJob:
 		res, ok := r.run(ctx, controllerTools[t.ResourceType], diagnostics.Input{Name: t.ResourceName})
@@ -251,9 +265,30 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 		if slices.Contains(res.Signals, diagnostics.SignalServiceNotFound) {
 			return nil
 		}
-		if svcs := res.Data.(diagnostics.ServicesInfo).Services; len(svcs) > 0 && len(svcs[0].Selector) > 0 {
-			podLabels = svcs[0].Selector
-			selector = labels.SelectorFromSet(podLabels).String()
+		podLabels, selector = serviceSelector(res)
+	case domain.ResourceIngress:
+		res, ok := r.run(ctx, diagnostics.GetIngress, diagnostics.Input{Name: t.ResourceName})
+		if !ok {
+			return r.unobserved(t)
+		}
+		ing, found := res.Data.(diagnostics.IngressInfo)
+		// The first existing backend Service leads to the pods that serve the traffic.
+		if svc := ing.FirstRoutableBackend(); found && svc != "" {
+			subjects = append(subjects, svc)
+			if res, ok := r.run(ctx, diagnostics.GetService, diagnostics.Input{Name: svc}); ok {
+				podLabels, selector = serviceSelector(res)
+			}
+		}
+	case domain.ResourcePVC:
+		res, ok := r.run(ctx, diagnostics.GetPVC, diagnostics.Input{Name: t.ResourceName})
+		if !ok {
+			return r.unobserved(t)
+		}
+		// The first pod using the claim shows how the missing volume affects it.
+		if pvc := res.Data.(diagnostics.PVCInfo); len(pvc.UsedBy) > 0 {
+			if res, ok := r.run(ctx, diagnostics.GetPods, diagnostics.Input{Name: pvc.UsedBy[0]}); ok {
+				pods = res.Data.(diagnostics.PodsInfo)
+			}
 		}
 	case domain.ResourcePod:
 		res, ok := r.run(ctx, diagnostics.GetPods, diagnostics.Input{Name: t.ResourceName})
@@ -294,7 +329,7 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 		r.run(ctx, diagnostics.GetPodLogs, diagnostics.Input{Name: p.Name, Names: logContainers(p)})
 	}
 
-	if t.ResourceType != domain.ResourceService && len(podLabels) > 0 {
+	if t.ResourceType != domain.ResourceService && t.ResourceType != domain.ResourceIngress && len(podLabels) > 0 {
 		r.run(ctx, diagnostics.GetService, diagnostics.Input{Name: t.ResourceName, Labels: podLabels})
 	}
 	if spec != nil {
@@ -305,13 +340,55 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 			r.run(ctx, diagnostics.GetSecretMetadata, diagnostics.Input{Name: s})
 		}
 	}
+	for _, claim := range claims(t, spec, pods.Spec) {
+		r.run(ctx, diagnostics.GetPVC, diagnostics.Input{Name: claim})
+	}
 	if len(podLabels) > 0 {
 		r.run(ctx, diagnostics.GetNetworkPolicies, diagnostics.Input{Labels: podLabels})
+	}
+	if nodes := podNodes(pods.Pods); len(nodes) > 0 {
+		r.run(ctx, diagnostics.GetNodes, diagnostics.Input{Names: nodes})
 	}
 	if len(livePods) > 0 {
 		r.run(ctx, diagnostics.GetResourceUsage, diagnostics.Input{Names: livePods})
 	}
 	return nil
+}
+
+// scaleTargets are the HorizontalPodAutoscaler targets the plan follows.
+var scaleTargets = map[string]domain.ResourceType{"Deployment": domain.ResourceDeployment, "StatefulSet": domain.ResourceStatefulSet}
+
+// serviceSelector returns the first Service's selector, which leads to its pods.
+func serviceSelector(res diagnostics.Result) (map[string]string, string) {
+	if svcs := res.Data.(diagnostics.ServicesInfo).Services; len(svcs) > 0 && len(svcs[0].Selector) > 0 {
+		return svcs[0].Selector, labels.SelectorFromSet(svcs[0].Selector).String()
+	}
+	return nil, ""
+}
+
+// claims lists the PersistentVolumeClaims the template and the first pod mount
+// (a StatefulSet's claims appear only on its pods), without the target claim itself.
+func claims(t domain.Target, spec, pod *diagnostics.PodSpecSummary) []string {
+	var out []string
+	for _, s := range []*diagnostics.PodSpecSummary{spec, pod} {
+		for _, c := range s.GetPVCs() {
+			if !slices.Contains(out, c) && (t.ResourceType != domain.ResourcePVC || c != t.ResourceName) {
+				out = append(out, c)
+			}
+		}
+	}
+	return out[:min(len(out), maxConfigRefs)]
+}
+
+// podNodes lists the distinct nodes running the observed pods.
+func podNodes(pods []diagnostics.PodInfo) []string {
+	var nodes []string
+	for _, p := range pods {
+		if p.Node != "" && !slices.Contains(nodes, p.Node) {
+			nodes = append(nodes, p.Node)
+		}
+	}
+	return nodes
 }
 
 // controllerTools read the pod controllers whose template and selector lead to their pods.

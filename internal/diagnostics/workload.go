@@ -73,12 +73,25 @@ type PodSpecSummary struct {
 	// (optional references excluded).
 	ConfigMaps []string `json:"configmaps,omitempty"`
 	Secrets    []string `json:"secrets,omitempty"`
+	// PVCs are the PersistentVolumeClaims mounted as volumes.
+	PVCs []string `json:"pvcs,omitempty"`
+}
+
+// GetPVCs is nil-safe: a target without a template has no spec.
+func (s *PodSpecSummary) GetPVCs() []string {
+	if s == nil {
+		return nil
+	}
+	return s.PVCs
 }
 
 func summarizeSpec(spec corev1.PodSpec) PodSpecSummary {
 	var s PodSpecSummary
-	cms, secrets := signalSet{}, signalSet{}
+	cms, secrets, pvcs := signalSet{}, signalSet{}, signalSet{}
 	for _, v := range spec.Volumes {
+		if v.PersistentVolumeClaim != nil {
+			pvcs.add(v.PersistentVolumeClaim.ClaimName)
+		}
 		if cm := v.ConfigMap; cm != nil && !isTrue(cm.Optional) {
 			cms.add(cm.Name)
 		}
@@ -144,7 +157,7 @@ func summarizeSpec(spec corev1.PodSpec) PodSpecSummary {
 			s.Containers = append(s.Containers, cs)
 		}
 	}
-	s.ConfigMaps, s.Secrets = cms, secrets
+	s.ConfigMaps, s.Secrets, s.PVCs = cms, secrets, pvcs
 	return s
 }
 

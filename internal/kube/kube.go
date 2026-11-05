@@ -203,6 +203,12 @@ func (c Cluster) ListNames(ctx context.Context, namespace string, kind domain.Re
 		list, err = c.Client.CoreV1().Services(namespace).List(ctx, opts)
 	case domain.ResourcePod:
 		list, err = c.Client.CoreV1().Pods(namespace).List(ctx, opts)
+	case domain.ResourceIngress:
+		list, err = c.Client.NetworkingV1().Ingresses(namespace).List(ctx, opts)
+	case domain.ResourcePVC:
+		list, err = c.Client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, opts)
+	case domain.ResourceHPA:
+		list, err = c.Client.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, opts)
 	default:
 		return nil, fmt.Errorf("unsupported kind %q", kind)
 	}
