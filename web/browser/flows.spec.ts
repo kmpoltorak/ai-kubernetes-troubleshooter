@@ -66,7 +66,7 @@ test("live mode with two clusters shows their state and each cluster's namespace
   // The kinds come from the server; a StatefulSet incident passes the API and the database.
   await expect(page.getByLabel("Kind").locator("option")).toHaveText(["Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Service", "Pod", "Ingress", "PersistentVolumeClaim", "HorizontalPodAutoscaler"]);
   await page.getByLabel("Kind").selectOption("statefulset");
-  await page.getByLabel("StatefulSet name").fill("checkout-db");
+  await page.getByLabel("Name", { exact: true }).fill("checkout-db");
   await page.getByRole("button", { name: "Create incident" }).click();
   await expect(page.getByRole("button", { name: "Run investigation" })).toBeEnabled();
   await expect(page.getByText("statefulset/checkout-db").first()).toBeVisible();
