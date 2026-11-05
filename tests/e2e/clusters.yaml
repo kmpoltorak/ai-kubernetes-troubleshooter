@@ -1,0 +1,7 @@
+# The kind cluster under two names, both through the in-cluster ServiceAccount:
+# routing and per-cluster namespaces without a second cluster.
+clusters:
+  - name: local
+    allowed_namespaces: [payments]
+  - name: mirror
+    allowed_namespaces: [outside]

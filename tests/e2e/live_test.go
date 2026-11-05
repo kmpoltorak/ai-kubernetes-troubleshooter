@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -56,7 +57,7 @@ func TestLiveCluster(t *testing.T) {
 		t.Fatal("explicit local fixture image required")
 	}
 	config, err := client.CoreV1().ConfigMaps("troubleshooter").Get(ctx, "troubleshooter-config", metav1.GetOptions{})
-	if err != nil || config.Data["SIMULATION_ENABLED"] != "false" || config.Data["AUTH_ENABLED"] != "false" || config.Data["LLM_PROVIDER"] != "rules" || config.Data["KUBERNETES_ALLOWED_NAMESPACES"] != "payments" || config.Data["KUBERNETES_CUSTOM_RESOURCES"] != "example.com/v1/widgets" {
+	if err != nil || config.Data["SIMULATION_ENABLED"] != "false" || config.Data["AUTH_ENABLED"] != "false" || config.Data["LLM_PROVIDER"] != "rules" || config.Data["KUBERNETES_CLUSTERS_FILE"] != "/etc/troubleshooter/clusters.yaml" || config.Data["KUBERNETES_CUSTOM_RESOURCES"] != "example.com/v1/widgets" {
 		t.Fatal("unexpected application configuration")
 	}
 	deployment, err := client.AppsV1().Deployments("troubleshooter").Get(ctx, "troubleshooter", metav1.GetOptions{})
@@ -150,7 +151,7 @@ func TestLiveCluster(t *testing.T) {
 		var listed struct {
 			Names []string `json:"names"`
 		}
-		if code := s.call(t, ctx, "GET", "/api/v1/targets?namespace=payments&kind=statefulset", nil, &listed); code != 200 || !slices.Contains(listed.Names, "ledger-db") {
+		if code := s.call(t, ctx, "GET", "/api/v1/targets?cluster=local&namespace=payments&kind=statefulset", nil, &listed); code != 200 || !slices.Contains(listed.Names, "ledger-db") {
 			t.Fatalf("statefulset names not listed: %d %v", code, listed.Names)
 		}
 	})
@@ -255,7 +256,7 @@ func TestLiveCluster(t *testing.T) {
 		var listed struct {
 			Names []string `json:"names"`
 		}
-		if code := s.call(t, ctx, "GET", "/api/v1/targets?namespace=payments&kind=widgets.example.com", nil, &listed); code != 200 || !slices.Contains(listed.Names, "storefront") {
+		if code := s.call(t, ctx, "GET", "/api/v1/targets?cluster=local&namespace=payments&kind=widgets.example.com", nil, &listed); code != 200 || !slices.Contains(listed.Names, "storefront") {
 			t.Fatalf("custom names not listed: %d %v", code, listed.Names)
 		}
 	})
@@ -342,6 +343,24 @@ func TestLiveCluster(t *testing.T) {
 			t.Fatal("optional diagnostic made application unready")
 		}
 	})
+	t.Run("two_cluster_names", func(t *testing.T) {
+		var status struct {
+			Clusters []struct{ Name, Status string } `json:"clusters"`
+		}
+		if code := s.call(t, ctx, "GET", "/api/v1/clusters", nil, &status); code != 200 || fmt.Sprint(status.Clusters) != "[{local ok} {mirror ok}]" {
+			t.Fatalf("cluster status: %d %v", code, status.Clusters)
+		}
+		// Each name has its own namespaces: payments is allowed in local only.
+		body := map[string]string{"cluster": "mirror", "namespace": "payments", "resource_type": "deployment", "resource_name": "healthy", "description": "wrong cluster"}
+		if s.call(t, ctx, "POST", "/api/v1/incidents", body, nil) != 400 || s.call(t, ctx, "GET", "/api/v1/targets?cluster=mirror&namespace=payments&kind=deployment", nil, nil) != 400 {
+			t.Fatal("namespace of another cluster admitted")
+		}
+		// mirror/outside passes the policy and reaches the cluster; RBAC still denies the reads.
+		rec := s.investigateIn(t, "mirror", "outside", domain.ResourcePod, "target")
+		if rec.Investigation.Status != domain.InvestigationFailed || rec.Report != nil {
+			t.Fatal("pod without a RoleBinding diagnosed")
+		}
+	})
 	t.Run("optional_secret_metadata", func(t *testing.T) { s.checkSecretMetadata(t) })
 	t.Run("network_policy_enforcement", func(t *testing.T) { s.checkNetworkPolicy(t) })
 }
@@ -423,10 +442,10 @@ func (s *suite) checkRBAC(t *testing.T) {
 	var listed struct {
 		Names []string `json:"names"`
 	}
-	if code := s.call(t, s.ctx, "GET", "/api/v1/targets?namespace=payments&kind=deployment", nil, &listed); code != 200 || !slices.Contains(listed.Names, "healthy") {
+	if code := s.call(t, s.ctx, "GET", "/api/v1/targets?cluster=local&namespace=payments&kind=deployment", nil, &listed); code != 200 || !slices.Contains(listed.Names, "healthy") {
 		t.Fatalf("deployment names not listed: %d %v", code, listed.Names)
 	}
-	if s.call(t, s.ctx, "GET", "/api/v1/targets?namespace=outside&kind=pod", nil, nil) != 400 {
+	if s.call(t, s.ctx, "GET", "/api/v1/targets?cluster=local&namespace=outside&kind=pod", nil, nil) != 400 {
 		t.Fatal("API listed names outside policy")
 	}
 	for _, probe := range []struct{ verb, group, resource, sub string }{{"create", "", "pods", ""}, {"update", "apps", "deployments", ""}, {"patch", "apps", "deployments", ""}, {"delete", "", "pods", ""}, {"create", "", "pods", "exec"}, {"create", "", "pods", "attach"}, {"create", "", "pods", "portforward"}, {"get", "", "secrets", ""}, {"list", "", "secrets", ""}} {

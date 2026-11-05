@@ -22,7 +22,6 @@ import (
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/api"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
-	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/jobs"
@@ -76,7 +75,7 @@ func run(args []string) error {
 		checks["authentication"] = func(ctx context.Context) error { return api.AuthenticationReady(ctx, cfg.Auth) }
 	}
 	var clusters investigation.Clusters
-	var targets api.TargetLister
+	var live api.Clusters
 	if cfg.SimulationEnabled {
 		sim, err := simulation.NewClusters(cfg.SimulationScenario)
 		if err != nil {
@@ -85,16 +84,20 @@ func run(args []string) error {
 		sim.CustomResources = kube.CustomResourceMap(cfg.CustomResources)
 		clusters = sim
 	} else {
-		cluster, err := kube.Connect(cfg.Kubeconfig, cfg.KubernetesContext, cfg.CustomResources)
-		if err != nil {
-			return err
+		connected := kube.Live{}
+		for _, c := range cfg.Clusters {
+			cluster, err := kube.Connect(c.Kubeconfig, c.Context, cfg.CustomResources)
+			if err != nil {
+				return fmt.Errorf("cluster %s: %w", c.Name, err)
+			}
+			connected[c.Name] = cluster
 		}
-		clusters = kube.Live{Cluster: cluster}
-		targets = cluster.ListNames
-		checks["kubernetes"] = cluster.Ping
+		clusters, live = connected, connected
+		checks["kubernetes"] = connected.Ready
 	}
 
-	policy := domain.TargetPolicy{ClusterName: cfg.ClusterName, AllowedNamespaces: cfg.AllowedNamespaces, CustomResources: cfg.CustomKinds()}
+	runtime := api.RuntimeFrom(cfg)
+	policy := runtime.Policy()
 	engine := investigation.NewEngine(store, clusters, llm.FromConfig(cfg), log, investigation.Config{
 		Timeout:       cfg.InvestigationTimeout,
 		MaxConcurrent: cfg.MaxConcurrentInvestigations,
@@ -116,7 +119,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),
-		Handler:           api.New(incidents.NewService(store, policy), scheduler, checks, log, cfg.RateLimitRPS, cfg.Auth, api.RuntimeFrom(cfg), targets),
+		Handler:           api.New(incidents.NewService(store, policy), scheduler, checks, log, cfg.RateLimitRPS, cfg.Auth, runtime, live),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		// The compatibility endpoint waits through queueing and execution.

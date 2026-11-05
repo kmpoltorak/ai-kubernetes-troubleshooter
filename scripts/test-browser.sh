@@ -48,9 +48,13 @@ pids="$pids $!"
 # A low limit makes the UI's normal request bursts hit 429 rate_limited on every run.
 start "$port" akt LLM_PROVIDER=rules RATE_LIMIT_RPS=2
 start $((port + 1)) failing LLM_PROVIDER=openai OPENAI_API_KEY=browser-test OPENAI_BASE_URL="http://127.0.0.1:$((port + 2))/v1"
-# Live mode: readiness fails on the unreachable cluster, so wait for /health.
-start $((port + 3)) live SIMULATION_ENABLED=false KUBECONFIG="$work/kubeconfig" \
-  KUBERNETES_CLUSTER_NAME=browser-live KUBERNETES_ALLOWED_NAMESPACES=payments,checkout
+# Live mode with two clusters, both unreachable: readiness fails, so wait for /health.
+cat > "$work/clusters.yaml" <<EOF
+clusters:
+  - {name: browser-live, kubeconfig: "$work/kubeconfig", allowed_namespaces: [payments, checkout]}
+  - {name: browser-edge, kubeconfig: "$work/kubeconfig", allowed_namespaces: [orders]}
+EOF
+start $((port + 3)) live SIMULATION_ENABLED=false KUBERNETES_CLUSTERS_FILE="$work/clusters.yaml"
 ready "$port"
 ready $((port + 1))
 ready $((port + 3)) /health

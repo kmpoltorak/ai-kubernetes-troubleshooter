@@ -47,7 +47,7 @@ func (f *fakeRepo) GetInvestigation(context.Context, string, string) (domain.Inv
 
 func newService() (*Service, *fakeRepo) {
 	repo := &fakeRepo{incidents: map[string]domain.Incident{}}
-	return NewService(repo, domain.TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"payments", "orders"}}), repo
+	return NewService(repo, domain.TargetPolicy{Clusters: map[string][]string{"local": {"payments", "orders"}}}), repo
 }
 
 func valid() CreateInput {

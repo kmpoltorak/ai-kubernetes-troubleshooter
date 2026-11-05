@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -185,15 +186,78 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// Live serves the real cluster to every investigation. Simulation scenarios
-// cannot be requested against it.
-type Live struct{ Cluster Cluster }
+// Live serves the configured clusters by name. Simulation scenarios cannot be
+// requested against them.
+type Live map[string]Cluster
 
-func (l Live) For(_ domain.Target, scenario string) (Cluster, string, error) {
+func (l Live) For(t domain.Target, scenario string) (Cluster, string, error) {
 	if scenario != "" {
 		return Cluster{}, "", fmt.Errorf("scenario %q requires simulation mode", scenario)
 	}
-	return l.Cluster, "", nil
+	c, err := l.get(t.Cluster)
+	return c, "", err
+}
+
+func (l Live) get(name string) (Cluster, error) {
+	c, ok := l[name]
+	if !ok {
+		return Cluster{}, fmt.Errorf("cluster %q is not configured", name)
+	}
+	return c, nil
+}
+
+// ListNames lists names in one configured cluster; see Cluster.ListNames.
+func (l Live) ListNames(ctx context.Context, cluster, namespace string, kind domain.ResourceType) ([]string, error) {
+	c, err := l.get(cluster)
+	if err != nil {
+		return nil, err
+	}
+	return c.ListNames(ctx, namespace, kind)
+}
+
+// Ping checks every cluster in parallel; the result has one entry per
+// cluster, nil when its API server answered.
+func (l Live) Ping(ctx context.Context) map[string]error {
+	out := make(map[string]error, len(l))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for name, c := range l {
+		wg.Go(func() {
+			err := c.Ping(ctx)
+			mu.Lock()
+			out[name] = err
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	return out
+}
+
+// Ready fails only when no cluster answers: one unreachable cluster must not
+// take the whole installation out of service. It returns at the first answer,
+// so a cluster that hangs does not use up the readiness timeout of the others.
+func (l Live) Ready(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // stops the pings still waiting
+	results := make(chan error, len(l))
+	for name, c := range l {
+		go func() {
+			if err := c.Ping(ctx); err != nil {
+				results <- fmt.Errorf("cluster %s: %w", name, err)
+				return
+			}
+			results <- nil
+		}()
+	}
+	var errs []error
+	for range l {
+		err := <-results
+		if err == nil {
+			return nil
+		}
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // maxListedNames bounds the names offered for one namespace and kind.

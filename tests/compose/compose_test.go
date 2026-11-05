@@ -56,7 +56,7 @@ func renderEnv(t *testing.T, env map[string]string, files ...string) (rendered, 
 	cmd := exec.CommandContext(ctx, "docker", append(args, "config", "--format", "json")...)
 	cmd.Dir = "../.."
 	for _, kv := range os.Environ() {
-		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "EXTERNAL_DATABASE_URL" && name != "EXTERNAL_DATABASE_NETWORK" && name != "POSTGRES_PORT" && name != "KUBERNETES_CUSTOM_RESOURCES" {
+		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "KUBE_DIR" && name != "EXTERNAL_DATABASE_URL" && name != "EXTERNAL_DATABASE_NETWORK" && name != "POSTGRES_PORT" && name != "KUBERNETES_CUSTOM_RESOURCES" {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
@@ -94,6 +94,26 @@ func TestLiveOverrideMountsKubeconfigReadOnly(t *testing.T) {
 func TestLiveOverrideRequiresKubeconfigFile(t *testing.T) {
 	if _, stderr, err := render(t, "", "docker-compose.yml", "docker-compose.live.yml"); err == nil || !strings.Contains(stderr, "set KUBECONFIG_FILE") {
 		t.Fatalf("missing KUBECONFIG_FILE must fail clearly: %v %s", err, stderr)
+	}
+}
+
+func TestClustersOverrideMountsDirectoryReadOnly(t *testing.T) {
+	files := []string{"docker-compose.yml", "docker-compose.clusters.yml"}
+	if _, stderr, err := renderEnv(t, nil, files...); err == nil || !strings.Contains(stderr, "set KUBE_DIR") {
+		t.Fatalf("missing KUBE_DIR must fail clearly: %v %s", err, stderr)
+	}
+	// A cluster name left in the operator's shell must not reach the app: the config rejects mixing.
+	r, stderr, err := renderEnv(t, map[string]string{"KUBE_DIR": "/srv/kube", "KUBERNETES_CLUSTER_NAME": "lab"}, files...)
+	if err != nil {
+		t.Fatalf("render: %v %s", err, stderr)
+	}
+	app := r.Services["app"]
+	if app.Environment["SIMULATION_ENABLED"] != "false" || app.Environment["KUBERNETES_CLUSTERS_FILE"] != "/kube/clusters.yaml" ||
+		app.Environment["KUBERNETES_CLUSTER_NAME"] != "" || app.Environment["KUBERNETES_ALLOWED_NAMESPACES"] != "" {
+		t.Fatalf("clusters environment: %v", app.Environment)
+	}
+	if len(app.Volumes) != 1 || app.Volumes[0].Source != "/srv/kube" || app.Volumes[0].Target != "/kube" || !app.Volumes[0].ReadOnly {
+		t.Fatalf("kubeconfig directory is not mounted read-only: %+v", app.Volumes)
 	}
 }
 

@@ -69,7 +69,7 @@ func (s *memStore) FinishInvestigation(ctx context.Context, rec domain.Investiga
 	return s.finishErr
 }
 
-var policy = domain.TargetPolicy{ClusterName: "local"}
+var policy = domain.TargetPolicy{Clusters: map[string][]string{"local": nil}}
 
 func incident(rt domain.ResourceType, name string) domain.Incident {
 	return domain.Incident{ID: domain.NewID(), Title: "t", Description: "d",
@@ -468,7 +468,7 @@ func TestInvestigateCustomResource(t *testing.T) {
 		kind: {Group: "argoproj.io", Version: "v1alpha1", Resource: "rollouts"}}}
 	engine := func(allowed ...domain.ResourceType) *Engine {
 		return NewEngine(nil, clusters, llm.RulesProvider{}, slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Config{Timeout: 10 * time.Second, MaxConcurrent: 2, Policy: domain.TargetPolicy{ClusterName: "local", CustomResources: allowed}})
+			Config{Timeout: 10 * time.Second, MaxConcurrent: 2, Policy: domain.TargetPolicy{Clusters: map[string][]string{"local": nil}, CustomResources: allowed}})
 	}
 	for scenario, want := range map[string]string{"healthy": "No Kubernetes-level fault detected", "crash_loop_backoff": "Container restarts with errors (CrashLoopBackOff)"} {
 		inc := incident(kind, "web")

@@ -73,7 +73,7 @@ func TestWorkerRetriesOnlyTransientTargetFailures(t *testing.T) {
 			target := &failingTarget{Clusters: clusters, denied: denied}
 			provider := &countingRules{}
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
-			engine := investigation.NewEngine(s, target, provider, log, investigation.Config{Timeout: time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{ClusterName: "local"}})
+			engine := investigation.NewEngine(s, target, provider, log, investigation.Config{Timeout: time.Second, MaxConcurrent: 1, Policy: domain.TargetPolicy{Clusters: map[string][]string{"local": nil}}})
 			svc := jobs.New(s, engine, log, workerConfig())
 			accepted, err := svc.Submit(context.Background(), inc.ID, domain.NewID(), investigation.Options{})
 			if err != nil {

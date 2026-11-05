@@ -144,16 +144,16 @@ func TestRemediationActions(t *testing.T) {
 
 func TestTargetPolicy(t *testing.T) {
 	tgt := Target{Cluster: "local", Namespace: "payments", ResourceType: ResourcePod, ResourceName: "p"}
-	if err := (TargetPolicy{ClusterName: "local"}).Check(tgt); err != nil {
+	if err := (TargetPolicy{Clusters: map[string][]string{"local": nil}}).Check(tgt); err != nil {
 		t.Fatalf("any namespace: %v", err)
 	}
-	if err := (TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"payments"}}).Check(tgt); err != nil {
+	if err := (TargetPolicy{Clusters: map[string][]string{"local": {"payments"}}}).Check(tgt); err != nil {
 		t.Fatalf("allowed namespace: %v", err)
 	}
-	if err := (TargetPolicy{ClusterName: "prod"}).Check(tgt); !errors.Is(err, ErrTargetNotAllowed) {
+	if err := (TargetPolicy{Clusters: map[string][]string{"prod": nil}}).Check(tgt); !errors.Is(err, ErrTargetNotAllowed) {
 		t.Fatalf("other cluster: %v", err)
 	}
-	if err := (TargetPolicy{ClusterName: "local", AllowedNamespaces: []string{"orders"}}).Check(tgt); !errors.Is(err, ErrTargetNotAllowed) {
+	if err := (TargetPolicy{Clusters: map[string][]string{"local": {"orders"}}}).Check(tgt); !errors.Is(err, ErrTargetNotAllowed) {
 		t.Fatalf("namespace outside allowlist: %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestCustomResourceKinds(t *testing.T) {
 	if err := target.Validate(); err != nil {
 		t.Fatalf("custom kind shape: %v", err)
 	}
-	policy := TargetPolicy{ClusterName: "local"}
+	policy := TargetPolicy{Clusters: map[string][]string{"local": nil}}
 	if err := policy.Check(target); !errors.Is(err, ErrTargetNotAllowed) || !strings.Contains(err.Error(), "KUBERNETES_CUSTOM_RESOURCES") {
 		t.Fatalf("unconfigured custom kind admitted: %v", err)
 	}

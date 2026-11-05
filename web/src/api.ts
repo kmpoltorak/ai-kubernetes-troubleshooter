@@ -35,12 +35,18 @@ async function readiness(signal: AbortSignal): Promise<Readiness> {
 // Served behind authentication; no URLs, keys or credentials.
 export interface Runtime {
   mode: "simulation" | "live";
-  cluster_name: string;
-  allowed_namespaces: string[];
+  /** The configured clusters in order, each with its allowed namespaces (empty: any). */
+  clusters: { name: string; allowed_namespaces: string[] }[];
   analyzer: { provider: string; model: string };
   scenarios: string[];
   /** Kinds an incident can target, in form order; absent before the server lists them. */
   resource_types?: ResourceType[];
+}
+
+/** "unreachable" when the cluster's API server did not answer the last check. */
+export interface ClusterState {
+  name: string;
+  status: "ok" | "unreachable" | "simulated";
 }
 
 export interface Incident {
@@ -206,8 +212,9 @@ async function request<T>(method: string, path: string, body?: unknown, options:
 export const api = {
   readiness,
   runtime: () => request<Runtime>("GET", "/api/v1/runtime"),
-  targets: (namespace: string, kind: ResourceType, signal: AbortSignal) =>
-    request<{ names: string[] }>("GET", `/api/v1/targets?namespace=${encodeURIComponent(namespace)}&kind=${kind}`, undefined, { signal }).then((r) => r.names),
+  clusters: (signal: AbortSignal) => request<{ clusters: ClusterState[] }>("GET", "/api/v1/clusters", undefined, { signal }).then((r) => r.clusters),
+  targets: (cluster: string, namespace: string, kind: ResourceType, signal: AbortSignal) =>
+    request<{ names: string[] }>("GET", `/api/v1/targets?cluster=${encodeURIComponent(cluster)}&namespace=${encodeURIComponent(namespace)}&kind=${kind}`, undefined, { signal }).then((r) => r.names),
   listIncidents: (limit: number, offset: number) =>
     request<{ incidents: Incident[] }>("GET", `/api/v1/incidents?limit=${limit}&offset=${offset}`).then((r) => r.incidents),
   getIncident: (id: string) => request<Incident>("GET", `/api/v1/incidents/${id}`),

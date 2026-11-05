@@ -1,0 +1,13 @@
+# Several clusters from Docker: docker compose -f docker-compose.yml -f docker-compose.clusters.yml up --build
+# KUBE_DIR holds clusters.yaml and the kubeconfigs it names under /kube/, all readable
+# by the container user (uid 65532); use read-only ServiceAccounts. See docs/clusters.md.
+services:
+  app:
+    environment:
+      SIMULATION_ENABLED: "false"
+      KUBERNETES_CLUSTERS_FILE: /kube/clusters.yaml
+      # The file names every cluster; the single-cluster variables must stay empty.
+      KUBERNETES_CLUSTER_NAME: ""
+      KUBERNETES_ALLOWED_NAMESPACES: ""
+    volumes:
+      - ${KUBE_DIR:?set KUBE_DIR to a directory with clusters.yaml and its kubeconfigs}:/kube:ro

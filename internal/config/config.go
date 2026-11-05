@@ -9,10 +9,13 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 )
@@ -29,13 +32,9 @@ type Config struct {
 	DatabaseURL string
 	Auth        Auth
 
-	Kubeconfig        string
-	KubernetesContext string
-	// ClusterName is the only value accepted in an incident's "cluster" field.
-	ClusterName string
-	// AllowedNamespaces restricts investigations; empty allows any namespace
-	// the ServiceAccount can read.
-	AllowedNamespaces []string
+	// Clusters are the clusters this installation reads, in configured order:
+	// from KUBERNETES_CLUSTERS_FILE, or one cluster from the single-cluster variables.
+	Clusters []Cluster
 	// CustomResources are extra kinds (group/version/resource) read through
 	// the dynamic client: status and selector only.
 	CustomResources []domain.CustomResource
@@ -57,6 +56,21 @@ type Config struct {
 	MaxConcurrentInvestigations int
 	RateLimitRPS                float64
 }
+
+// Cluster is one cluster an incident may name. Kubeconfig and Context never
+// leave this process; an empty Kubeconfig uses in-cluster or default loading.
+type Cluster struct {
+	Name       string `json:"name"`
+	Kubeconfig string `json:"kubeconfig,omitempty"`
+	Context    string `json:"context,omitempty"`
+	// AllowedNamespaces restricts investigations; empty allows any namespace
+	// the credentials can read.
+	AllowedNamespaces []string `json:"allowed_namespaces,omitempty"`
+}
+
+// singleClusterVars configure one cluster when KUBERNETES_CLUSTERS_FILE is unset.
+// KUBECONFIG is not among them: an entry without kubeconfig reads it, as kubectl does.
+var singleClusterVars = []string{"KUBERNETES_CONTEXT", "KUBERNETES_CLUSTER_NAME", "KUBERNETES_ALLOWED_NAMESPACES"}
 
 // Auth is inactive by default, so local/test runs do not need an identity provider.
 type Auth struct {
@@ -81,10 +95,6 @@ func Load(getenv func(string) string) (Config, error) {
 		HTTPPort:                    p.int("HTTP_PORT", 8080),
 		LogLevel:                    p.level("LOG_LEVEL", slog.LevelInfo),
 		DatabaseURL:                 p.str("DATABASE_URL", ""),
-		Kubeconfig:                  p.str("KUBECONFIG", ""),
-		KubernetesContext:           p.str("KUBERNETES_CONTEXT", ""),
-		ClusterName:                 p.str("KUBERNETES_CLUSTER_NAME", "local"),
-		AllowedNamespaces:           p.list("KUBERNETES_ALLOWED_NAMESPACES"),
 		LLMProvider:                 strings.ToLower(p.str("LLM_PROVIDER", "rules")),
 		LLMModel:                    p.str("LLM_MODEL", ""),
 		LLMMaxInputBytes:            p.int("LLM_MAX_INPUT_BYTES", DefaultLLMMaxInputBytes),
@@ -115,14 +125,7 @@ func Load(getenv func(string) string) (Config, error) {
 	if c.DatabaseURL == "" {
 		p.fail("DATABASE_URL", "is required")
 	}
-	if err := domain.ValidateObjectName(c.ClusterName); err != nil {
-		p.fail("KUBERNETES_CLUSTER_NAME", err.Error())
-	}
-	for _, ns := range c.AllowedNamespaces {
-		if err := domain.ValidateNamespace(ns); err != nil {
-			p.fail("KUBERNETES_ALLOWED_NAMESPACES", fmt.Sprintf("entry %q %s", ns, err))
-		}
-	}
+	c.Clusters = p.clusters()
 	for _, entry := range p.list("KUBERNETES_CUSTOM_RESOURCES") {
 		cr, err := parseCustomResource(entry)
 		if err != nil {
@@ -167,6 +170,61 @@ func Load(getenv func(string) string) (Config, error) {
 	return c, nil
 }
 
+// clusters reads KUBERNETES_CLUSTERS_FILE, or builds one cluster from the
+// single-cluster variables. Setting both is ambiguous and rejected.
+func (p *parser) clusters() []Cluster {
+	path := p.str("KUBERNETES_CLUSTERS_FILE", "")
+	if path == "" {
+		c := Cluster{Name: p.str("KUBERNETES_CLUSTER_NAME", "local"), Kubeconfig: p.str("KUBECONFIG", ""),
+			Context: p.str("KUBERNETES_CONTEXT", ""), AllowedNamespaces: p.list("KUBERNETES_ALLOWED_NAMESPACES")}
+		if err := domain.ValidateObjectName(c.Name); err != nil {
+			p.fail("KUBERNETES_CLUSTER_NAME", err.Error())
+		}
+		for _, ns := range c.AllowedNamespaces {
+			if err := domain.ValidateNamespace(ns); err != nil {
+				p.fail("KUBERNETES_ALLOWED_NAMESPACES", fmt.Sprintf("entry %q %s", ns, err))
+			}
+		}
+		return []Cluster{c}
+	}
+	const key = "KUBERNETES_CLUSTERS_FILE"
+	for _, v := range singleClusterVars {
+		if p.str(v, "") != "" {
+			p.fail(key, "cannot be combined with "+v+"; configure every cluster in the file")
+		}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		p.fail(key, "is not readable: "+err.Error())
+		return nil
+	}
+	var file struct {
+		Clusters []Cluster `json:"clusters"`
+	}
+	if err := yaml.UnmarshalStrict(raw, &file); err != nil {
+		p.fail(key, "is not valid: "+err.Error())
+		return nil
+	}
+	if len(file.Clusters) == 0 {
+		p.fail(key, "must list at least one cluster under clusters:")
+	}
+	seen := map[string]bool{}
+	for i, c := range file.Clusters {
+		if err := domain.ValidateObjectName(c.Name); err != nil {
+			p.fail(key, fmt.Sprintf("clusters[%d].name %s", i, err))
+		} else if seen[c.Name] {
+			p.fail(key, fmt.Sprintf("clusters[%d].name %q is repeated", i, c.Name))
+		}
+		seen[c.Name] = true
+		for _, ns := range c.AllowedNamespaces {
+			if err := domain.ValidateNamespace(ns); err != nil {
+				p.fail(key, fmt.Sprintf("clusters[%d].allowed_namespaces entry %q %s", i, ns, err))
+			}
+		}
+	}
+	return file.Clusters
+}
+
 // CustomKinds lists the configured custom resources as incident kinds.
 func (c Config) CustomKinds() []domain.ResourceType {
 	kinds := make([]domain.ResourceType, 0, len(c.CustomResources))
@@ -200,9 +258,14 @@ func parseCustomResource(entry string) (domain.CustomResource, error) {
 }
 
 // String renders the configuration with secrets redacted, safe for logs.
+// Clusters appear by name only: kubeconfig paths and contexts stay out.
 func (c Config) String() string {
-	return fmt.Sprintf("env=%s port=%d cluster=%s context=%q namespaces=%v provider=%s model=%s simulation=%t scenario=%s auth=%t openai_key=%s",
-		c.AppEnv, c.HTTPPort, c.ClusterName, c.KubernetesContext, c.AllowedNamespaces, c.LLMProvider, c.LLMModel,
+	names := make([]string, len(c.Clusters))
+	for i, cl := range c.Clusters {
+		names[i] = cl.Name
+	}
+	return fmt.Sprintf("env=%s port=%d clusters=%v provider=%s model=%s simulation=%t scenario=%s auth=%t openai_key=%s",
+		c.AppEnv, c.HTTPPort, names, c.LLMProvider, c.LLMModel,
 		c.SimulationEnabled, c.SimulationScenario, c.Auth.Enabled, redact(c.OpenAIAPIKey))
 }
 

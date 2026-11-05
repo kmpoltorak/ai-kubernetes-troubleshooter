@@ -44,13 +44,21 @@ type handler struct {
 // Runtime is what the UI needs to know about this installation. It is served
 // behind authentication and never holds URLs, keys, contexts or credentials.
 type Runtime struct {
-	Mode              string   `json:"mode"`
-	ClusterName       string   `json:"cluster_name"`
-	AllowedNamespaces []string `json:"allowed_namespaces"`
-	Analyzer          Analyzer `json:"analyzer"`
-	Scenarios         []string `json:"scenarios"`
+	Mode string `json:"mode"`
+	// ClusterName and AllowedNamespaces describe the first cluster, for 1.x clients.
+	ClusterName       string           `json:"cluster_name"`
+	AllowedNamespaces []string         `json:"allowed_namespaces"`
+	Clusters          []RuntimeCluster `json:"clusters"`
+	Analyzer          Analyzer         `json:"analyzer"`
+	Scenarios         []string         `json:"scenarios"`
 	// ResourceTypes are the kinds an incident can target, in form order.
 	ResourceTypes []domain.ResourceType `json:"resource_types"`
+}
+
+// RuntimeCluster is a configured cluster as the UI sees it: no kubeconfig or context.
+type RuntimeCluster struct {
+	Name              string   `json:"name"`
+	AllowedNamespaces []string `json:"allowed_namespaces"`
 }
 
 type Analyzer struct {
@@ -60,12 +68,27 @@ type Analyzer struct {
 
 // RuntimeFrom selects the UI-relevant settings; empty namespaces mean all readable ones.
 func RuntimeFrom(cfg config.Config) Runtime {
-	rt := Runtime{Mode: "live", ClusterName: cfg.ClusterName, AllowedNamespaces: append([]string{}, cfg.AllowedNamespaces...),
+	rt := Runtime{Mode: "live", Clusters: []RuntimeCluster{}, AllowedNamespaces: []string{},
 		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel}, Scenarios: []string{}, ResourceTypes: append(slices.Clone(domain.ResourceTypes), cfg.CustomKinds()...)}
+	for _, c := range cfg.Clusters {
+		rt.Clusters = append(rt.Clusters, RuntimeCluster{Name: c.Name, AllowedNamespaces: append([]string{}, c.AllowedNamespaces...)})
+	}
+	if len(rt.Clusters) > 0 {
+		rt.ClusterName, rt.AllowedNamespaces = rt.Clusters[0].Name, rt.Clusters[0].AllowedNamespaces
+	}
 	if cfg.SimulationEnabled {
 		rt.Mode, rt.Scenarios = "simulation", simulation.Scenarios
 	}
 	return rt
+}
+
+// Policy is the target policy the runtime describes, shared by incidents and the form.
+func (r Runtime) Policy() domain.TargetPolicy {
+	clusters := make(map[string][]string, len(r.Clusters))
+	for _, c := range r.Clusters {
+		clusters[c.Name] = c.AllowedNamespaces
+	}
+	return domain.TargetPolicy{Clusters: clusters, CustomResources: r.CustomKinds()}
 }
 
 // CustomKinds are the configured custom resources among the form's kinds.
@@ -73,13 +96,17 @@ func (r Runtime) CustomKinds() []domain.ResourceType {
 	return slices.DeleteFunc(slices.Clone(r.ResourceTypes), func(k domain.ResourceType) bool { return !k.Custom() })
 }
 
-// TargetLister lists object names for the incident form; nil lists nothing (simulation).
-type TargetLister func(ctx context.Context, namespace string, kind domain.ResourceType) ([]string, error)
+// Clusters is the live cluster access the API needs besides investigations
+// (kube.Live); nil in simulation, which lists no names and pings nothing.
+type Clusters interface {
+	ListNames(ctx context.Context, cluster, namespace string, kind domain.ResourceType) ([]string, error)
+	Ping(ctx context.Context) map[string]error
+}
 
 // New returns the fully wired HTTP handler. checks are the readiness checks
 // by dependency name (database, kubernetes). API routes are rate limited per
 // client IP at rps requests per second; auth also limits other non-probe routes.
-func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth, runtime Runtime, targets TargetLister) http.Handler {
+func New(svc *incidents.Service, jobService JobService, checks map[string]func(context.Context) error, log *slog.Logger, rps float64, auth config.Auth, runtime Runtime, live Clusters) http.Handler {
 	h := &handler{incidents: svc, jobs: jobService, checks: checks, log: log, build: buildinfo.Current()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/incidents", h.createIncident)
@@ -93,7 +120,8 @@ func New(svc *incidents.Service, jobService JobService, checks map[string]func(c
 	mux.HandleFunc("GET /api/v1/incidents/{id}/jobs/{jobID}", h.getJob)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/investigations/{investigationID}", h.getInvestigation)
 	mux.HandleFunc("GET /api/v1/runtime", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, runtime) })
-	mux.HandleFunc("GET /api/v1/targets", h.listTargets(runtime, targets))
+	mux.HandleFunc("GET /api/v1/targets", h.listTargets(runtime, live))
+	mux.HandleFunc("GET /api/v1/clusters", h.clusterStatus(runtime, live))
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /ready", h.readiness)
 	mux.Handle("GET /metrics", promhttp.Handler())
@@ -210,29 +238,73 @@ func (h *handler) getReport(w http.ResponseWriter, r *http.Request) {
 }
 
 // listTargets offers names for the incident form within the same target policy as incidents.
-func (h *handler) listTargets(runtime Runtime, list TargetLister) http.HandlerFunc {
-	policy := domain.TargetPolicy{ClusterName: runtime.ClusterName, AllowedNamespaces: runtime.AllowedNamespaces, CustomResources: runtime.CustomKinds()}
+// The cluster may be omitted when only one is configured.
+func (h *handler) listTargets(runtime Runtime, live Clusters) http.HandlerFunc {
+	policy := runtime.Policy()
 	return func(w http.ResponseWriter, r *http.Request) {
-		// The name is a placeholder: only namespace and kind come from the request.
-		t := domain.Target{Cluster: runtime.ClusterName, Namespace: r.URL.Query().Get("namespace"),
-			ResourceType: domain.ResourceType(r.URL.Query().Get("kind")), ResourceName: "placeholder"}
+		q := r.URL.Query()
+		cluster := q.Get("cluster")
+		if cluster == "" && len(runtime.Clusters) == 1 {
+			cluster = runtime.Clusters[0].Name
+		}
+		// The name is a placeholder: only cluster, namespace and kind come from the request.
+		t := domain.Target{Cluster: cluster, Namespace: q.Get("namespace"),
+			ResourceType: domain.ResourceType(q.Get("kind")), ResourceName: "placeholder"}
 		if err := errors.Join(t.Validate(), policy.Check(t)); err != nil {
 			writeError(w, r, http.StatusBadRequest, "validation_failed", err.Error())
 			return
 		}
 		names := []string{}
-		if list != nil {
+		if live != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 			defer cancel()
-			found, err := list(ctx, t.Namespace, t.ResourceType)
+			found, err := live.ListNames(ctx, t.Cluster, t.Namespace, t.ResourceType)
 			if err != nil {
-				h.log.WarnContext(r.Context(), "listing targets failed", "namespace", t.Namespace, "kind", t.ResourceType, "error", redact.Text(err.Error()))
+				h.log.WarnContext(r.Context(), "listing targets failed", "cluster", t.Cluster, "namespace", t.Namespace, "kind", t.ResourceType, "error", redact.Text(err.Error()))
 				writeError(w, r, http.StatusBadGateway, "list_failed", redact.Text(err.Error()))
 				return
 			}
 			names = append(names, found...)
 		}
 		writeJSON(w, http.StatusOK, map[string][]string{"names": names})
+	}
+}
+
+type clusterState struct {
+	Name string `json:"name"`
+	// Status is ok, unreachable or simulated. Errors are logged, not returned:
+	// they carry API server addresses.
+	Status string `json:"status"`
+}
+
+// clusterStatus pings every configured cluster for the UI's cluster list.
+// ponytail: pings on every request (each open tab every 30 s, bounded by the rate
+// limit); cache the result if many tabs or clusters make that noticeable.
+func (h *handler) clusterStatus(runtime Runtime, live Clusters) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var pings map[string]error
+		if live != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+			pings = live.Ping(ctx)
+		}
+		out := make([]clusterState, 0, len(runtime.Clusters))
+		for _, c := range runtime.Clusters {
+			state := clusterState{Name: c.Name, Status: "simulated"}
+			if live != nil {
+				state.Status = "ok"
+				err, pinged := pings[c.Name]
+				if !pinged {
+					err = errors.New("not checked")
+				}
+				if err != nil {
+					h.log.WarnContext(r.Context(), "cluster unreachable", "cluster", c.Name, "error", redact.Text(err.Error()))
+					state.Status = "unreachable"
+				}
+			}
+			out = append(out, state)
+		}
+		writeJSON(w, http.StatusOK, map[string][]clusterState{"clusters": out})
 	}
 }
 
