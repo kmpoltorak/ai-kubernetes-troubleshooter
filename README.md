@@ -290,10 +290,10 @@ cd web && npm test && npm run build  # UI render/HTTP workflow tests, typecheck 
 Unit tests use synthetic clusters and model responses; integration tests exercise
 PostgreSQL, API requests and worker recovery. The upgrade test compares API reads
 before and after a real backup and restore. The browser tests drive the embedded UI
-in Chromium: a report with evidence links, a reload during a failing analysis,
-keyboard-only use and status-read errors. They also run axe's automated WCAG 2.1 A/AA
-rules on the main states in light and dark mode, and check that long titles do not
-widen the page at 390 and 1280 px. See [evaluation commands](docs/evaluation.md)
+in Chromium on the essentials only: a report with evidence links and a reload, a
+reload during a failing analysis, the live-mode form through the API and database,
+and incident deletion. They also run axe's automated WCAG 2.1 A/AA rules in light and
+dark mode, and check that a long title does not widen a 390 px page. See [evaluation commands](docs/evaluation.md)
 for offline checks and the opt-in OpenAI/Ollama tool. The [kind tests](docs/kubernetes-testing.md)
 deploy two API replicas and check live diagnostics, RBAC and NetworkPolicy using
 one shared image in CI. CI also runs govulncheck and `npm audit`.
