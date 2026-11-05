@@ -105,6 +105,9 @@ export default function App() {
               {runtime ? `${runtime.mode} · ${runtime.clusters.length === 1 ? runtime.clusters[0].name : `${runtime.clusters.length} clusters`} · ${runtime.analyzer.provider}/${runtime.analyzer.model}` : runtimeError && `settings unavailable: ${runtimeError}`}
             </span>
             {runtime?.mode === "live" && <ClusterPill clusters={clusters} />}
+            <a href="/docs/" target="_blank" rel="noopener" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
+              Docs
+            </a>
             <a href="/metrics" target="_blank" rel="noopener" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
               Metrics
             </a>

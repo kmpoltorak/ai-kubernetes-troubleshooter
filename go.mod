@@ -6,6 +6,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
+	github.com/yuin/goldmark v1.7.13
 	golang.org/x/time v0.15.0
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0

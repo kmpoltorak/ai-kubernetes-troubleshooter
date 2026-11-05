@@ -5,7 +5,10 @@
 bin
 candidate
 release-assets
-docs
+# Local plans and reports; the published guides are embedded and served at /docs/.
+docs/plan-*
+docs/report-*
+docs/investigation-history.md
 deployments
 *.md
 kubeconfig*

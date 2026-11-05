@@ -14,6 +14,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
+COPY docs ./docs
 COPY --from=web /src/internal/api/ui/dist ./internal/api/ui/dist
 ARG BUILD_VERSION=dev
 ARG BUILD_REVISION=unknown
