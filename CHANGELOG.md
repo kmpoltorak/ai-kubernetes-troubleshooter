@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.1.2...v1.2.0) (2026-11-05)
+
+
+### Features
+
+* read several clusters from one installation ([#68](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/68)) ([5b6d46b](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/5b6d46bebfa79af280b3051bf0792bbcf14ea4a3))
+
 ## [1.1.2](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.1.1...v1.1.2) (2026-11-05)
 
 
