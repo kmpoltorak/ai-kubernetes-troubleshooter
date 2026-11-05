@@ -233,12 +233,21 @@ test("hints explain confusing fields and the name field follows the kind", async
   await page.goto(rules);
   const hint = page.getByRole("button", { name: "What is Cluster?" });
   await expect(hint).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByText(/KUBERNETES_CLUSTER_NAME/)).toHaveCount(0);
+  const bubble = page.getByText(/KUBERNETES_CLUSTER_NAME/);
+  await expect(bubble).toBeHidden();
   await hint.click();
-  await expect(page.getByText(/KUBERNETES_CLUSTER_NAME/)).toBeVisible();
+  await expect(bubble).toBeVisible();
   await expect(hint).toHaveAttribute("aria-expanded", "true");
-  await hint.press("Enter"); // keyboard closes it again
-  await expect(page.getByText(/KUBERNETES_CLUSTER_NAME/)).toHaveCount(0);
+  // A bubble over the page: the form below does not move, and it stays inside the viewport.
+  const box = (await bubble.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await page.keyboard.press("Escape");
+  await expect(bubble).toBeHidden();
+  await expect(hint).toHaveAttribute("aria-expanded", "false");
+  await hint.click();
+  await page.getByRole("heading", { name: "New incident" }).click(); // a click elsewhere closes it
+  await expect(bubble).toBeHidden();
   // The label still names its control, not the "?" next to it.
   await expect(page.getByLabel("Cluster")).not.toBeEditable();
   await page.getByLabel("Deployment name").fill("payment-service");
@@ -246,4 +255,11 @@ test("hints explain confusing fields and the name field follows the kind", async
   await expect(page.getByLabel("Job name")).toHaveValue("payment-service");
   await page.getByRole("button", { name: "What is Job name?" }).click();
   await expect(page.getByText("The name of the Job in the chosen namespace", { exact: false })).toBeVisible();
+  // On a phone the right-hand field's bubble is pulled back inside the screen.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "What is Job name?" }).click();
+  const phone = (await page.getByText("The name of the Job in the chosen namespace", { exact: false }).boundingBox())!;
+  expect(phone.x).toBeGreaterThanOrEqual(0);
+  expect(phone.x + phone.width).toBeLessThanOrEqual(390);
 });

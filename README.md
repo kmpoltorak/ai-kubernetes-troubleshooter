@@ -84,7 +84,8 @@ scenario. The header shows the mode, cluster name and analyzer; live mode has no
 samples or scenario choice. In the form the cluster is fixed, Namespace is a list
 when `KUBERNETES_ALLOWED_NAMESPACES` is set, and the name field (labelled after the
 Kind, e.g. "Deployment name") suggests objects listed from the cluster (any name can
-still be typed). A "?" next to a field or report term expands a short explanation. A
+still be typed). A "?" next to a field or report term opens a short explanation in a bubble
+(Escape or a click elsewhere closes it). A
 report opens with its conclusion, cited evidence and export buttons; hypotheses,
 sampling limits, diagnostics and the attempt history are collapsed. Outside Docker:
 
@@ -262,7 +263,7 @@ schema changes, `pg_dump`/`pg_restore`, rollback and a runbook for common failur
 - Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
 - Custom resources are judged by the condition names above; a controller using other names is not interpreted, and a resource without conditions or phase is `inconclusive`. Pods are found only through a label selector, not owner references. A configured resource the cluster does not serve fails its investigations. A CronJob is judged by its latest Job only (found among at most 500 Jobs in the namespace); missed schedules are not detected. An Ingress is followed to its first existing backend's pods; an autoscaler only to a Deployment or StatefulSet. A Pending claim no pod uses is not called a fault (WaitForFirstConsumer classes bind later); StorageClasses are not read. Nodes are read only when they run the target's pods, so a Pending pod's candidate nodes are not inspected.
 - One cluster per installation; replicas must use the same limits, target policy and analyzer. No remediation is executed.
-- The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`. It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
+- The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`; the "?" hints need the Popover API (Chrome 114, Safari 17, Firefox 125). It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
 - Live CI uses single-node kind on Kubernetes 1.36.4 and 1.37.0 (pull requests: 1.37.0 only), Linux amd64. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI. Browser tests run in Chromium only; Firefox and Safari are untested.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
