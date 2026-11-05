@@ -148,7 +148,8 @@ test("attempts export as Markdown and JSON, and an older attempt is marked as ol
   await history.getByText("Investigation history").click();
   await expect(history.getByRole("button", { name: /^completed/ })).toHaveCount(2);
   await expect(page.getByRole("note")).toHaveCount(0);
-  await history.getByRole("button", { name: new RegExp(first.investigation.id) }).click();
+  // Newest first: the second attempt is the one exported above.
+  await history.getByRole("button", { name: /^completed/ }).nth(1).click();
   await expect(page.getByRole("note")).toContainText("Older attempt");
   expect(JSON.parse((await exported(page, "Export JSON")).body).investigation.id).toBe(first.investigation.id);
   await history.getByRole("button", { name: /Latest attempt/ }).click();

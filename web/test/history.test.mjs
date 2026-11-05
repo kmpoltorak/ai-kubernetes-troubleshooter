@@ -115,3 +115,21 @@ test("a report without recommendations or commands shows no remediation card", (
   assert.match(commandOnly, /Read-only commands/);
   assert.doesNotMatch(commandOnly, />Remediation</);
 });
+
+test("a report shows no noise: approval badges, durations, repeated signals, raw IDs", () => {
+  const item = { id: "ev-pods", tool_execution_id: "tool", source: "get_pods", subject: "pods/app=api", health: "down", summary: "0/1 pods ready. Findings: CrashLoopBackOff.", signals: ["CrashLoopBackOff", "FrequentRestarts"] };
+  const record = { investigation: success, tool_executions: [{ id: "tool", tool_name: "get_pods", duration_ms: 1234 }], evidence: [item],
+    report: { provider: "rules/rules-v2", created_at: success.completed_at, remediation_actions: [{ id: "r", position: 1, kind: "recommendation", description: "fix the config", requires_approval: true, status: "proposed" }],
+      analysis: { schema_version: 2, verdict: "observed_fault", support: "strong", summary: "s", root_cause: "Crash", severity: "high", evidence: [], missing_data: [], limitations: [], possible_causes: ["x"] } } };
+  const html = render(Report, { record });
+  assert.match(html, /fix the config/);
+  assert.doesNotMatch(html, /needs approval|1234 ms|Duration|coverage is still limited|Status: <strong/);
+  // The summary already names CrashLoopBackOff; only the unnamed signal gets a chip.
+  assert.equal(html.match(/>CrashLoopBackOff</g), null);
+  assert.match(html, />FrequentRestarts</);
+  const history = render(History, props);
+  assert.doesNotMatch(history, />success<|>failure</);
+  assert.match(history, /title="Investigation success"/);
+  const job = render(JobStatus, { onRetry() {}, onView() {}, error: "", record: { job: { id: "job-123", status: "completed", stage: "completed", attempts: 1 } } });
+  assert.doesNotMatch(job, />job-123<|Stage:|Attempt 1 of 3/);
+});

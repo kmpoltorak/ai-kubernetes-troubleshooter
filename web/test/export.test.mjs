@@ -30,7 +30,8 @@ test("v2 Markdown keeps verdict, support, citations, gaps and commands", () => {
   assert.match(md, /- Evidence support: strong \(describes the evidence, not a probability/);
   assert.match(md, /`get_service · ev-1` no endpoints/);
   assert.match(md, /## Missing data\n\n- get_resource_usage failed/);
-  assert.match(md, /1\. Fix the selector _\(needs approval\)_/);
+  assert.match(md, /1\. Fix the selector\n/);
+  assert.doesNotMatch(md, /needs approval/);
   assert.match(md, /```sh\nkubectl get endpoints checkout -n payments\n```/);
   assert.match(md, /app 0\.1\.0 \(abc123\)/);
   // Table cells escape pipes and flatten line breaks.
