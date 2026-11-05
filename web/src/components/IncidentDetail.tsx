@@ -176,8 +176,8 @@ export default function IncidentDetail({ id, initialScenario, scenarios, build, 
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold break-words">{incident.title}</h2>
-            <p className="mt-1 truncate font-mono text-xs text-zinc-600 dark:text-zinc-400">
-              {target(incident)} · {incident.id}
+            <p className="mt-1 truncate font-mono text-xs text-zinc-600 dark:text-zinc-400" title={`Incident ${incident.id}`}>
+              {target(incident)}
             </p>
           </div>
           <span

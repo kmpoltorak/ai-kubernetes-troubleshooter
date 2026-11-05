@@ -148,7 +148,8 @@ test("attempts export as Markdown and JSON, and an older attempt is marked as ol
   await history.getByText("Investigation history").click();
   await expect(history.getByRole("button", { name: /^completed/ })).toHaveCount(2);
   await expect(page.getByRole("note")).toHaveCount(0);
-  await history.getByRole("button", { name: new RegExp(first.investigation.id) }).click();
+  // Newest first: the second attempt is the one exported above.
+  await history.getByRole("button", { name: /^completed/ }).nth(1).click();
   await expect(page.getByRole("note")).toContainText("Older attempt");
   expect(JSON.parse((await exported(page, "Export JSON")).body).investigation.id).toBe(first.investigation.id);
   await history.getByRole("button", { name: /Latest attempt/ }).click();
@@ -257,9 +258,10 @@ test("hints explain confusing fields and the name field follows the kind", async
   await expect(page.getByText("The name of the Job in the chosen namespace", { exact: false })).toBeVisible();
   // On a phone the right-hand field's bubble is pulled back inside the screen.
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.documentElement.clientWidth <= 390); // the resize has reached the page
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "What is Job name?" }).click();
   const phone = (await page.getByText("The name of the Job in the chosen namespace", { exact: false }).boundingBox())!;
   expect(phone.x).toBeGreaterThanOrEqual(0);
-  expect(phone.x + phone.width).toBeLessThanOrEqual(390);
+  expect(phone.x + phone.width).toBeLessThanOrEqual(await page.evaluate(() => document.documentElement.clientWidth));
 });

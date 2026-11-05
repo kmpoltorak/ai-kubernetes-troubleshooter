@@ -16,12 +16,13 @@ export function Hint({ topic, children }: { topic: string; children: ReactNode }
     if (!el) return;
     // Below the "?" when it fits, otherwise above; always inside the viewport.
     const place = () => {
-      const b = button.current!.getBoundingClientRect();
-      const width = Math.min(288, window.innerWidth - 16);
+      // clientWidth/Height leave out scrollbars, so the bubble never sits under one.
+      const b = button.current!.getBoundingClientRect(), { clientWidth: vw, clientHeight: vh } = document.documentElement;
+      const width = Math.min(288, vw - 16);
       el.style.width = `${width}px`;
-      el.style.left = `${Math.min(Math.max(8, b.left + b.width / 2 - width / 2), window.innerWidth - width - 8)}px`;
+      el.style.left = `${Math.min(Math.max(8, b.left + b.width / 2 - width / 2), vw - width - 8)}px`;
       const below = b.bottom + 6, height = el.offsetHeight;
-      el.style.top = `${below + height > window.innerHeight - 8 && b.top - 6 - height > 8 ? b.top - 6 - height : below}px`;
+      el.style.top = `${below + height > vh - 8 && b.top - 6 - height > 8 ? b.top - 6 - height : below}px`;
     };
     const hide = () => el.hidePopover();
     const toggle = (e: Event) => {

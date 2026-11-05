@@ -55,7 +55,7 @@ export function reportMarkdown(incident: Incident, record: InvestigationRecord, 
     const commands = actions.filter((r) => r.kind === "diagnostic_command" && r.command);
     if (recs.length) {
       out.push("", "## Recommendations (require human review)", "",
-        recs.map((r) => `${r.position}. ${r.description}${r.requires_approval ? " _(needs approval)_" : ""}`).join("\n"));
+        recs.map((r) => `${r.position}. ${r.description}`).join("\n"));
     }
     if (commands.length) out.push("", "## Read-only commands", "", "```sh", ...commands.map((c) => c.command ?? ""), "```");
   }

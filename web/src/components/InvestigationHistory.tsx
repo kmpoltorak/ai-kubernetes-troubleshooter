@@ -35,11 +35,10 @@ export default function InvestigationHistory({ page, selectedID, latestReport, b
         {page?.investigations.map((attempt, index) => (
           <li key={attempt.id}>
             <button type="button" className="w-full rounded-lg border border-zinc-200 p-3 text-left text-sm dark:border-zinc-700 aria-pressed:border-indigo-500 aria-pressed:bg-indigo-50 dark:aria-pressed:bg-indigo-950"
-              aria-pressed={selectedID === attempt.id} disabled={busy} onClick={() => onSelect(attempt.id)}>
+              aria-pressed={selectedID === attempt.id} disabled={busy} onClick={() => onSelect(attempt.id)} title={`Investigation ${attempt.id}`}>
               <strong>{attempt.status}</strong>{page.offset === 0 && index === 0 && <span> · Latest attempt</span>}{" · "}
               <time dateTime={attempt.started_at} title={attempt.started_at}>{timeAgo(attempt.started_at)}</time>
               {attempt.scenario && <span> · {attempt.scenario}</span>}
-              <span className="mt-1 block font-mono text-xs text-zinc-600 dark:text-zinc-400">{attempt.id}</span>
             </button>
           </li>
         ))}

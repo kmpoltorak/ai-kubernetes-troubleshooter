@@ -75,8 +75,8 @@ export default function Report({ record, toolbar, notice }: Props) {
         {notice}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <p className={`text-xs ${muted}`}>
-            Status: <strong className="text-zinc-900 dark:text-zinc-100">{inv.status}</strong>
-            {" · "}started <time dateTime={inv.started_at} title={inv.started_at}>{timeAgo(inv.started_at)}</time>
+            {inv.status !== "completed" && <>Status: <strong className="text-zinc-900 dark:text-zinc-100">{inv.status}</strong>{" · "}</>}
+            Started <time dateTime={inv.started_at} title={inv.started_at}>{timeAgo(inv.started_at)}</time>
             {inv.completed_at && <>{" · "}finished <time dateTime={inv.completed_at} title={inv.completed_at}>{timeAgo(inv.completed_at)}</time></>}
             {report && <>{" · "}by <span className="font-mono">{report.provider}</span></>}
           </p>
@@ -136,17 +136,12 @@ export default function Report({ record, toolbar, notice }: Props) {
       {a && report && (recommendations.length > 0 || commands.length > 0) && (
         <section className="card" aria-label="Next steps">
           {recommendations.length > 0 && <>
-            <Titled className="mb-2" title="Remediation" hint={<>Changes you would make yourself; the troubleshooter never runs them. <strong>needs approval</strong> marks a change to the cluster.</>} />
+            <Titled className="mb-2" title="Remediation" hint="Changes you would make yourself, in this order; the troubleshooter never changes the cluster." />
             <ol className="flex flex-col gap-2 text-sm">
               {recommendations.map((r) => (
                 <li key={r.id} className="flex items-start gap-2">
                   <span className={`mt-0.5 font-mono text-xs ${muted}`}>{r.position}.</span>
                   <span className="flex-1">{r.description}</span>
-                  {r.requires_approval && (
-                    <span className="shrink-0 rounded-full border border-amber-500/40 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-400">
-                      needs approval
-                    </span>
-                  )}
                 </li>
               ))}
             </ol>
@@ -168,7 +163,6 @@ export default function Report({ record, toolbar, notice }: Props) {
             <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm">
               {(a.possible_causes ?? []).map((t) => <li key={t}>{t}</li>)}
             </ul>
-            {v2 && (a.missing_data ?? []).length === 0 && <p className={`mt-4 text-sm ${muted}`}>No failed diagnostics reported; coverage is still limited.</p>}
             {v2 && <>
               <h4 className="section-title mt-5">Scope and sampling limits</h4>
               <ul className="list-disc pl-5 text-sm">{a.limitations?.map((item, i) => <li key={i} className="break-words">{item}</li>)}</ul>
@@ -194,15 +188,15 @@ export default function Report({ record, toolbar, notice }: Props) {
               <tr className="border-b border-zinc-200 dark:border-zinc-800">
                 <th className="py-2 pr-4 font-medium">Tool</th>
                 <th className="py-2 pr-4 font-medium">Result</th>
-                <th className="py-2 pr-4 font-medium">Observation</th>
-                <th className="py-2 text-right font-medium">Duration</th>
+                <th className="py-2 font-medium">Observation</th>
               </tr>
             </thead>
             <tbody>
               {executions.map((te) => {
                 const ev = evidenceByExec.get(te.id);
                 const health = ev?.health ?? "failed";
-                const signals = ev?.signals ?? [];
+                // Chips only for signals the observation text does not already name.
+                const signals = (ev?.signals ?? []).filter((s) => !ev?.summary.includes(s));
                 return (
                   <tr key={te.id} id={ev && anchor(ev.id)} className="scroll-mt-20 border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800/60">
                     <td className="py-2.5 pr-4">
@@ -213,7 +207,7 @@ export default function Report({ record, toolbar, notice }: Props) {
                       <span className="mr-1.5 inline-block size-2 rounded-full bg-current" />
                       {health}
                     </td>
-                    <td className="py-2.5 pr-4 break-words">
+                    <td className="py-2.5 break-words">
                       {ev?.summary ?? te.error}
                       {signals.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
@@ -221,7 +215,6 @@ export default function Report({ record, toolbar, notice }: Props) {
                         </div>
                       )}
                     </td>
-                    <td className="py-2.5 text-right font-mono text-xs whitespace-nowrap">{te.duration_ms} ms</td>
                   </tr>
                 );
               })}
