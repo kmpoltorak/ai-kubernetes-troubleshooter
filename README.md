@@ -82,10 +82,11 @@ EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@atlas-db:5432/troubles
 The UI's sample buttons fill in an incident and pick the matching simulation
 scenario. The header shows the mode, cluster name and analyzer; live mode has no
 samples or scenario choice. In the form the cluster is fixed, Namespace is a list
-when `KUBERNETES_ALLOWED_NAMESPACES` is set, and Name suggests objects listed from
-the cluster (any name can still be typed). A report opens with its conclusion,
-cited evidence and export buttons; hypotheses, sampling limits, diagnostics and
-the attempt history are collapsed. Outside Docker:
+when `KUBERNETES_ALLOWED_NAMESPACES` is set, and the name field (labelled after the
+Kind, e.g. "Deployment name") suggests objects listed from the cluster (any name can
+still be typed). A "?" next to a field or report term expands a short explanation. A
+report opens with its conclusion, cited evidence and export buttons; hypotheses,
+sampling limits, diagnostics and the attempt history are collapsed. Outside Docker:
 
 ```bash
 docker compose up -d postgres

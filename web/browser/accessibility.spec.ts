@@ -22,6 +22,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.getByRole("button", { name: "Run investigation" }).click();
     await expect(page.getByRole("heading", { name: /OOMKilled/ })).toBeVisible();
     await expectNoViolations(page, "report");
+    // Open explanations, in the form and in the report, keep contrast and names valid.
+    for (const name of ["What is Kind?", "What is the verdict and severity?", "What is evidence support?"]) await page.getByRole("button", { name }).click();
+    await expectNoViolations(page, "hints open");
     await page.goto(live);
     await expect(page.getByText("live ·")).toBeVisible();
     await expectNoViolations(page, "live");
@@ -36,7 +39,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await page.getByLabel("Title (optional)").fill("x_".repeat(100));
     await page.getByLabel("Description").fill("y_".repeat(150));
     await page.getByLabel("Namespace").selectOption("payments");
-    await page.getByLabel("Name", { exact: true }).fill("checkout");
+    await page.getByLabel("Deployment name").fill("checkout");
     await page.getByRole("button", { name: "Create incident" }).click();
     await expect(page.getByRole("heading", { level: 2, name: /^(x_)+$/ })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);

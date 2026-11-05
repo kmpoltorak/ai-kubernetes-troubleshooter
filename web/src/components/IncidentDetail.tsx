@@ -4,6 +4,7 @@ import { download, reportJSON, reportMarkdown } from "../export";
 import { activeJob, followJob, readSession, saveSession, submitInvestigation, type JobSession } from "../jobs";
 import { target, timeAgo } from "../format";
 import Report from "./Report";
+import { Field } from "./Hint";
 import InvestigationHistory from "./InvestigationHistory";
 import JobStatus from "./JobStatus";
 
@@ -193,17 +194,18 @@ export default function IncidentDetail({ id, initialScenario, scenarios, build, 
 
         <div className="mt-5 flex flex-wrap items-end gap-3">
           {scenarios.length > 0 && (
-            <label className="label w-60">
-              Scenario
-              <select className="field" value={pending?.scenario ?? scenario} disabled={submitting || running || !!pending} onChange={(e) => setScenario(e.target.value)}>
-                <option value="">Default</option>
-                {scenarios.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="w-60">
+              <Field label="Scenario" hint="Simulation only: the fault the simulated cluster shows for this run. Default uses the server's SIMULATION_SCENARIO.">
+                {(fieldID) => <select id={fieldID} className="field" value={pending?.scenario ?? scenario} disabled={submitting || running || !!pending} onChange={(e) => setScenario(e.target.value)}>
+                  <option value="">Default</option>
+                  {scenarios.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>}
+              </Field>
+            </div>
           )}
           <button type="button" className="btn-primary" onClick={investigate} disabled={!sessionReady || !!storageError || submitting || running || loadingHistory || loadingRecord}>
             {(running || submitting) && <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}

@@ -2,6 +2,17 @@ import { useState, type ReactNode } from "react";
 import type { Health, InvestigationRecord, Severity } from "../api";
 import { verdictLabel } from "../export";
 import { timeAgo } from "../format";
+import { Hint } from "./Hint";
+
+// A section heading with an explanation behind "?".
+function Titled({ title, hint, className = "" }: { title: string; hint: ReactNode; className?: string }) {
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
+      <h4 className="section-title mb-0">{title}</h4>
+      <Hint topic={title}>{hint}</Hint>
+    </div>
+  );
+}
 
 const severityStyle: Record<Severity, string> = {
   low: "text-emerald-700 border-emerald-500/40 dark:text-emerald-400",
@@ -80,13 +91,20 @@ export default function Report({ record, toolbar, notice }: Props) {
             <div className="flex flex-wrap items-center gap-2">
               {v2 && a.verdict && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${verdictStyle[a.verdict] ?? verdictStyle.inconclusive}`}>{verdictLabel[a.verdict] ?? a.verdict}</span>}
               <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${severityStyle[a.severity]}`}>{a.severity}</span>
+              <Hint topic="the verdict and severity">
+                <strong>Observed fault</strong>: a cited observation shows the problem. <strong>Suspected fault</strong>: the evidence points to it without proving it.{" "}
+                <strong>No fault observed</strong>: no known fault in these snapshots. <strong>Inconclusive</strong>: data is missing or no known pattern matched.{" "}
+                Severity (low to critical) is the analyzer's estimate of impact, not a measurement.
+              </Hint>
             </div>
             <h3 className="mt-3 text-xl font-semibold text-balance break-words">{a.root_cause}</h3>
             <p className="mt-2 max-w-[70ch] text-sm text-zinc-700 dark:text-zinc-300">{a.summary}</p>
             {v2 ? (
-              <p className="mt-3 text-sm">
-                Evidence support: <strong>{a.support}</strong>{" "}
-                <span className={`text-xs ${muted}`}>(describes the evidence, not a probability of correctness)</span>
+              <p className="mt-3 flex flex-wrap items-center gap-1.5 text-sm">
+                <span>Evidence support: <strong>{a.support}</strong></span>
+                <Hint topic="evidence support">
+                  How much of the collected evidence backs the conclusion: strong, limited or insufficient. It describes the evidence; it is not a probability that the conclusion is right.
+                </Hint>
               </p>
             ) : <p className={`mt-3 text-xs ${muted}`}>Legacy report: tool-level citations and an uncalibrated score. The numeric score is not displayed.</p>}
 
@@ -107,7 +125,7 @@ export default function Report({ record, toolbar, notice }: Props) {
             )}
             {v2 && (a.missing_data ?? []).length > 0 && (
               <>
-                <h4 className="section-title mt-5">Missing data</h4>
+                <Titled className="mt-5 mb-2" title="Missing data" hint="Diagnostics that failed or returned nothing (no permission, no logs, no metrics). While core data is missing, the workload is not called healthy." />
                 <ul className="list-disc pl-5 text-sm">{a.missing_data?.map((item, i) => <li key={i} className="break-words">{item}</li>)}</ul>
               </>
             )}
@@ -118,7 +136,7 @@ export default function Report({ record, toolbar, notice }: Props) {
       {a && report && (recommendations.length > 0 || commands.length > 0) && (
         <section className="card" aria-label="Next steps">
           {recommendations.length > 0 && <>
-            <h4 className="section-title">Remediation</h4>
+            <Titled className="mb-2" title="Remediation" hint={<>Changes you would make yourself; the troubleshooter never runs them. <strong>needs approval</strong> marks a change to the cluster.</>} />
             <ol className="flex flex-col gap-2 text-sm">
               {recommendations.map((r) => (
                 <li key={r.id} className="flex items-start gap-2">
@@ -134,7 +152,7 @@ export default function Report({ record, toolbar, notice }: Props) {
             </ol>
           </>}
           {commands.length > 0 && <>
-            <h4 className={`section-title ${recommendations.length > 0 ? "mt-5" : ""}`}>Read-only commands</h4>
+            <Titled className={`mb-2 ${recommendations.length > 0 ? "mt-5" : ""}`} title="Read-only commands" hint="kubectl commands that only read (get, describe, logs, top, events, rollout status or history), checked to contain no write verb and no Secret access. Copy them to look further." />
             <ul className="flex flex-col gap-1.5">
               {commands.map((c) => <CommandLine key={c.id} command={c.command ?? ""} />)}
             </ul>
