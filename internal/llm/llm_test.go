@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -455,5 +456,17 @@ func TestRulesForCustomResource(t *testing.T) {
 	}
 	if err := domain.ValidateSafeCommand(a.SafeCommands[0]); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// gpt-4o-mini wrote "get pods -n payments" for every command until the prompt
+// said each one starts with kubectl; its example must itself pass validation.
+func TestPromptExampleCommandIsValid(t *testing.T) {
+	example := regexp.MustCompile(`e\.g\. (kubectl [^.\n]+)\.`).FindStringSubmatch(systemPrompt)
+	if example == nil || !strings.Contains(systemPrompt, "starting with kubectl") {
+		t.Fatal("rule 9 must say each safe command starts with kubectl and show an example")
+	}
+	if err := domain.ValidateSafeCommand(example[1]); err != nil {
+		t.Fatalf("prompt example %q is rejected: %v", example[1], err)
 	}
 }
