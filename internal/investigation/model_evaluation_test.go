@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -37,7 +38,9 @@ type modelEvaluationConfig struct {
 	MaxInputBytes   int    `json:"max_input_bytes"`
 	MaxOutputTokens int    `json:"max_output_tokens"`
 	TimeoutSeconds  int    `json:"request_timeout_seconds"`
-	Temperature     int    `json:"temperature"`
+	// Temperature is 0, or null for reasoning models, which accept only the default.
+	Temperature     *int   `json:"temperature"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	apiKey          string
 }
 
@@ -46,7 +49,8 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 	if getenv("MODEL_EVAL_ALLOW_NETWORK") != "true" {
 		return modelEvaluationConfig{}, errors.New("MODEL_EVAL_ALLOW_NETWORK=true is required")
 	}
-	c := modelEvaluationConfig{Provider: getenv("MODEL_EVAL_PROVIDER"), Model: getenv("MODEL_EVAL_MODEL"), MaxInputBytes: config.DefaultLLMMaxInputBytes, MaxOutputTokens: 4096, TimeoutSeconds: 60}
+	c := modelEvaluationConfig{Provider: getenv("MODEL_EVAL_PROVIDER"), Model: getenv("MODEL_EVAL_MODEL"), MaxInputBytes: config.DefaultLLMMaxInputBytes, MaxOutputTokens: 4096, TimeoutSeconds: 60,
+		Temperature: new(int), ReasoningEffort: getenv("MODEL_EVAL_REASONING_EFFORT")}
 	if strings.TrimSpace(c.Model) == "" || len(c.Model) > 200 || strings.ContainsAny(c.Model, "\r\n\t") {
 		return c, errors.New("MODEL_EVAL_MODEL must be an explicit model name of at most 200 characters")
 	}
@@ -79,6 +83,12 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 		return c, errors.New("evaluation endpoint must use HTTPS except on loopback")
 	}
 	c.Endpoint = strings.TrimRight(c.Endpoint, "/")
+	if c.ReasoningEffort != "" {
+		if c.Provider != "openai" || !regexp.MustCompile(`^[a-z]{1,16}$`).MatchString(c.ReasoningEffort) {
+			return c, errors.New("MODEL_EVAL_REASONING_EFFORT must be a lowercase word, with MODEL_EVAL_PROVIDER=openai")
+		}
+		c.Temperature = nil
+	}
 	if c.Provider == "openai" {
 		c.apiKey = getenv("OPENAI_API_KEY")
 		if strings.TrimSpace(c.apiKey) == "" {
@@ -148,7 +158,7 @@ func runModelEvaluation(ctx context.Context, getenv func(string) string, emit fu
 	defer cancel()
 	var analyze func(context.Context, llm.AnalysisInput, int) (llm.Measurement, error)
 	if cfg.Provider == "openai" {
-		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, time.Duration(cfg.TimeoutSeconds)*time.Second).AnalyzeMeasured
+		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, time.Duration(cfg.TimeoutSeconds)*time.Second).WithReasoningEffort(cfg.ReasoningEffort).AnalyzeMeasured
 	} else {
 		analyze = llm.NewOllamaProvider(cfg.Endpoint, cfg.Model, time.Duration(cfg.TimeoutSeconds)*time.Second).AnalyzeMeasured
 	}

@@ -294,3 +294,21 @@ func TestModelEvaluationStopsWithoutMoreRequests(t *testing.T) {
 		})
 	}
 }
+
+func TestModelEvaluationReasoningEffort(t *testing.T) {
+	env := evaluationEnvironment("https://api.example.com/v1", "openai")
+	env["MODEL_EVAL_REASONING_EFFORT"] = "medium"
+	cfg, err := loadModelEvaluation(func(k string) string { return env[k] })
+	if err != nil || cfg.ReasoningEffort != "medium" || cfg.Temperature != nil {
+		t.Fatalf("reasoning config: %+v %v", cfg, err)
+	}
+	env = evaluationEnvironment("http://localhost:11434", "ollama")
+	env["MODEL_EVAL_REASONING_EFFORT"] = "medium"
+	if _, err := loadModelEvaluation(func(k string) string { return env[k] }); err == nil {
+		t.Fatal("reasoning effort accepted for Ollama")
+	}
+	env = evaluationEnvironment("https://api.example.com/v1", "openai")
+	if cfg, err := loadModelEvaluation(func(k string) string { return env[k] }); err != nil || cfg.Temperature == nil || *cfg.Temperature != 0 {
+		t.Fatalf("default config: %+v %v", cfg, err)
+	}
+}
