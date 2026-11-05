@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.1.1...v1.1.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* place hint bubbles before they show ([#60](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/60)) ([c4add53](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/c4add537c512ee57481e8f035662ece062e622f7))
+
 ## [1.1.1](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.1.0...v1.1.1) (2026-11-05)
 
 
