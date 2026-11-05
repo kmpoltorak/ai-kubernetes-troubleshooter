@@ -257,6 +257,8 @@ func getHPA(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 
 // ---- Nodes ----
 
+var nodeProblems = []corev1.NodeConditionType{corev1.NodeMemoryPressure, corev1.NodeDiskPressure, corev1.NodePIDPressure, corev1.NodeNetworkUnavailable}
+
 type NodeInfo struct {
 	Name           string            `json:"name"`
 	Ready          string            `json:"ready"`
@@ -300,7 +302,9 @@ func getNodes(ctx context.Context, c kube.Cluster, in Input) (Result, error) {
 			switch {
 			case cond.Type == corev1.NodeReady:
 				ni.Ready = string(cond.Status)
-			case cond.Status == corev1.ConditionTrue: // MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable
+			// Only the kubelet's problem conditions: distributions add their own,
+			// e.g. k3s reports EtcdIsVoter=True on healthy control-plane nodes.
+			case cond.Status == corev1.ConditionTrue && slices.Contains(nodeProblems, cond.Type):
 				ni.Pressure = append(ni.Pressure, string(cond.Type))
 			}
 		}

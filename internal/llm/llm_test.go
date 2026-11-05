@@ -426,6 +426,11 @@ func TestRulesForIngressStorageAutoscalingAndNodes(t *testing.T) {
 			"Node running the pods is NotReady", "kubectl describe node worker-2"},
 		{domain.ResourceHPA, "api", []domain.Evidence{ev("get_hpa", "horizontalpodautoscaler/api", "HPAMetricsUnavailable")},
 			"Autoscaler cannot read its metrics", "kubectl describe hpa api -n payments"},
+		// A pod-level cause outranks pressure on its node; pressure alone explains evictions.
+		{domain.ResourceDeployment, "api", []domain.Evidence{ev("get_pods", "pods/app=api", "CrashLoopBackOff"), ev("get_nodes", "node/worker-1", "NodePressure")},
+			"Container restarts with errors (CrashLoopBackOff)", "kubectl logs <pod> -n payments --previous"},
+		{domain.ResourceDeployment, "api", []domain.Evidence{ev("get_pods", "pods/app=api", "Evicted"), ev("get_nodes", "node/worker-1", "NodePressure")},
+			"Node under resource pressure", "kubectl describe node worker-1"},
 		// The autoscaler's missing target is explained by its condition, not as a missing autoscaler.
 		{domain.ResourceHPA, "api", []domain.Evidence{ev("get_hpa", "horizontalpodautoscaler/api", "HPAUnableToScale"), ev("get_deployment", "deployment/gone", "WorkloadNotFound")},
 			"Autoscaler cannot scale its target", "kubectl describe hpa api -n payments"},
