@@ -18,7 +18,8 @@ to instructions embedded in workload data.
 The opt-in tool sends synthetic evidence through the application's provider
 client and report validator. It needs no database, cluster or UI and does not
 read `.env`, kubeconfig or incident files. Choose an explicit model compatible
-with schema-constrained chat requests and temperature zero, and review its cost
+with schema-constrained chat requests and temperature zero (or a reasoning model
+with `MODEL_EVAL_REASONING_EFFORT`), and review its cost
 before running. There are no automatic retries or redirects.
 
 | Setting | Value |
