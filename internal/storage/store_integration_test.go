@@ -58,7 +58,7 @@ func TestResourceKindsMigration(t *testing.T) {
 	s := isolatedStore(t)
 	ctx := context.Background()
 	in := testIncident()
-	in.Target.ResourceType = domain.ResourceStatefulSet
+	in.ResourceType = domain.ResourceStatefulSet
 	if err := s.CreateIncident(ctx, &in); err != nil {
 		t.Fatalf("statefulset incident: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestResourceKindsMigration(t *testing.T) {
 	if err := s.MigrateDown(ctx); err == nil || !strings.Contains(err.Error(), "other kinds") {
 		t.Fatalf("downgrade with a statefulset incident: %v", err)
 	}
-	if got, err := s.GetIncident(ctx, in.ID); err != nil || got.Target.ResourceType != domain.ResourceStatefulSet {
+	if got, err := s.GetIncident(ctx, in.ID); err != nil || got.ResourceType != domain.ResourceStatefulSet {
 		t.Fatalf("rejected downgrade changed data: %+v %v", got, err)
 	}
 }
