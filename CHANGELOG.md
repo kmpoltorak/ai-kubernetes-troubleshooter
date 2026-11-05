@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.1.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.0.0...v1.1.0) (2026-11-05)
+
+
+### Features
+
+* delete incidents from the UI, one at a time or in bulk ([204c528](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/204c5287a7f9213cae8a20499cef255eb43a29bd))
+* delete incidents from the UI, one at a time or in bulk ([7ae1dcd](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/7ae1dcd7527bc4c53a56257975ffa0b3cd60c318))
+* diagnose Ingresses, claims, autoscalers and nodes ([90d9bfd](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/90d9bfdd61ec1756cfa3e47886982b50f3302810))
+* diagnose Ingresses, claims, autoscalers and nodes ([fb45caa](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/fb45caaba3b71d3b2d0ce4cf5f554934c6cc843d))
+* diagnose operator-configured custom resources ([1e2b60a](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/1e2b60ac253e38b39120992039a984d1eef2f1f3))
+* diagnose operator-configured custom resources ([927912f](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/927912f660726d8623f06ccb231b49e8ff52bf77))
+* diagnose StatefulSets, DaemonSets, Jobs and CronJobs ([36d6f69](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/36d6f6942da04cce3c7fd32c3b8d55c4f9bba532))
+* diagnose StatefulSets, DaemonSets, Jobs and CronJobs ([9e0d80c](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/9e0d80c004c00afd3052eb09bcf1ea57a6be018c))
+* explain confusing fields and report terms with "?" hints ([3b7156d](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/3b7156dbc68927afed09256d537fd03f13923513))
+* explain confusing fields and report terms with "?" hints ([4d7e34c](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/4d7e34cfcda843c4e23ac8895f5b06525daf61c1))
+* join an existing database container's Docker network ([f70da3e](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/f70da3efc08f13daf7f1a51a31834b5d3a2f9427))
+* lead with the conclusion and pick targets from the cluster ([010d339](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/010d339c47992c11473aa6c8f8c7240a2628d719))
+
+
+### Bug Fixes
+
+* act on the k3s pilot findings (results, UI, rules) ([338e7ea](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/338e7eaee578365952841170811a567ffb5b72d7))
+* act on the k3s pilot findings for healthy results and empty data ([889a5ee](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/889a5eed5413a63a48d5fb645e2397787942f64f))
+* ignore distribution-specific node conditions ([d0dff50](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/d0dff50b8f9eaad67f09dbb2e0ba9d13a631ebc6))
+* ignore distribution-specific node conditions ([fc1e7ac](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/fc1e7ac6b4881e3bff3ca5ab58c6c27e9dfe69ba))
+* keep Compose PostgreSQL on loopback and allow an existing database ([403d280](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/403d2802b959b9152dc80e65ae28ea1d5d606299))
+* keep Compose PostgreSQL on loopback and allow an existing database ([ec2c0d3](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/ec2c0d3e1ae8bb229e3c242e60754df96640780e))
+* satisfy staticcheck in the resource kinds migration test ([1279211](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/1279211791abeefa84cd3339bfa05951c4edcea3))
+* use logged errors and known names in rules reports ([925e328](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/925e328c997c65d3d221c824cc9561451ce13e73))
+* wait for the server-side rollback in the purge cancellation test ([0d76e54](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/0d76e54eab4687d3c0c86ebb1bb2b0bc2745a553))
+* wait for the server-side rollback in the purge cancellation test ([9c8c4e1](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/9c8c4e1e35f5401988e9892ee708055af493dea3))
+
 ## 1.0.0 (2026-11-04)
 
 
