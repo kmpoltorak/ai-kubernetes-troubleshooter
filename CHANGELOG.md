@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.2.0...v1.3.0) (2026-11-05)
+
+
+### Features
+
+* serve the guides at /docs ([#74](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/74)) ([f5ea083](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/f5ea08337ff24f654519624c4715a281b9b6c55e))
+
+
+### Bug Fixes
+
+* label the target name field Name for every kind ([#78](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/78)) ([9feb562](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/9feb5627845cfcbb40ae304b4d134c5c94e1ff89))
+
 ## [1.2.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.1.2...v1.2.0) (2026-11-05)
 
 
