@@ -355,10 +355,20 @@ func TestLiveCluster(t *testing.T) {
 		if s.call(t, ctx, "POST", "/api/v1/incidents", body, nil) != 400 || s.call(t, ctx, "GET", "/api/v1/targets?cluster=mirror&namespace=payments&kind=deployment", nil, nil) != 400 {
 			t.Fatal("namespace of another cluster admitted")
 		}
-		// mirror/outside passes the policy and reaches the cluster; RBAC still denies the reads.
+		// mirror/outside passes the policy and reaches the cluster through the kubeconfig
+		// mounted from a Secret; RBAC still denies the reads. /version answers without
+		// credentials, so only a forbidden read naming the ServiceAccount proves the
+		// kubeconfig authenticated.
 		rec := s.investigateIn(t, "mirror", "outside", domain.ResourcePod, "target")
 		if rec.Investigation.Status != domain.InvestigationFailed || rec.Report != nil {
 			t.Fatal("pod without a RoleBinding diagnosed")
+		}
+		authenticated := false
+		for _, tool := range rec.ToolExecutions {
+			authenticated = authenticated || (tool.Status == domain.ToolFailed && strings.Contains(tool.Error, "system:serviceaccount:troubleshooter:troubleshooter"))
+		}
+		if !authenticated {
+			t.Fatal("mirror reads did not authenticate as the app's ServiceAccount")
 		}
 	})
 	t.Run("optional_secret_metadata", func(t *testing.T) { s.checkSecretMetadata(t) })

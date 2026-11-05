@@ -1,7 +1,9 @@
-# The kind cluster under two names, both through the in-cluster ServiceAccount:
-# routing and per-cluster namespaces without a second cluster.
+# The kind cluster under two names: routing and per-cluster namespaces without a
+# second cluster. local uses in-cluster credentials, mirror a kubeconfig mounted
+# from a Secret, as a remote cluster would.
 clusters:
   - name: local
     allowed_namespaces: [payments]
   - name: mirror
+    kubeconfig: /etc/troubleshooter-kubeconfigs/mirror.yaml
     allowed_namespaces: [outside]

@@ -90,7 +90,7 @@ else
 fi
 
 cp -R deployments/kubernetes "$work/base"
-cp tests/e2e/postgres.yaml tests/e2e/custom-resource.yaml tests/e2e/clusters.yaml "$work/"
+cp tests/e2e/postgres.yaml tests/e2e/custom-resource.yaml tests/e2e/clusters.yaml tests/e2e/mirror-kubeconfig.yaml "$work/"
 password=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 printf 'POSTGRES_PASSWORD=%s\nDATABASE_URL=postgres://troubleshooter:%s@postgres:5432/troubleshooter?sslmode=disable\n' "$password" "$password" > "$work/database.env"
 unset password
@@ -105,6 +105,9 @@ secretGenerator:
   - name: troubleshooter-secrets
     namespace: troubleshooter
     envs: [database.env]
+  - name: troubleshooter-kubeconfigs
+    namespace: troubleshooter
+    files: [mirror.yaml=mirror-kubeconfig.yaml]
 configMapGenerator:
   - name: troubleshooter-clusters
     namespace: troubleshooter
@@ -124,10 +127,10 @@ patches:
         value: Never
       - op: add
         path: /spec/template/spec/volumes
-        value: [{name: clusters, configMap: {name: troubleshooter-clusters}}]
+        value: [{name: clusters, configMap: {name: troubleshooter-clusters}}, {name: kubeconfigs, secret: {secretName: troubleshooter-kubeconfigs}}]
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts
-        value: [{name: clusters, mountPath: /etc/troubleshooter, readOnly: true}]
+        value: [{name: clusters, mountPath: /etc/troubleshooter, readOnly: true}, {name: kubeconfigs, mountPath: /etc/troubleshooter-kubeconfigs, readOnly: true}]
   - target:
       kind: ConfigMap
       name: troubleshooter-config

@@ -69,8 +69,8 @@ Mount the file from a ConfigMap, and set `KUBERNETES_CLUSTERS_FILE` to its path 
 `KUBERNETES_ALLOWED_NAMESPACES` from that ConfigMap. An entry without
 `kubeconfig` reads the cluster the app runs in. Kubeconfigs for other clusters
 go in a Secret mounted the same way. The [kind tests](kubernetes-testing.md)
-apply this layout with two in-cluster entries; the Secret part is not covered by
-a test.
+apply this layout: one in-cluster entry, and one whose kubeconfig comes from a
+mounted Secret.
 
 ```yaml
 # kustomization.yaml next to the base manifests
@@ -78,13 +78,17 @@ configMapGenerator:
   - name: troubleshooter-clusters
     namespace: troubleshooter
     files: [clusters.yaml]
+secretGenerator:
+  - name: troubleshooter-kubeconfigs
+    namespace: troubleshooter
+    files: [prod.yaml]   # referenced in clusters.yaml as /etc/troubleshooter-kubeconfigs/prod.yaml
 patches:
   - target: {kind: Deployment, name: troubleshooter}
     patch: |-
       - op: add
         path: /spec/template/spec/volumes
-        value: [{name: clusters, configMap: {name: troubleshooter-clusters}}]
+        value: [{name: clusters, configMap: {name: troubleshooter-clusters}}, {name: kubeconfigs, secret: {secretName: troubleshooter-kubeconfigs}}]
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts
-        value: [{name: clusters, mountPath: /etc/troubleshooter, readOnly: true}]
+        value: [{name: clusters, mountPath: /etc/troubleshooter, readOnly: true}, {name: kubeconfigs, mountPath: /etc/troubleshooter-kubeconfigs, readOnly: true}]
 ```
