@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Incident } from "../api";
 import { target, timeAgo } from "../format";
 
@@ -9,13 +10,25 @@ interface Props {
   onRefresh: () => void;
   page: { offset: number; limit: number; hasMore: boolean };
   onPage: (offset: number) => void;
+  /** Resolves true when the incidents were deleted (after confirmation). */
+  onDelete: (ids: string[]) => Promise<boolean>;
+  notice: string;
 }
 
-export default function IncidentList({ incidents, error, selectedId, onSelect, onRefresh, page, onPage }: Props) {
+export default function IncidentList({ incidents, error, selectedId, onSelect, onRefresh, page, onPage, onDelete, notice }: Props) {
+  const [checked, setChecked] = useState<string[]>([]);
+  const visible = checked.filter((id) => incidents.some((inc) => inc.id === id));
+  const toggle = (id: string) => setChecked((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
   return (
     <div className="card">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Incidents</h2>
+        <div className="flex flex-wrap gap-2">
+        {visible.length > 0 && (
+          <button type="button" className="btn-danger" onClick={() => onDelete(visible).then((ok) => ok && setChecked([]))}>
+            Delete selected ({visible.length})
+          </button>
+        )}
         <button
           type="button"
           onClick={onRefresh}
@@ -23,17 +36,21 @@ export default function IncidentList({ incidents, error, selectedId, onSelect, o
         >
           Refresh
         </button>
+        </div>
       </div>
+      {notice && <p role="status" className="mb-2 text-sm text-zinc-700 dark:text-zinc-300">{notice}</p>}
       {error && <p className="text-sm text-red-600">Could not load incidents: {error}</p>}
       {!error && incidents.length === 0 && <p className="text-sm text-zinc-600 dark:text-zinc-400">{page.offset > 0 ? "No incidents on this page." : "No incidents yet."}</p>}
       <ul className="-mx-2 flex max-h-[52vh] flex-col gap-1 overflow-auto">
         {incidents.map((inc) => (
-          <li key={inc.id}>
+          <li key={inc.id} className="flex items-start gap-1">
+            <input type="checkbox" className="mt-3 ml-2 size-4 shrink-0 accent-indigo-600" checked={checked.includes(inc.id)} onChange={() => toggle(inc.id)}
+              aria-label={`Select ${inc.title || inc.id}`} />
             <button
               type="button"
               onClick={() => onSelect(inc.id)}
               aria-current={inc.id === selectedId}
-              className="grid w-full gap-0.5 rounded-lg border border-transparent px-3 py-2 text-left hover:bg-zinc-100 aria-[current=true]:border-indigo-500 aria-[current=true]:bg-indigo-50 dark:hover:bg-zinc-800 dark:aria-[current=true]:bg-indigo-500/10"
+              className="grid w-full min-w-0 gap-0.5 rounded-lg border border-transparent px-3 py-2 text-left hover:bg-zinc-100 aria-[current=true]:border-indigo-500 aria-[current=true]:bg-indigo-50 dark:hover:bg-zinc-800 dark:aria-[current=true]:bg-indigo-500/10"
             >
               <span className="truncate text-sm font-medium">{inc.title}</span>
               <span className="flex justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-400">

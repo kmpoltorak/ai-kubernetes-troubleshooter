@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -565,5 +566,48 @@ func TestTargetsListsWithinPolicy(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 200 || strings.TrimSpace(string(body)) != `{"names":[]}` {
 		t.Fatalf("simulation: %d %s", resp.StatusCode, body)
+	}
+}
+
+func (m *memStore) DeleteIncidents(_ context.Context, ids []string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var deleted []string
+	for _, id := range ids {
+		if _, ok := m.incidents[id]; ok {
+			delete(m.incidents, id)
+			deleted = append(deleted, id)
+		}
+	}
+	return deleted, nil
+}
+
+func TestDeleteIncidents(t *testing.T) {
+	srv := newServer(t, llm.RulesProvider{}, nil)
+	var ids []string
+	for range 2 {
+		_, out := do(t, "POST", srv.URL+"/api/v1/incidents", incidentBody)
+		ids = append(ids, out["id"].(string))
+	}
+	missing := domain.NewID()
+	resp, out := do(t, "POST", srv.URL+"/api/v1/incidents/delete", fmt.Sprintf(`{"ids":[%q,%q,%q]}`, strings.ToUpper(ids[0]), ids[1], missing))
+	if resp.StatusCode != 200 || len(out["deleted"].([]any)) != 2 || fmt.Sprint(out["skipped"]) != "["+missing+"]" {
+		t.Fatalf("delete: %d %v", resp.StatusCode, out)
+	}
+	if resp, _ := do(t, "GET", srv.URL+"/api/v1/incidents/"+ids[0], ""); resp.StatusCode != 404 {
+		t.Fatalf("deleted incident still readable: %d", resp.StatusCode)
+	}
+	tooMany := `{"ids":[` + strings.TrimSuffix(strings.Repeat(`"`+missing+`",`, 101), ",") + `]}`
+	for _, body := range []string{`{"ids":[]}`, `{"ids":["not-a-uuid"]}`, tooMany, `{"id":"x"}`} {
+		if resp, out := do(t, "POST", srv.URL+"/api/v1/incidents/delete", body); resp.StatusCode != 400 {
+			t.Errorf("%.40s: %d %v", body, resp.StatusCode, out)
+		}
+	}
+}
+
+func TestDeleteIncidentsReturnsEmptyLists(t *testing.T) {
+	srv := newServer(t, llm.RulesProvider{}, nil)
+	if resp, out := do(t, "POST", srv.URL+"/api/v1/incidents/delete", fmt.Sprintf(`{"ids":[%q]}`, domain.NewID())); resp.StatusCode != 200 || fmt.Sprint(out["deleted"]) != "[]" {
+		t.Fatalf("nothing deleted must be [], not null: %v", out)
 	}
 }

@@ -25,6 +25,7 @@ type Repository interface {
 	LatestReport(ctx context.Context, incidentID string) (domain.InvestigationRecord, error)
 	ListInvestigations(ctx context.Context, incidentID string, limit, offset int) ([]domain.Investigation, error)
 	GetInvestigation(ctx context.Context, incidentID, id string) (domain.InvestigationRecord, error)
+	DeleteIncidents(ctx context.Context, ids []string) ([]string, error)
 }
 
 // ValidationError describes invalid user input; the API maps it to 400.
@@ -119,6 +120,33 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]domain.Inciden
 		list[i] = list[i].Redacted()
 	}
 	return list, err
+}
+
+// MaxDelete bounds one delete request.
+const MaxDelete = 100
+
+// Delete removes incidents with all their investigations. Incidents with a
+// queued or running investigation, and unknown IDs, are skipped; the result
+// says which were deleted.
+func (s *Service) Delete(ctx context.Context, ids []string) (deleted, skipped []string, err error) {
+	if len(ids) == 0 || len(ids) > MaxDelete {
+		return nil, nil, &ValidationError{"ids", fmt.Sprintf("must list 1 to %d incident IDs", MaxDelete)}
+	}
+	normalized := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if !domain.IsUUID(id) {
+			return nil, nil, &ValidationError{"ids", fmt.Sprintf("%q is not a UUID", id)}
+		}
+		normalized = append(normalized, strings.ToLower(id)) // PostgreSQL returns UUIDs lowercase
+	}
+	ids = slices.Compact(slices.Sorted(slices.Values(normalized)))
+	deleted, err = s.repo.DeleteIncidents(ctx, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	deleted = append([]string{}, deleted...)
+	skipped = slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return slices.Contains(deleted, id) })
+	return deleted, skipped, nil
 }
 
 // Report returns the latest completed investigation of an incident.

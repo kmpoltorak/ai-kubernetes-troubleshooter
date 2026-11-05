@@ -186,3 +186,14 @@ func TestLegacyListAndReportDoNotMutateStorage(t *testing.T) {
 		t.Fatalf("unsafe malformed record: %v", err)
 	}
 }
+
+func (f *fakeRepo) DeleteIncidents(_ context.Context, ids []string) ([]string, error) {
+	var deleted []string
+	for _, id := range ids {
+		if _, ok := f.incidents[id]; ok {
+			delete(f.incidents, id)
+			deleted = append(deleted, id)
+		}
+	}
+	return deleted, nil
+}
