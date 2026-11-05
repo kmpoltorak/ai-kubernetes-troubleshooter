@@ -12,6 +12,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -19,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	metadatafake "k8s.io/client-go/metadata/fake"
@@ -64,6 +66,7 @@ func (c Clusters) For(target domain.Target, scenario string) (kube.Cluster, stri
 // world is the mutable scenario state before it is loaded into fakes.
 type world struct {
 	ns, app   string
+	kind      domain.ResourceType
 	labels    map[string]string
 	deploy    *appsv1.Deployment
 	pods      []*corev1.Pod
@@ -114,7 +117,7 @@ func Build(scenario string, target domain.Target) (kube.Cluster, error) {
 
 func healthy(t domain.Target) *world {
 	app := t.ResourceName
-	w := &world{ns: t.Namespace, app: app, labels: map[string]string{"app": app}, memoryBytes: 118 << 20, cpuMilli: 85}
+	w := &world{ns: t.Namespace, app: app, kind: t.ResourceType, labels: map[string]string{"app": app}, memoryBytes: 118 << 20, cpuMilli: 85}
 	image := "registry.example.com/" + app + ":1.4.2"
 	container := corev1.Container{
 		Name: "app", Image: image,
@@ -407,11 +410,52 @@ func (w *world) event(typ, reason, kind, name, msg string, ago time.Duration, co
 	})
 }
 
+// controller renders the scenario's Deployment as the target's kind, so every
+// scenario works for every pod controller. Other targets keep the Deployment.
+func (w *world) controller() []runtime.Object {
+	d := w.deploy
+	st := d.Status
+	switch w.kind {
+	case domain.ResourceStatefulSet:
+		return []runtime.Object{&appsv1.StatefulSet{ObjectMeta: d.ObjectMeta,
+			Spec: appsv1.StatefulSetSpec{Replicas: d.Spec.Replicas, Selector: d.Spec.Selector, Template: d.Spec.Template, ServiceName: w.app},
+			Status: appsv1.StatefulSetStatus{ObservedGeneration: st.ObservedGeneration, Replicas: st.Replicas, ReadyReplicas: st.ReadyReplicas,
+				AvailableReplicas: st.AvailableReplicas, UpdatedReplicas: st.UpdatedReplicas, CurrentRevision: w.app + "-7c9d8f6b5", UpdateRevision: w.app + "-7c9d8f6b5"}}}
+	case domain.ResourceDaemonSet:
+		return []runtime.Object{&appsv1.DaemonSet{ObjectMeta: d.ObjectMeta,
+			Spec: appsv1.DaemonSetSpec{Selector: d.Spec.Selector, Template: d.Spec.Template},
+			Status: appsv1.DaemonSetStatus{ObservedGeneration: st.ObservedGeneration, DesiredNumberScheduled: st.Replicas, CurrentNumberScheduled: st.Replicas,
+				NumberReady: st.ReadyReplicas, NumberAvailable: st.AvailableReplicas, UpdatedNumberScheduled: st.UpdatedReplicas}}}
+	case domain.ResourceJob:
+		return []runtime.Object{w.job(d.ObjectMeta)}
+	case domain.ResourceCronJob:
+		cron := &batchv1.CronJob{ObjectMeta: d.ObjectMeta, Spec: batchv1.CronJobSpec{Schedule: "*/15 * * * *", JobTemplate: batchv1.JobTemplateSpec{Spec: w.job(d.ObjectMeta).Spec}},
+			Status: batchv1.CronJobStatus{LastScheduleTime: ptr.To(metav1.NewTime(Now.Add(-10 * time.Minute)))}}
+		cron.UID = types.UID(w.app + "-cronjob-uid")
+		run := w.job(metav1.ObjectMeta{Name: w.app + "-29270910", Namespace: w.ns, CreationTimestamp: metav1.NewTime(Now.Add(-10 * time.Minute)),
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "batch/v1", Kind: "CronJob", Name: w.app, UID: cron.UID}}})
+		cron.Status.Active = []corev1.ObjectReference{{Kind: "Job", Name: run.Name, Namespace: w.ns}}
+		return []runtime.Object{cron, run}
+	}
+	return []runtime.Object{d}
+}
+
+// job runs the scenario's pods as one Job run, still active.
+func (w *world) job(meta metav1.ObjectMeta) *batchv1.Job {
+	d := w.deploy
+	tmpl := *d.Spec.Template.DeepCopy()
+	tmpl.Spec.RestartPolicy = corev1.RestartPolicyOnFailure
+	return &batchv1.Job{ObjectMeta: meta,
+		Spec:   batchv1.JobSpec{Parallelism: d.Spec.Replicas, Completions: d.Spec.Replicas, Selector: d.Spec.Selector, Template: tmpl},
+		Status: batchv1.JobStatus{Active: d.Status.Replicas, Ready: ptr.To(d.Status.ReadyReplicas), StartTime: ptr.To(metav1.NewTime(Now.Add(-10 * time.Minute)))}}
+}
+
 func (w *world) cluster() (kube.Cluster, error) {
 	objs := []runtime.Object{
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: w.ns}, Status: corev1.NamespaceStatus{Phase: corev1.NamespaceActive}},
-		w.deploy, w.service, w.endpointSlice(),
+		w.service, w.endpointSlice(),
 	}
+	objs = append(objs, w.controller()...)
 	if w.configMap != nil {
 		objs = append(objs, w.configMap)
 	}

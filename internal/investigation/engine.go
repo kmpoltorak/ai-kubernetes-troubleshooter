@@ -213,17 +213,36 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 	var spec *diagnostics.PodSpecSummary
 	var pods diagnostics.PodsInfo
 
+	subjects := []string{t.ResourceName}
 	switch t.ResourceType {
-	case domain.ResourceDeployment:
-		res, ok := r.run(ctx, diagnostics.GetDeployment, diagnostics.Input{Name: t.ResourceName})
+	case domain.ResourceDeployment, domain.ResourceStatefulSet, domain.ResourceDaemonSet, domain.ResourceJob:
+		res, ok := r.run(ctx, controllerTools[t.ResourceType], diagnostics.Input{Name: t.ResourceName})
 		if !ok {
 			return r.unobserved(t)
 		}
 		if slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
 			return nil
 		}
-		d := res.Data.(diagnostics.DeploymentInfo)
+		d := res.Data.(diagnostics.WorkloadInfo)
 		selector, podLabels, spec = d.Selector, d.PodLabels, &d.Template
+	case domain.ResourceCronJob:
+		res, ok := r.run(ctx, diagnostics.GetCronJob, diagnostics.Input{Name: t.ResourceName})
+		if !ok {
+			return r.unobserved(t)
+		}
+		if slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
+			return nil
+		}
+		cj := res.Data.(diagnostics.CronJobInfo)
+		spec = &cj.Template
+		// The latest run explains a failing schedule; its pods carry the details.
+		if cj.LatestJob != "" {
+			subjects = append(subjects, cj.LatestJob)
+			if res, ok := r.run(ctx, diagnostics.GetJob, diagnostics.Input{Name: cj.LatestJob}); ok && !slices.Contains(res.Signals, diagnostics.SignalWorkloadNotFound) {
+				j := res.Data.(diagnostics.WorkloadInfo)
+				selector, podLabels, spec = j.Selector, j.PodLabels, &j.Template
+			}
+		}
 	case domain.ResourceService:
 		res, ok := r.run(ctx, diagnostics.GetService, diagnostics.Input{Name: t.ResourceName})
 		if !ok {
@@ -259,12 +278,16 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 	if spec == nil {
 		spec = pods.Spec
 	}
-	podNames := make([]string, 0, len(pods.Pods))
+	var podNames, livePods []string
 	for _, p := range pods.Pods {
 		podNames = append(podNames, p.Name)
+		// Finished pods have no usage to sample.
+		if p.Phase != "Succeeded" && p.Phase != "Failed" {
+			livePods = append(livePods, p.Name)
+		}
 	}
 
-	subjects := append([]string{t.ResourceName}, podNames...)
+	subjects = append(subjects, podNames...)
 	r.run(ctx, diagnostics.GetEvents, diagnostics.Input{Names: subjects[:min(len(subjects), maxEventSubject)]})
 
 	for _, p := range logPods(pods.Pods) {
@@ -285,10 +308,18 @@ func (r *runner) collect(ctx context.Context, t domain.Target) error {
 	if len(podLabels) > 0 {
 		r.run(ctx, diagnostics.GetNetworkPolicies, diagnostics.Input{Labels: podLabels})
 	}
-	if len(podNames) > 0 {
-		r.run(ctx, diagnostics.GetResourceUsage, diagnostics.Input{Names: podNames})
+	if len(livePods) > 0 {
+		r.run(ctx, diagnostics.GetResourceUsage, diagnostics.Input{Names: livePods})
 	}
 	return nil
+}
+
+// controllerTools read the pod controllers whose template and selector lead to their pods.
+var controllerTools = map[domain.ResourceType]string{
+	domain.ResourceDeployment:  diagnostics.GetDeployment,
+	domain.ResourceStatefulSet: diagnostics.GetStatefulSet,
+	domain.ResourceDaemonSet:   diagnostics.GetDaemonSet,
+	domain.ResourceJob:         diagnostics.GetJob,
 }
 
 // unobserved reports the error of the last, failed, target read.

@@ -37,6 +37,10 @@ const PRESETS: Record<string, { label: string; incident: CreateIncident }> = {
   },
 };
 
+const kindLabel: Record<string, string> = {
+  deployment: "Deployment", statefulset: "StatefulSet", daemonset: "DaemonSet", job: "Job", cronjob: "CronJob", service: "Service", pod: "Pod",
+};
+
 // Samples exist only in simulation; live mode never offers them.
 export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Runtime | null; onCreated: (inc: Incident, scenario: string) => void }) {
   const cluster = runtime?.cluster_name ?? "";
@@ -130,9 +134,7 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
           <label className="label">
             Kind
             <select className="field" value={form.resource_type} onChange={(e) => setForm({ ...form, resource_type: e.target.value as ResourceType })}>
-              <option value="deployment">Deployment</option>
-              <option value="service">Service</option>
-              <option value="pod">Pod</option>
+              {(runtime?.resource_types ?? [form.resource_type]).map((k) => <option key={k} value={k}>{kindLabel[k] ?? k}</option>)}
             </select>
           </label>
           <label className="label">
@@ -143,7 +145,7 @@ export default function CreateIncidentForm({ runtime, onCreated }: { runtime: Ru
         </div>
         {form.namespace && (names.error
           ? <p className="text-xs text-amber-800 dark:text-amber-300">Could not list names ({names.error}). Type the name.</p>
-          : names.list.length > 0 && <p className="text-xs text-zinc-600 dark:text-zinc-400">{names.list.length} {form.resource_type === "service" ? "Services" : form.resource_type === "pod" ? "Pods" : "Deployments"} in {form.namespace}: pick from Name or type one.</p>)}
+          : names.list.length > 0 && <p className="text-xs text-zinc-600 dark:text-zinc-400">{names.list.length} × {kindLabel[form.resource_type] ?? form.resource_type} in {form.namespace}: pick from Name or type one.</p>)}
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         <button type="submit" className="btn-primary" disabled={busy}>
           {busy ? "Creating…" : "Create incident"}

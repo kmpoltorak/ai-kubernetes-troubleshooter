@@ -53,6 +53,26 @@ func TestMigrateDownAndUp(t *testing.T) {
 	}
 }
 
+// New kinds need no migration; downgrading keeps them from violating the old constraint.
+func TestResourceKindsMigration(t *testing.T) {
+	s := isolatedStore(t)
+	ctx := context.Background()
+	in := testIncident()
+	in.Target.ResourceType = domain.ResourceStatefulSet
+	if err := s.CreateIncident(ctx, &in); err != nil {
+		t.Fatalf("statefulset incident: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE incidents SET resource_type = 'Bad Kind' WHERE id = $1`, in.ID); err == nil {
+		t.Fatal("database accepted a malformed kind")
+	}
+	if err := s.MigrateDown(ctx); err == nil || !strings.Contains(err.Error(), "other kinds") {
+		t.Fatalf("downgrade with a statefulset incident: %v", err)
+	}
+	if got, err := s.GetIncident(ctx, in.ID); err != nil || got.Target.ResourceType != domain.ResourceStatefulSet {
+		t.Fatalf("rejected downgrade changed data: %+v %v", got, err)
+	}
+}
+
 func TestMigrationsRefuseNewerSchema(t *testing.T) {
 	s := isolatedStore(t)
 	ctx := context.Background()

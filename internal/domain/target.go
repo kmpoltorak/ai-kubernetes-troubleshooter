@@ -9,10 +9,17 @@ import (
 type ResourceType string
 
 const (
-	ResourceDeployment ResourceType = "deployment"
-	ResourceService    ResourceType = "service"
-	ResourcePod        ResourceType = "pod"
+	ResourceDeployment  ResourceType = "deployment"
+	ResourceStatefulSet ResourceType = "statefulset"
+	ResourceDaemonSet   ResourceType = "daemonset"
+	ResourceJob         ResourceType = "job"
+	ResourceCronJob     ResourceType = "cronjob"
+	ResourceService     ResourceType = "service"
+	ResourcePod         ResourceType = "pod"
 )
+
+// ResourceTypes lists every kind an incident can target, in the order the form offers them.
+var ResourceTypes = []ResourceType{ResourceDeployment, ResourceStatefulSet, ResourceDaemonSet, ResourceJob, ResourceCronJob, ResourceService, ResourcePod}
 
 // Target identifies the workload an incident is about: the cluster
 // (ClusterTarget) and the namespaced resource (ResourceTarget).
@@ -33,10 +40,8 @@ func (t Target) Validate() error {
 	if err := ValidateNamespace(t.Namespace); err != nil {
 		errs = append(errs, fmt.Errorf("namespace %w", err))
 	}
-	switch t.ResourceType {
-	case ResourceDeployment, ResourceService, ResourcePod:
-	default:
-		errs = append(errs, errors.New("resource_type must be one of deployment, service, pod"))
+	if !slices.Contains(ResourceTypes, t.ResourceType) {
+		errs = append(errs, fmt.Errorf("resource_type must be one of %v", ResourceTypes))
 	}
 	if err := ValidateObjectName(t.ResourceName); err != nil {
 		errs = append(errs, fmt.Errorf("resource_name %w", err))

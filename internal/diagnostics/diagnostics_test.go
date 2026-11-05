@@ -150,7 +150,7 @@ func TestGetDeployment(t *testing.T) {
 		t.Fatalf("health = %s", r.Health)
 	}
 	wantSignals(t, r, SignalReplicasUnavailable, SignalRolloutStuck)
-	info := r.Data.(DeploymentInfo)
+	info := r.Data.(WorkloadInfo)
 	if info.Selector != "app=payment-service" || !slices.Equal(info.Template.ConfigMaps, []string{"payment-config"}) ||
 		!slices.Equal(info.Template.Secrets, []string{"db-credentials"}) {
 		t.Fatalf("info: %+v", info)

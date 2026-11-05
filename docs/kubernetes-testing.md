@@ -35,8 +35,8 @@ The Deployment uses the original manifest digest. Only the fixture is rebuilt.
 
 ## Scope and output
 
-Cases cover healthy targets, missing configuration, failed readiness, invalid
-images, Service selectors, denied reads, optional diagnostics and actual TCP
+Cases cover healthy targets (including a StatefulSet), a failed Job, missing
+configuration, failed readiness, invalid images, Service selectors, denied reads, optional diagnostics and actual TCP
 NetworkPolicy enforcement. Fixture changes use an administrator client; the
 application keeps the base read-only ServiceAccount. One case temporarily adds
 the existing optional Secret metadata grant, then restores it. That grant also

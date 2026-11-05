@@ -421,3 +421,38 @@ func TestReportIdentifiesActuallyTruncatedLogSamples(t *testing.T) {
 		t.Fatal("fixture did not collect logs")
 	}
 }
+
+// Every pod controller reaches its pods: a healthy one is called healthy, a crashing one is diagnosed.
+func TestInvestigateEveryControllerKind(t *testing.T) {
+	first := map[domain.ResourceType][]string{
+		domain.ResourceDeployment:  {diagnostics.GetDeployment},
+		domain.ResourceStatefulSet: {diagnostics.GetStatefulSet},
+		domain.ResourceDaemonSet:   {diagnostics.GetDaemonSet},
+		domain.ResourceJob:         {diagnostics.GetJob},
+		domain.ResourceCronJob:     {diagnostics.GetCronJob, diagnostics.GetJob},
+	}
+	for kind, controller := range first {
+		for scenario, want := range map[string]string{"healthy": "no_fault_observed", "crash_loop_backoff": "observed_fault"} {
+			t.Run(string(kind)+"/"+scenario, func(t *testing.T) {
+				inc := incident(kind, "worker")
+				rec, err := newEngine(newMemStore(inc), sim(t), llm.RulesProvider{}).Investigate(context.Background(), inc.ID, Options{Scenario: scenario})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := tools(rec)
+				if !slices.Equal(got[1:1+len(controller)], controller) || !slices.Contains(got, diagnostics.GetPods) || !slices.Contains(got, diagnostics.GetPodLogs) {
+					t.Fatalf("plan %v does not read the controller and its pods", got)
+				}
+				a := rec.Report.Analysis
+				if a.Verdict != want || (scenario == "crash_loop_backoff" && !strings.Contains(a.RootCause, "CrashLoopBackOff")) {
+					t.Fatalf("%s: %s %q (missing %v)", scenario, a.Verdict, a.RootCause, a.MissingData)
+				}
+				for _, c := range a.SafeCommands {
+					if strings.Contains(c, "rollout history deployment/") && kind != domain.ResourceDeployment {
+						t.Errorf("command names the wrong kind: %q", c)
+					}
+				}
+			})
+		}
+	}
+}

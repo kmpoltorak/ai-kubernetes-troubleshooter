@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -44,15 +45,22 @@ func TestListNamesPerKindAndNamespace(t *testing.T) {
 		&appsv1.Deployment{ObjectMeta: meta("payments", "ledger")}, &appsv1.Deployment{ObjectMeta: meta("payments", "checkout")},
 		&appsv1.Deployment{ObjectMeta: meta("other", "hidden")},
 		&corev1.Service{ObjectMeta: meta("payments", "checkout-svc")}, &corev1.Pod{ObjectMeta: meta("payments", "ledger-abc")},
+		&appsv1.StatefulSet{ObjectMeta: meta("payments", "db")}, &appsv1.DaemonSet{ObjectMeta: meta("payments", "agent")},
+		&batchv1.Job{ObjectMeta: meta("payments", "migrate")}, &batchv1.CronJob{ObjectMeta: meta("payments", "nightly")},
 	)}
-	for kind, want := range map[domain.ResourceType][]string{
-		domain.ResourceDeployment: {"checkout", "ledger"},
-		domain.ResourceService:    {"checkout-svc"},
-		domain.ResourcePod:        {"ledger-abc"},
-	} {
+	want := map[domain.ResourceType][]string{
+		domain.ResourceDeployment:  {"checkout", "ledger"},
+		domain.ResourceService:     {"checkout-svc"},
+		domain.ResourcePod:         {"ledger-abc"},
+		domain.ResourceStatefulSet: {"db"},
+		domain.ResourceDaemonSet:   {"agent"},
+		domain.ResourceJob:         {"migrate"},
+		domain.ResourceCronJob:     {"nightly"},
+	}
+	for _, kind := range domain.ResourceTypes {
 		got, err := c.ListNames(context.Background(), "payments", kind)
-		if err != nil || !slices.Equal(got, want) {
-			t.Errorf("%s: %v %v, want %v", kind, got, err, want)
+		if err != nil || !slices.Equal(got, want[kind]) {
+			t.Errorf("%s: %v %v, want %v", kind, got, err, want[kind])
 		}
 	}
 	if _, err := c.ListNames(context.Background(), "payments", "secret"); err == nil {

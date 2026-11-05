@@ -48,6 +48,8 @@ type Runtime struct {
 	AllowedNamespaces []string `json:"allowed_namespaces"`
 	Analyzer          Analyzer `json:"analyzer"`
 	Scenarios         []string `json:"scenarios"`
+	// ResourceTypes are the kinds an incident can target, in form order.
+	ResourceTypes []domain.ResourceType `json:"resource_types"`
 }
 
 type Analyzer struct {
@@ -58,7 +60,7 @@ type Analyzer struct {
 // RuntimeFrom selects the UI-relevant settings; empty namespaces mean all readable ones.
 func RuntimeFrom(cfg config.Config) Runtime {
 	rt := Runtime{Mode: "live", ClusterName: cfg.ClusterName, AllowedNamespaces: append([]string{}, cfg.AllowedNamespaces...),
-		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel}, Scenarios: []string{}}
+		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel}, Scenarios: []string{}, ResourceTypes: domain.ResourceTypes}
 	if cfg.SimulationEnabled {
 		rt.Mode, rt.Scenarios = "simulation", simulation.Scenarios
 	}

@@ -119,7 +119,7 @@ func TestTargetValidate(t *testing.T) {
 	if valid.Ref() != "deployment/payment-service" {
 		t.Fatalf("ref = %s", valid.Ref())
 	}
-	bad := Target{Cluster: "", Namespace: "Payments", ResourceType: "statefulset", ResourceName: "a;b"}
+	bad := Target{Cluster: "", Namespace: "Payments", ResourceType: "secret", ResourceName: "a;b"}
 	err := bad.Validate()
 	for _, want := range []string{"cluster", "namespace", "resource_type", "resource_name"} {
 		if err == nil || !strings.Contains(err.Error(), want) {

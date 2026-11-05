@@ -353,16 +353,28 @@ func TestJobRejectsMismatchedResultAndUnstartedAnalysis(t *testing.T) {
 	}
 }
 
+// migrateDownTo reverts migrations one at a time until version is the latest applied.
+func migrateDownTo(t *testing.T, s *Store, version int) {
+	t.Helper()
+	for {
+		var current int
+		if err := s.pool.QueryRow(context.Background(), `SELECT COALESCE(max(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
+			t.Fatal(err)
+		}
+		if current <= version {
+			return
+		}
+		if err := s.MigrateDown(context.Background()); err != nil {
+			t.Fatalf("down from %d: %v", current, err)
+		}
+	}
+}
+
 func TestJobMigrationPreservesLegacyAndRejectsActiveDowngrade(t *testing.T) {
 	s := isolatedStore(t)
 	ctx := context.Background()
-	// Roll back both report v2 and durable jobs to exercise the original schema.
-	if err := s.MigrateDown(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.MigrateDown(ctx); err != nil {
-		t.Fatal(err)
-	}
+	// Roll back to the original schema, before durable jobs.
+	migrateDownTo(t, s, 1)
 	// The old schema can create an interrupted attempt without queue metadata.
 	inc := jobIncident(t, s)
 	legacy := domain.Investigation{IncidentID: inc.ID, Status: domain.InvestigationRunning}
@@ -379,9 +391,7 @@ func TestJobMigrationPreservesLegacyAndRejectsActiveDowngrade(t *testing.T) {
 	if _, err := s.ClaimJob(ctx, 1, 100, time.Second); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("legacy adopted: %v", err)
 	}
-	if err := s.MigrateDown(ctx); err != nil {
-		t.Fatal(err)
-	}
+	migrateDownTo(t, s, 2)
 	j := queuedJob(t, s)
 	if err := s.MigrateDown(ctx); err == nil || !strings.Contains(err.Error(), "active jobs") {
 		t.Fatalf("active downgrade accepted: %v", err)

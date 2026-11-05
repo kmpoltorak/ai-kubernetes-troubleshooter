@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	authorizationv1 "k8s.io/api/authorization/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -117,6 +119,50 @@ func TestLiveCluster(t *testing.T) {
 					t.Fatalf("healthy target assessment: %s/%s", a.Verdict, a.Support)
 				}
 			})
+		}
+	})
+	t.Run("statefulset", func(t *testing.T) {
+		labels, replicas := map[string]string{"app": "ledger-db"}, int32(1)
+		_, err := client.AppsV1().StatefulSets("payments").Create(ctx, &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "ledger-db"},
+			Spec: appsv1.StatefulSetSpec{Replicas: &replicas, ServiceName: "ledger-db", Selector: &metav1.LabelSelector{MatchLabels: labels},
+				Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: podSpec(s.image)}}}, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, ctx, 3*time.Minute, "ready statefulset", func(ctx context.Context) (bool, error) {
+			st, err := client.AppsV1().StatefulSets("payments").Get(ctx, "ledger-db", metav1.GetOptions{})
+			return err == nil && st.Status.ObservedGeneration == st.Generation && st.Status.ReadyReplicas == 1 && st.Status.UpdatedReplicas == 1, err
+		})
+		rec := s.investigate(t, domain.ResourceStatefulSet, "ledger-db")
+		if a := report(t, rec); a.Verdict != "no_fault_observed" || !slices.ContainsFunc(rec.ToolExecutions, func(te domain.ToolExecution) bool { return te.ToolName == diagnostics.GetStatefulSet && te.Error == "" }) {
+			t.Fatalf("healthy statefulset: %s", a.Verdict)
+		}
+		var listed struct {
+			Names []string `json:"names"`
+		}
+		if code := s.call(t, ctx, "GET", "/api/v1/targets?namespace=payments&kind=statefulset", nil, &listed); code != 200 || !slices.Contains(listed.Names, "ledger-db") {
+			t.Fatalf("statefulset names not listed: %d %v", code, listed.Names)
+		}
+	})
+	t.Run("failed_job", func(t *testing.T) {
+		spec := podSpec(s.image)
+		spec.RestartPolicy, spec.Containers[0].ReadinessProbe, spec.Containers[0].Args = corev1.RestartPolicyNever, nil, []string{"--no-such-flag"}
+		backoff := int32(0)
+		if _, err := client.BatchV1().Jobs("payments").Create(ctx, &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "migrate"},
+			Spec: batchv1.JobSpec{BackoffLimit: &backoff, Template: corev1.PodTemplateSpec{Spec: spec}}}, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, ctx, 3*time.Minute, "failed job", func(ctx context.Context) (bool, error) {
+			j, err := client.BatchV1().Jobs("payments").Get(ctx, "migrate", metav1.GetOptions{})
+			return err == nil && slices.ContainsFunc(j.Status.Conditions, func(c batchv1.JobCondition) bool {
+				return c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue
+			}), err
+		})
+		rec := s.investigate(t, domain.ResourceJob, "migrate")
+		requireSignal(t, rec, diagnostics.SignalJobFailed)
+		requireSignal(t, rec, diagnostics.SignalContainerExitError)
+		if a := report(t, rec); a.Verdict != "observed_fault" || a.RootCause != "Job failed: its pods exited with errors" {
+			t.Fatalf("failed job: %s %q", a.Verdict, a.RootCause)
 		}
 	})
 	t.Run("missing_configmap", func(t *testing.T) {
