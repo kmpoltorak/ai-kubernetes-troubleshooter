@@ -324,6 +324,21 @@ func TestPurgeCancellationRollsBackCascades(t *testing.T) {
 	if err := <-done; err == nil || !observed {
 		t.Fatalf("did not interrupt DELETE: sleeping=%t error=%v", observed, err)
 	}
+	// The client returns at once; the server backend rolls back only once it
+	// handles the cancel request. Until then it holds the row locks the next
+	// preview skips (SKIP LOCKED), so wait for it before comparing.
+	for wait := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		var busy bool
+		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND query LIKE 'DELETE FROM incidents WHERE id=ANY%' AND state <> 'idle')`).Scan(&busy); err != nil {
+			t.Fatal(err)
+		}
+		if !busy {
+			break
+		}
+		if time.Now().After(wait) {
+			t.Fatal("cancelled DELETE still running on the server")
+		}
+	}
 	assertIncidentExists(t, s, inc.ID, true)
 	if got := mustPreview(t, s, 100); got.Confirmation != preview.Confirmation {
 		t.Fatal("cancelled DELETE lost dependent data")
