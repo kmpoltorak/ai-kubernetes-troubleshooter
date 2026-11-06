@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.3.0...v1.4.0) (2026-11-06)
+
+
+### Features
+
+* support OpenAI reasoning models with LLM_REASONING_EFFORT ([#82](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/82)) ([1839efe](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/1839efe9797f1ee3162d961523be9f9b7e75d3d7))
+
+
+### Bug Fixes
+
+* state every validator check in the system prompt ([#83](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/83)) ([dcabb86](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/dcabb86e8717a810c747dc776c9346893b3b45d7))
+* tell the model each safe command starts with kubectl ([#79](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/79)) ([9fbb422](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/9fbb422790c332cd146b54ccd4a52c318805d022))
+
 ## [1.3.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.2.0...v1.3.0) (2026-11-05)
 
 
