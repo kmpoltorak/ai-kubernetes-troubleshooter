@@ -51,7 +51,6 @@ type Config struct {
 	OpenAIBaseURL      string
 	AnthropicAPIKey    string
 	AnthropicBaseURL   string
-	OllamaBaseURL      string
 
 	SimulationEnabled  bool
 	SimulationScenario string
@@ -88,7 +87,6 @@ type Auth struct {
 var defaultModels = map[string]string{
 	"rules":     "rules-v2", // must match llm.RulesProvider.Name
 	"openai":    "gpt-4o-mini",
-	"ollama":    "llama3.2",
 	"anthropic": "claude-opus-5-5",
 }
 
@@ -109,7 +107,6 @@ func Load(getenv func(string) string) (Config, error) {
 		LLMTimeout:                  p.duration("LLM_TIMEOUT", 60*time.Second),
 		OpenAIAPIKey:                p.str("OPENAI_API_KEY", ""),
 		OpenAIBaseURL:               strings.TrimRight(p.str("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
-		OllamaBaseURL:               strings.TrimRight(p.str("OLLAMA_BASE_URL", "http://localhost:11434"), "/"),
 		AnthropicAPIKey:             p.str("ANTHROPIC_API_KEY", ""),
 		AnthropicBaseURL:            strings.TrimRight(p.str("ANTHROPIC_BASE_URL", "https://api.anthropic.com"), "/"),
 		SimulationEnabled:           p.bool("SIMULATION_ENABLED", true),
@@ -145,7 +142,7 @@ func Load(getenv func(string) string) (Config, error) {
 		c.CustomResources = append(c.CustomResources, cr)
 	}
 	if _, ok := defaultModels[c.LLMProvider]; !ok {
-		p.fail("LLM_PROVIDER", "must be one of rules, openai, anthropic, ollama")
+		p.fail("LLM_PROVIDER", "must be one of rules, openai, anthropic")
 	} else if c.LLMModel == "" {
 		c.LLMModel = defaultModels[c.LLMProvider]
 	}

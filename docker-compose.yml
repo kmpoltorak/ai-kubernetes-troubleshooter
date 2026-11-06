@@ -1,9 +1,8 @@
 # Default:            docker compose up --build            (app + postgres, simulation mode)
-# With Ollama:        run Ollama on the host, then LLM_PROVIDER=ollama docker compose up --build
 # Existing database:  EXTERNAL_DATABASE_URL=postgres://... docker compose up --build --no-deps app
 #
-# Values come from .env (see .env.example). Addresses of other containers
-# (database, Ollama on the host) are fixed here because they are facts of this network.
+# Values come from .env (see .env.example). The database address is fixed here
+# because it is a fact of this network.
 
 services:
   postgres:
@@ -45,14 +44,13 @@ services:
       KUBERNETES_CUSTOM_RESOURCES: ${KUBERNETES_CUSTOM_RESOURCES:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-rules}
       LLM_MODEL: ${LLM_MODEL:-}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
       LLM_MAX_INPUT_BYTES: ${LLM_MAX_INPUT_BYTES:-262144}
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120s}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://api.anthropic.com}
-      # Ollama runs natively on the host (GPU); in Docker it was too slow on CPU.
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
       # Simulation by default; add -f docker-compose.live.yml for a live cluster.
       SIMULATION_ENABLED: "true"
       SIMULATION_SCENARIO: ${SIMULATION_SCENARIO:-healthy}
@@ -61,9 +59,6 @@ services:
       INVESTIGATION_TIMEOUT: ${INVESTIGATION_TIMEOUT:-180s}
       MAX_CONCURRENT_INVESTIGATIONS: ${MAX_CONCURRENT_INVESTIGATIONS:-4}
       RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-5}
-    # Docker Desktop resolves this name itself; on Linux it maps to the host gateway.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     read_only: true
     cap_drop: [ALL]
     security_opt:

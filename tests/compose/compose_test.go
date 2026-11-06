@@ -117,19 +117,6 @@ func TestClustersOverrideMountsDirectoryReadOnly(t *testing.T) {
 	}
 }
 
-func TestOllamaRunsOnTheHost(t *testing.T) {
-	r, stderr, err := renderEnv(t, nil, "docker-compose.yml")
-	if err != nil {
-		t.Fatalf("render: %v %s", err, stderr)
-	}
-	if _, ok := r.Services["ollama"]; ok {
-		t.Fatal("Ollama container is back: on CPU it timed out every evaluation")
-	}
-	if got := r.Services["app"].Environment["OLLAMA_BASE_URL"]; got != "http://host.docker.internal:11434" {
-		t.Fatalf("OLLAMA_BASE_URL: %q", got)
-	}
-}
-
 func TestDefaultComposeStaysInSimulation(t *testing.T) {
 	r, stderr, err := render(t, "", "docker-compose.yml")
 	if err != nil {
@@ -187,5 +174,18 @@ func TestExternalDatabaseNetworkJoinsExistingNetwork(t *testing.T) {
 	}
 	if _, stderr, err := renderEnv(t, map[string]string{}, "docker-compose.yml", "docker-compose.external-db.yml"); err == nil || !strings.Contains(stderr, "set EXTERNAL_DATABASE_NETWORK") {
 		t.Fatalf("missing EXTERNAL_DATABASE_NETWORK must fail clearly: %v %s", err, stderr)
+	}
+}
+
+func TestComposePassesProviderSettings(t *testing.T) {
+	env := map[string]string{"LLM_PROVIDER": "anthropic", "LLM_MODEL": "claude-test", "LLM_REASONING_EFFORT": "medium"}
+	r, stderr, err := renderEnv(t, env, "docker-compose.yml")
+	if err != nil {
+		t.Fatalf("render: %v %s", err, stderr)
+	}
+	for k, want := range env {
+		if got := r.Services["app"].Environment[k]; got != want {
+			t.Fatalf("%s: got %q, want %q", k, got, want)
+		}
 	}
 }

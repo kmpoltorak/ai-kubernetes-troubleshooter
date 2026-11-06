@@ -22,13 +22,9 @@ type Measurement struct {
 
 // Usage preserves reported values. Nil means absent; totals are never inferred.
 type Usage struct {
-	InputTokens      *int64 `json:"input_tokens"`
-	OutputTokens     *int64 `json:"output_tokens"`
-	TotalTokens      *int64 `json:"total_tokens"`
-	TotalDurationNS  *int64 `json:"total_duration_ns"`
-	LoadDurationNS   *int64 `json:"load_duration_ns"`
-	InputDurationNS  *int64 `json:"input_duration_ns"`
-	OutputDurationNS *int64 `json:"output_duration_ns"`
+	InputTokens  *int64 `json:"input_tokens"`
+	OutputTokens *int64 `json:"output_tokens"`
+	TotalTokens  *int64 `json:"total_tokens"`
 }
 
 func measurement() Measurement {

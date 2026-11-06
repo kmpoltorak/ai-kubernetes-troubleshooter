@@ -10,7 +10,7 @@ Kubernetes manifests see the [README](../README.md#kubernetes-deployment).
 | PostgreSQL | always | `database` (ping only) | `/ready` returns `503`; jobs cannot claim, renew or finish |
 | Kubernetes API | live mode | `kubernetes` (`/version`; with [several clusters](clusters.md), at least one must answer) | `/ready` returns `503`; investigations whose target cannot be read fail |
 | OAuth2 Proxy | `AUTH_ENABLED=true` | `authentication` | `/ready` and protected routes return `503` |
-| OpenAI, Anthropic or Ollama | only when selected | none | analysis fails, evidence is kept, `502` on the waiting endpoint |
+| OpenAI or Anthropic | only when selected | none | analysis fails, evidence is kept, `502` on the waiting endpoint |
 | metrics-server, Secret metadata RBAC, node RBAC | optional | none | that diagnostic is recorded as failed, the investigation continues |
 
 `/ready` only pings PostgreSQL, so it can stay ready while writes fail, for

@@ -14,7 +14,7 @@ import (
 )
 
 func TestMeasuredProviders(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic", "ollama"} {
+	for _, provider := range []string{"openai", "anthropic"} {
 		for _, output := range []string{"valid", "missing usage", "invalid analysis", "truncated", "refusal"} {
 			t.Run(provider+"/"+output, func(t *testing.T) {
 				var request map[string]any
@@ -54,11 +54,6 @@ func TestMeasuredProviders(t *testing.T) {
 						if output != "missing usage" {
 							body["usage"] = map[string]int{"prompt_tokens": 11, "completion_tokens": 0, "total_tokens": 11}
 						}
-					default:
-						body["message"], body["done_reason"] = map[string]any{"content": content}, reason
-						if output != "missing usage" {
-							body["prompt_eval_count"], body["eval_count"], body["total_duration"], body["load_duration"], body["prompt_eval_duration"], body["eval_duration"] = 11, 0, 900, 100, 300, 500
-						}
 					}
 					if err := json.NewEncoder(w).Encode(body); err != nil {
 						t.Error(err)
@@ -78,11 +73,6 @@ func TestMeasuredProviders(t *testing.T) {
 					if request["max_tokens"] != float64(4096) {
 						t.Fatalf("missing token cap: %v", request)
 					}
-				default:
-					result, err = NewOllamaProvider(srv.URL, "requested", time.Second).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
-					if request["options"].(map[string]any)["num_predict"] != float64(4096) {
-						t.Fatalf("missing token cap: %v", request)
-					}
 				}
 				invalid := output == "invalid analysis" || output == "truncated" || output == "refusal"
 				if errors.Is(err, ErrInvalidOutput) != invalid || (result.Analysis == nil) != invalid {
@@ -97,9 +87,6 @@ func TestMeasuredProviders(t *testing.T) {
 					}
 				} else if result.Usage.InputTokens == nil || *result.Usage.InputTokens != 11 || result.Usage.OutputTokens == nil || *result.Usage.OutputTokens != 0 {
 					t.Fatalf("usage lost, including zero/invalid output: %+v", result.Usage)
-				}
-				if provider == "ollama" && output != "missing usage" && (result.Usage.TotalTokens != nil || result.Usage.TotalDurationNS == nil || *result.Usage.TotalDurationNS != 900 || *result.Usage.LoadDurationNS != 100 || *result.Usage.InputDurationNS != 300 || *result.Usage.OutputDurationNS != 500) {
-					t.Fatalf("provider timing lost or total invented: %+v", result.Usage)
 				}
 				if provider == "openai" && output != "missing usage" && (result.Usage.TotalTokens == nil || *result.Usage.TotalTokens != 11) {
 					t.Fatal("reported total lost")
@@ -116,7 +103,7 @@ func TestMeasuredLimitsAndRedirects(t *testing.T) {
 		http.Redirect(w, r, "/second", http.StatusTemporaryRedirect)
 	}))
 	defer srv.Close()
-	for _, provider := range []string{"openai", "anthropic", "ollama"} {
+	for _, provider := range []string{"openai", "anthropic"} {
 		t.Run(provider, func(t *testing.T) {
 			var analyze func(context.Context, AnalysisInput, int) (Measurement, error)
 			switch provider {
@@ -124,8 +111,6 @@ func TestMeasuredLimitsAndRedirects(t *testing.T) {
 				analyze = NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second).AnalyzeMeasured
 			case "anthropic":
 				analyze = NewAnthropicProvider(srv.URL, "synthetic", "m", "", time.Second).AnalyzeMeasured
-			default:
-				analyze = NewOllamaProvider(srv.URL, "m", time.Second).AnalyzeMeasured
 			}
 			for _, limit := range []int{-1, 0, 4097} {
 				before := calls.Load()

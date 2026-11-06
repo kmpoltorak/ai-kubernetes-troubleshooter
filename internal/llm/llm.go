@@ -56,12 +56,6 @@ func FromConfig(cfg config.Config) Provider {
 			p.maxInputBytes = cfg.LLMMaxInputBytes
 		}
 		return p
-	case "ollama":
-		p := NewOllamaProvider(cfg.OllamaBaseURL, cfg.LLMModel, cfg.LLMTimeout)
-		if cfg.LLMMaxInputBytes > 0 {
-			p.maxInputBytes = cfg.LLMMaxInputBytes
-		}
-		return p
 	default:
 		return RulesProvider{}
 	}
@@ -73,15 +67,10 @@ var ErrInputTooLarge = errors.New("LLM request exceeds LLM_MAX_INPUT_BYTES")
 // ErrInvalidOutput marks responses that are not a well-formed analysis.
 var ErrInvalidOutput = errors.New("invalid model output")
 
-// decodeAnalysis strictly parses model output. Markdown code fences are
-// tolerated because some local models add them despite instructions.
+// decodeAnalysis strictly parses model output: one JSON object, as the
+// providers' structured output returns it, with nothing around it.
 func decodeAnalysis(content string) (domain.Analysis, error) {
 	s := strings.TrimSpace(content)
-	if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```json")
-		s = strings.TrimPrefix(s, "```")
-		s = strings.TrimSuffix(strings.TrimSpace(s), "```")
-	}
 	dec := json.NewDecoder(strings.NewReader(s))
 	dec.DisallowUnknownFields()
 	var a domain.Analysis

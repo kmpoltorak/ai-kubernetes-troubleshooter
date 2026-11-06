@@ -24,16 +24,15 @@ before running. There are no automatic retries or redirects.
 
 | Setting | Value |
 |---|---|
-| `MODEL_EVAL_PROVIDER` | required: `openai`, `anthropic` or `ollama` |
+| `MODEL_EVAL_PROVIDER` | required: `openai` or `anthropic` |
 | `MODEL_EVAL_MODEL` | required; no default |
-| `MODEL_EVAL_ALLOW_NETWORK` | must equal `true`, including for local Ollama |
+| `MODEL_EVAL_ALLOW_NETWORK` | must equal `true` |
 | `MODEL_EVAL_TIMEOUT_SECONDS` | default `60`, at most `600`; per request, recorded as `request_timeout_seconds` |
 | `MODEL_EVAL_REASONING_EFFORT` | OpenAI or Anthropic, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and never a temperature |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
 | `ANTHROPIC_API_KEY` | environment only; required for Anthropic |
 | `ANTHROPIC_BASE_URL` | default `https://api.anthropic.com` |
-| `OLLAMA_BASE_URL` | default `http://localhost:11434` |
 | Endpoint | HTTPS, or HTTP loopback; no URL credentials, query or fragment |
 | Attempts | six fixed cases × three attempts, serially; at most 18 requests |
 | Time | the request timeout; each investigation gets 30 seconds more, and the suite 18 requests plus 2 minutes (20 minutes at 60 seconds) |
@@ -44,22 +43,20 @@ Other limits are fixed; application `LLM_*` settings do not change them. The byt
 limit does not ensure a model context fit. Request/token caps are not a currency
 budget. Interrupted calls may be billed, and missing usage does not mean zero.
 
-For Ollama, set the exact model name in `MODEL_EVAL_MODEL`, then run:
+Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the environment, choose the
+provider and an exact model name, then run:
 
 ```bash
 : "${MODEL_EVAL_MODEL:?Set an explicit model first}"
-MODEL_EVAL_ALLOW_NETWORK=true MODEL_EVAL_PROVIDER=ollama \
+MODEL_EVAL_ALLOW_NETWORK=true MODEL_EVAL_PROVIDER=openai \
   go test -tags modeleval -run '^TestEvaluateModel$' -count=1 -timeout=22m -json \
   ./internal/investigation > report-model-evaluation.jsonl
 ```
 
 With a longer `MODEL_EVAL_TIMEOUT_SECONDS`, raise `-timeout` above the suite
-limit, e.g. `-timeout=95m` for 300 seconds. A model on CPU, or with a large
-context setting, can need several minutes per request.
-
-For OpenAI or Anthropic, set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the
-environment and use `MODEL_EVAL_PROVIDER=openai` or `anthropic`. The 4096-token
-limit includes Anthropic thinking; a cut-off report fails the attempt. Keep keys out of arguments and output files.
+limit, e.g. `-timeout=95m` for 300 seconds. The 4096-token limit includes
+Anthropic thinking; a cut-off report fails the attempt. Keep keys out of
+arguments and output files.
 Choose a new output filename each time: `>` overwrites an existing file.
 Rerunning starts another set of calls; it does not resume failed attempts.
 
@@ -76,10 +73,9 @@ jq -cs '[.[] | select(.Action == "output") | .Output] | join("") | split("\n")[]
 Each attempt records case/repeat, evidence IDs, requested/reported model, request
 settings, prompt/schema hashes, timing, provider usage, decoded model analysis
 and the engine's final analysis. Timings are nanoseconds; absent counters are
-`null`. OpenAI and Anthropic report token usage; Ollama also reports generation/load timings.
+`null`. Both providers report token usage.
 See the [OpenAI response fields](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
-[Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)
-and [Ollama response fields](https://docs.ollama.com/api/chat).
+and the [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages).
 
 Transport, decoding and validation failures remain failed attempts. Usage can
 still be available for a rejected report. Raw HTTP responses and undecodable
@@ -94,3 +90,22 @@ factual support, observation versus hypothesis, disclosed gaps and useful
 read-only follow-up. Do not count engine-added context as model-authored.
 Keep failures in the assessment; three repetitions across six synthetic cases
 are not a statistical accuracy estimate or a production benchmark.
+
+## Local models
+
+Local models through Ollama were measured with this tool and removed, because
+none produced usable reports. Each ran the 18 attempts, or as many as the
+results warranted, on a Ryzen with an Intel Arc GPU (10 GB), a 16k context and
+a 300-second request timeout:
+
+| Model | Accepted reports | Typical failure |
+|---|---|---|
+| `llama3.2:1b` | 0 of 18 | `no_fault_observed` for every case, including OOMKilled |
+| `qwen2.5:3b` | 0 of 4 | output looped until the 4096-token limit |
+| `phi4-mini` | 1 of 5 | evidence IDs that do not match their source |
+| `qwen2.5:7b` | 9 of 18 | `no_fault_observed` although logs could not be read; a `kubectl get secret` command |
+
+The validator rejected the failing reports, so they would not reach a user;
+some accepted ones still overstated a past error as a suspected fault. On the
+same corpus, `gpt-6-luna` with medium reasoning had 18 of 18 accepted, at
+10–19 seconds per request against 40–290 seconds locally.

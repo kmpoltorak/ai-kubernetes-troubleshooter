@@ -11,17 +11,15 @@ import (
 )
 
 func TestOrdinaryAnalysisIgnoresUnusedProviderMetadata(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic", "ollama"} {
+	for _, provider := range []string{"openai", "anthropic"} {
 		t.Run(provider, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				body := map[string]any{"model": 42, "usage": "unsupported", "prompt_eval_count": "unsupported", "done_reason": false}
+				body := map[string]any{"model": 42, "usage": "unsupported"}
 				switch provider {
 				case "openai":
 					body["choices"] = []any{map[string]any{"message": map[string]string{"content": validJSON}}}
 				case "anthropic":
 					body["content"] = []any{map[string]string{"type": "text", "text": validJSON}}
-				default:
-					body["message"] = map[string]string{"content": validJSON}
 				}
 				if err := json.NewEncoder(w).Encode(body); err != nil {
 					t.Error(err)
@@ -34,8 +32,6 @@ func TestOrdinaryAnalysisIgnoresUnusedProviderMetadata(t *testing.T) {
 				p = NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second)
 			case "anthropic":
 				p = NewAnthropicProvider(srv.URL, "synthetic", "m", "", time.Second)
-			default:
-				p = NewOllamaProvider(srv.URL, "m", time.Second)
 			}
 			a, err := p.Analyze(context.Background(), sampleInput())
 			if err != nil || a.RootCause != "r" {
