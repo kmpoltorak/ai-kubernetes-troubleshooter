@@ -176,3 +176,16 @@ func TestExternalDatabaseNetworkJoinsExistingNetwork(t *testing.T) {
 		t.Fatalf("missing EXTERNAL_DATABASE_NETWORK must fail clearly: %v %s", err, stderr)
 	}
 }
+
+func TestComposePassesProviderSettings(t *testing.T) {
+	env := map[string]string{"LLM_PROVIDER": "anthropic", "LLM_MODEL": "claude-test", "LLM_REASONING_EFFORT": "medium"}
+	r, stderr, err := renderEnv(t, env, "docker-compose.yml")
+	if err != nil {
+		t.Fatalf("render: %v %s", err, stderr)
+	}
+	for k, want := range env {
+		if got := r.Services["app"].Environment[k]; got != want {
+			t.Fatalf("%s: got %q, want %q", k, got, want)
+		}
+	}
+}

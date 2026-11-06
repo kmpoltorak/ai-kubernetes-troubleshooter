@@ -27,8 +27,8 @@ func TestDecodeAnalysis(t *testing.T) {
 		wantErr bool
 	}{
 		{"plain", validJSON, false},
-		{"fenced", "```json\n" + validJSON + "\n```", false},
-		{"bare fence", "```\n" + validJSON + "\n```", false},
+		{"fenced", "```json\n" + validJSON + "\n```", true},
+		{"bare fence", "```\n" + validJSON + "\n```", true},
 		{"unknown field", `{"summary":"s","hacked":true}`, true},
 		{"trailing object", validJSON + `{"x":1}`, true},
 		{"prose", "The root cause is DNS.", true},

@@ -53,7 +53,7 @@ var (
 
 	LLMRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "llm_request_duration_seconds", Help: "LLM analysis request latency.",
-		// Low buckets cover the in-process rules provider; high ones cover local LLMs.
+		// Low buckets cover the in-process rules provider; high ones cover reasoning models.
 		Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
 	}, []string{"provider"})
 
