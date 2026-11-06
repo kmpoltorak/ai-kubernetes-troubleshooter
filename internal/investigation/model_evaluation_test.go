@@ -52,6 +52,13 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 	}
 	c := modelEvaluationConfig{Provider: getenv("MODEL_EVAL_PROVIDER"), Model: getenv("MODEL_EVAL_MODEL"), MaxInputBytes: config.DefaultLLMMaxInputBytes, MaxOutputTokens: 4096, TimeoutSeconds: 60,
 		Temperature: new(int), ReasoningEffort: getenv("MODEL_EVAL_REASONING_EFFORT")}
+	if v := getenv("MODEL_EVAL_TIMEOUT_SECONDS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 600 {
+			return c, errors.New("MODEL_EVAL_TIMEOUT_SECONDS must be a whole number from 1 to 600")
+		}
+		c.TimeoutSeconds = n
+	}
 	if strings.TrimSpace(c.Model) == "" || len(c.Model) > 200 || strings.ContainsAny(c.Model, "\r\n\t") {
 		return c, errors.New("MODEL_EVAL_MODEL must be an explicit model name of at most 200 characters")
 	}
@@ -102,6 +109,14 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 		}
 	}
 	return c, nil
+}
+
+// evaluationDeadlines derives every limit from the request timeout: the
+// investigation adds 30 s for diagnostics, and the suite fits 18 such requests
+// plus 2 minutes. The 60 s default gives 90 s and 20 minutes.
+func evaluationDeadlines(seconds int) (request, investigation, suite time.Duration) {
+	request = time.Duration(seconds) * time.Second
+	return request, request + 30*time.Second, modelEvaluationAttempts*request + 2*time.Minute
 }
 
 type measuredProvider struct {
@@ -160,17 +175,17 @@ func runModelEvaluation(ctx context.Context, getenv func(string) string, emit fu
 	if err != nil {
 		return summary, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	request, investigation, suite := evaluationDeadlines(cfg.TimeoutSeconds)
+	ctx, cancel := context.WithTimeout(ctx, suite)
 	defer cancel()
 	var analyze func(context.Context, llm.AnalysisInput, int) (llm.Measurement, error)
-	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	switch cfg.Provider {
 	case "openai":
-		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, timeout).WithReasoningEffort(cfg.ReasoningEffort).AnalyzeMeasured
+		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, request).WithReasoningEffort(cfg.ReasoningEffort).AnalyzeMeasured
 	case "anthropic":
-		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, timeout).AnalyzeMeasured
+		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
 	default:
-		analyze = llm.NewOllamaProvider(cfg.Endpoint, cfg.Model, timeout).AnalyzeMeasured
+		analyze = llm.NewOllamaProvider(cfg.Endpoint, cfg.Model, request).AnalyzeMeasured
 	}
 	write := func(value any) error {
 		data, err := json.Marshal(value)
@@ -238,7 +253,7 @@ func runModelEvaluation(ctx context.Context, getenv func(string) string, emit fu
 				}
 				return a, err
 			}}
-			engine := NewEngine(newMemStore(inc), clustersFunc(func(domain.Target, string) (kube.Cluster, string, error) { return c, tc.scenario, nil }), provider, slog.New(slog.NewTextHandler(io.Discard, nil)), Config{Timeout: 90 * time.Second, MaxConcurrent: 1, Policy: policy})
+			engine := NewEngine(newMemStore(inc), clustersFunc(func(domain.Target, string) (kube.Cluster, string, error) { return c, tc.scenario, nil }), provider, slog.New(slog.NewTextHandler(io.Discard, nil)), Config{Timeout: investigation, MaxConcurrent: 1, Policy: policy})
 			rec, err := engine.Investigate(ctx, inc.ID, Options{})
 			switch {
 			case err == nil:

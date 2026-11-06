@@ -27,6 +27,7 @@ before running. There are no automatic retries or redirects.
 | `MODEL_EVAL_PROVIDER` | required: `openai`, `anthropic` or `ollama` |
 | `MODEL_EVAL_MODEL` | required; no default |
 | `MODEL_EVAL_ALLOW_NETWORK` | must equal `true`, including for local Ollama |
+| `MODEL_EVAL_TIMEOUT_SECONDS` | default `60`, at most `600`; per request, recorded as `request_timeout_seconds` |
 | `MODEL_EVAL_REASONING_EFFORT` | OpenAI or Anthropic, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and never a temperature |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
@@ -35,11 +36,11 @@ before running. There are no automatic retries or redirects.
 | `OLLAMA_BASE_URL` | default `http://localhost:11434` |
 | Endpoint | HTTPS, or HTTP loopback; no URL credentials, query or fragment |
 | Attempts | six fixed cases × three attempts, serially; at most 18 requests |
-| Time | 60 seconds per request; 20 minutes for the suite |
+| Time | the request timeout; each investigation gets 30 seconds more, and the suite 18 requests plus 2 minutes (20 minutes at 60 seconds) |
 | Input | 262144 serialized request bytes, including schema |
 | Generation | at most 4096 tokens requested per attempt |
 
-Limits are fixed; application `LLM_*` settings do not change them. The byte
+Other limits are fixed; application `LLM_*` settings do not change them. The byte
 limit does not ensure a model context fit. Request/token caps are not a currency
 budget. Interrupted calls may be billed, and missing usage does not mean zero.
 
@@ -51,6 +52,10 @@ MODEL_EVAL_ALLOW_NETWORK=true MODEL_EVAL_PROVIDER=ollama \
   go test -tags modeleval -run '^TestEvaluateModel$' -count=1 -timeout=22m -json \
   ./internal/investigation > report-model-evaluation.jsonl
 ```
+
+With a longer `MODEL_EVAL_TIMEOUT_SECONDS`, raise `-timeout` above the suite
+limit, e.g. `-timeout=95m` for 300 seconds. A model on CPU, or with a large
+context setting, can need several minutes per request.
 
 For OpenAI or Anthropic, set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the
 environment and use `MODEL_EVAL_PROVIDER=openai` or `anthropic`. The 4096-token
