@@ -43,14 +43,16 @@ type Config struct {
 	LLMMaxInputBytes int
 	LLMProvider      string
 	LLMModel         string
-	// LLMReasoningEffort is OpenAI's reasoning_effort or Anthropic's
-	// output_config.effort; empty leaves the model default.
+	// LLMReasoningEffort is OpenAI's reasoning_effort, Anthropic's
+	// output_config.effort or Gemini's thinkingLevel; empty leaves the model default.
 	LLMReasoningEffort string
 	LLMTimeout         time.Duration
 	OpenAIAPIKey       string
 	OpenAIBaseURL      string
 	AnthropicAPIKey    string
 	AnthropicBaseURL   string
+	GeminiAPIKey       string
+	GeminiBaseURL      string
 
 	SimulationEnabled  bool
 	SimulationScenario string
@@ -88,6 +90,7 @@ var defaultModels = map[string]string{
 	"rules":     "rules-v2", // must match llm.RulesProvider.Name
 	"openai":    "gpt-4o-mini",
 	"anthropic": "claude-opus-5-5",
+	"gemini":    "gemini-3.5-flash",
 }
 
 // Load reads configuration using getenv (typically os.Getenv) and validates it.
@@ -109,6 +112,8 @@ func Load(getenv func(string) string) (Config, error) {
 		OpenAIBaseURL:               strings.TrimRight(p.str("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
 		AnthropicAPIKey:             p.str("ANTHROPIC_API_KEY", ""),
 		AnthropicBaseURL:            strings.TrimRight(p.str("ANTHROPIC_BASE_URL", "https://api.anthropic.com"), "/"),
+		GeminiAPIKey:                p.str("GEMINI_API_KEY", ""),
+		GeminiBaseURL:               strings.TrimRight(p.str("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"), "/"),
 		SimulationEnabled:           p.bool("SIMULATION_ENABLED", true),
 		SimulationScenario:          p.str("SIMULATION_SCENARIO", "healthy"),
 		JobTimeout:                  p.duration("JOB_TIMEOUT", 15*time.Minute),
@@ -142,18 +147,21 @@ func Load(getenv func(string) string) (Config, error) {
 		c.CustomResources = append(c.CustomResources, cr)
 	}
 	if _, ok := defaultModels[c.LLMProvider]; !ok {
-		p.fail("LLM_PROVIDER", "must be one of rules, openai, anthropic")
+		p.fail("LLM_PROVIDER", "must be one of rules, openai, anthropic, gemini")
 	} else if c.LLMModel == "" {
 		c.LLMModel = defaultModels[c.LLMProvider]
 	}
-	if c.LLMReasoningEffort != "" && ((c.LLMProvider != "openai" && c.LLMProvider != "anthropic") || !reasoningEffort.MatchString(c.LLMReasoningEffort)) {
-		p.fail("LLM_REASONING_EFFORT", "must be a lowercase word such as low, medium or high, with LLM_PROVIDER=openai or anthropic")
+	if c.LLMReasoningEffort != "" && (c.LLMProvider == "rules" || !reasoningEffort.MatchString(c.LLMReasoningEffort)) {
+		p.fail("LLM_REASONING_EFFORT", "must be a lowercase word such as low, medium or high, with LLM_PROVIDER=openai, anthropic or gemini")
 	}
 	if c.LLMProvider == "openai" && c.OpenAIAPIKey == "" {
 		p.fail("OPENAI_API_KEY", "is required when LLM_PROVIDER=openai")
 	}
 	if c.LLMProvider == "anthropic" && c.AnthropicAPIKey == "" {
 		p.fail("ANTHROPIC_API_KEY", "is required when LLM_PROVIDER=anthropic")
+	}
+	if c.LLMProvider == "gemini" && c.GeminiAPIKey == "" {
+		p.fail("GEMINI_API_KEY", "is required when LLM_PROVIDER=gemini")
 	}
 	if c.LLMMaxInputBytes <= 0 {
 		p.fail("LLM_MAX_INPUT_BYTES", "must be positive")
@@ -279,9 +287,9 @@ func (c Config) String() string {
 	for i, cl := range c.Clusters {
 		names[i] = cl.Name
 	}
-	return fmt.Sprintf("env=%s port=%d clusters=%v provider=%s model=%s simulation=%t scenario=%s auth=%t openai_key=%s anthropic_key=%s",
+	return fmt.Sprintf("env=%s port=%d clusters=%v provider=%s model=%s simulation=%t scenario=%s auth=%t openai_key=%s anthropic_key=%s gemini_key=%s",
 		c.AppEnv, c.HTTPPort, names, c.LLMProvider, c.LLMModel,
-		c.SimulationEnabled, c.SimulationScenario, c.Auth.Enabled, redact(c.OpenAIAPIKey), redact(c.AnthropicAPIKey))
+		c.SimulationEnabled, c.SimulationScenario, c.Auth.Enabled, redact(c.OpenAIAPIKey), redact(c.AnthropicAPIKey), redact(c.GeminiAPIKey))
 }
 
 func redact(s string) string {

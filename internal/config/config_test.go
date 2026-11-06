@@ -88,6 +88,7 @@ func TestLoadErrors(t *testing.T) {
 		{"removed ollama provider", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "ollama"}, "LLM_PROVIDER"},
 		{"openai without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai"}, "OPENAI_API_KEY"},
 		{"anthropic without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "anthropic"}, "ANTHROPIC_API_KEY"},
+		{"gemini without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "gemini"}, "GEMINI_API_KEY"},
 		{"bad bool", map[string]string{"DATABASE_URL": "x", "SIMULATION_ENABLED": "maybe"}, "SIMULATION_ENABLED"},
 		{"bad duration", map[string]string{"DATABASE_URL": "x", "LLM_TIMEOUT": "soon"}, "LLM_TIMEOUT"},
 		{"bad level", map[string]string{"DATABASE_URL": "x", "LOG_LEVEL": "loud"}, "LOG_LEVEL"},
@@ -176,8 +177,8 @@ func TestLoadClustersFile(t *testing.T) {
 }
 
 func TestLoadReasoningEffort(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic"} {
-		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "OPENAI_API_KEY": "k", "ANTHROPIC_API_KEY": "k", "LLM_REASONING_EFFORT": "medium"}))
+	for _, provider := range []string{"openai", "anthropic", "gemini"} {
+		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "OPENAI_API_KEY": "k", "ANTHROPIC_API_KEY": "k", "GEMINI_API_KEY": "k", "LLM_REASONING_EFFORT": "medium"}))
 		if err != nil || c.LLMReasoningEffort != "medium" {
 			t.Fatalf("%s: got %q, %v", provider, c.LLMReasoningEffort, err)
 		}
@@ -185,12 +186,12 @@ func TestLoadReasoningEffort(t *testing.T) {
 }
 
 func TestStringRedactsSecrets(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic"} {
-		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "OPENAI_API_KEY": "sk-secret", "ANTHROPIC_API_KEY": "sk-ant-secret"}))
+	for _, provider := range []string{"openai", "anthropic", "gemini"} {
+		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "OPENAI_API_KEY": "sk-secret", "ANTHROPIC_API_KEY": "sk-ant-secret", "GEMINI_API_KEY": "gm-secret"}))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s := c.String(); strings.Contains(s, "secret") || strings.Count(s, "<redacted>") != 2 {
+		if s := c.String(); strings.Contains(s, "secret") || strings.Count(s, "<redacted>") != 3 {
 			t.Fatalf("secret leaked or not redacted: %s", s)
 		}
 	}

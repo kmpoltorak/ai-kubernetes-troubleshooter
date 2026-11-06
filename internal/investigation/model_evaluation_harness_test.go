@@ -16,7 +16,7 @@ import (
 )
 
 func evaluationEnvironment(endpoint, provider string) map[string]string {
-	return map[string]string{"MODEL_EVAL_ALLOW_NETWORK": "true", "MODEL_EVAL_PROVIDER": provider, "MODEL_EVAL_MODEL": "synthetic-model", "OPENAI_API_KEY": "opaque-synthetic-credential", "ANTHROPIC_API_KEY": "opaque-synthetic-credential", "OPENAI_BASE_URL": endpoint, "ANTHROPIC_BASE_URL": endpoint}
+	return map[string]string{"MODEL_EVAL_ALLOW_NETWORK": "true", "MODEL_EVAL_PROVIDER": provider, "MODEL_EVAL_MODEL": "synthetic-model", "OPENAI_API_KEY": "opaque-synthetic-credential", "ANTHROPIC_API_KEY": "opaque-synthetic-credential", "OPENAI_BASE_URL": endpoint, "ANTHROPIC_BASE_URL": endpoint, "GEMINI_API_KEY": "opaque-synthetic-credential", "GEMINI_BASE_URL": endpoint}
 }
 
 func TestModelEvaluationRequiresOptIn(t *testing.T) {
@@ -67,15 +67,37 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 			} `json:"messages"`
 			MaxTokens          int `json:"max_completion_tokens"`
 			AnthropicMaxTokens int `json:"max_tokens"`
+			Contents           []struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"contents"`
+			GenerationConfig struct {
+				MaxOutputTokens int `json:"maxOutputTokens"`
+			} `json:"generationConfig"`
 		}
-		// Anthropic sends the system prompt as a separate field.
-		want := map[bool]int{true: 1, false: 2}[provider == "anthropic"]
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Messages) != want {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Errorf("invalid request: %v", err)
 			w.WriteHeader(500)
 			return
 		}
-		if (provider == "openai" && request.MaxTokens != 4096) || (provider == "anthropic" && request.AnthropicMaxTokens != 4096) {
+		// The evidence is the last user message; system prompts travel separately
+		// except on OpenAI.
+		var user string
+		var limit int
+		switch {
+		case provider == "openai" && len(request.Messages) == 2:
+			user, limit = request.Messages[1].Content, request.MaxTokens
+		case provider == "anthropic" && len(request.Messages) == 1:
+			user, limit = request.Messages[0].Content, request.AnthropicMaxTokens
+		case provider == "gemini" && len(request.Contents) == 1 && len(request.Contents[0].Parts) == 1:
+			user, limit = request.Contents[0].Parts[0].Text, request.GenerationConfig.MaxOutputTokens
+		default:
+			t.Errorf("unexpected %s request shape", provider)
+			w.WriteHeader(500)
+			return
+		}
+		if limit != 4096 {
 			t.Error("unbounded evaluation request")
 			w.WriteHeader(500)
 			return
@@ -86,7 +108,7 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 			Failed      []struct{ Source, Error string } `json:"failed_diagnostics"`
 			Limitations []string                         `json:"limitations"`
 		}
-		if err := json.Unmarshal([]byte(request.Messages[want-1].Content), &prompt); err != nil {
+		if err := json.Unmarshal([]byte(user), &prompt); err != nil {
 			t.Error(err)
 			w.WriteHeader(500)
 			return
@@ -118,6 +140,8 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 				// A counter above float64's exact integer range exercises output masking.
 				body.(map[string]any)["usage"] = map[string]int64{"prompt_tokens": 12, "completion_tokens": 0, "total_tokens": 9007199254740993}
 			}
+		case "gemini":
+			body = map[string]any{"modelVersion": "reported", "usageMetadata": map[string]int{"promptTokenCount": 12, "candidatesTokenCount": 0, "totalTokenCount": 12}, "candidates": []any{map[string]any{"finishReason": "STOP", "content": map[string]any{"role": "model", "parts": []any{map[string]any{"text": "considering", "thought": true}, map[string]string{"text": string(content)}}}}}}
 		default:
 			body = map[string]any{"model": "reported", "stop_reason": "end_turn", "usage": map[string]int{"input_tokens": 12, "output_tokens": 0}, "content": []any{map[string]string{"type": "text", "text": string(content)}}}
 		}
@@ -128,7 +152,7 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 }
 
 func TestModelEvaluationRunsBoundedCorpus(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic"} {
+	for _, provider := range []string{"openai", "anthropic", "gemini"} {
 		t.Run(provider, func(t *testing.T) {
 			srv, calls := evaluationServer(t, provider, nil)
 			defer srv.Close()
@@ -346,5 +370,18 @@ func TestModelEvaluationTimeout(t *testing.T) {
 		if r != tc.request || i != tc.investigation || s != tc.suite {
 			t.Fatalf("%d s: request %v investigation %v suite %v", tc.seconds, r, i, s)
 		}
+	}
+}
+
+func TestModelEvaluationGeminiConfig(t *testing.T) {
+	env := evaluationEnvironment("", "gemini")
+	delete(env, "GEMINI_BASE_URL")
+	cfg, err := loadModelEvaluation(func(k string) string { return env[k] })
+	if err != nil || cfg.Endpoint != "https://generativelanguage.googleapis.com/v1beta" || cfg.Temperature != nil || cfg.apiKey == "" {
+		t.Fatalf("gemini config: %+v %v", cfg, err)
+	}
+	env["GEMINI_API_KEY"] = " "
+	if _, err := loadModelEvaluation(func(k string) string { return env[k] }); err == nil || !strings.Contains(err.Error(), "GEMINI_API_KEY") {
+		t.Fatalf("missing key accepted: %v", err)
 	}
 }

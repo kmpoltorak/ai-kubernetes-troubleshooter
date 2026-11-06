@@ -56,6 +56,12 @@ func FromConfig(cfg config.Config) Provider {
 			p.maxInputBytes = cfg.LLMMaxInputBytes
 		}
 		return p
+	case "gemini":
+		p := NewGeminiProvider(cfg.GeminiBaseURL, cfg.GeminiAPIKey, cfg.LLMModel, cfg.LLMReasoningEffort, cfg.LLMTimeout)
+		if cfg.LLMMaxInputBytes > 0 {
+			p.maxInputBytes = cfg.LLMMaxInputBytes
+		}
+		return p
 	default:
 		return RulesProvider{}
 	}
