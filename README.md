@@ -98,8 +98,8 @@ resources are in the [configuration reference](docs/configuration.md).
 | `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CLUSTERS_FILE` | empty | several clusters, each with its kubeconfig and namespaces ([several clusters](docs/clusters.md)) |
-| `LLM_PROVIDER`, `LLM_MODEL` | `rules`, per provider | `rules`, `openai` (`gpt-4o-mini`), `ollama` (`llama3.2`) |
-| `OPENAI_API_KEY` | | required for `openai`; environment only |
+| `LLM_PROVIDER`, `LLM_MODEL` | `rules`, per provider | `rules`, `openai` (`gpt-4o-mini`), `anthropic` (`claude-opus-5-5`), `ollama` (`llama3.2`) |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | | required for `openai` or `anthropic`; environment only |
 | `AUTH_ENABLED` | `false` | login through OAuth2 Proxy for UI, API and metrics ([authentication](docs/authentication.md)) |
 
 ## API
@@ -147,7 +147,7 @@ for a digest-pinned release see [releases](docs/releases.md).
 - Clusters of one installation share custom resources, limits and analyzer; replicas must use the same limits, target policy and analyzer. Kubeconfig changes need a restart. No remediation is executed.
 - The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`; the "?" hints need the Popover API (Chrome 114, Safari 17, Firefox 125). It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
-- Live CI uses single-node kind on Kubernetes 1.37.0, Linux amd64; other Kubernetes versions are untested. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI and Ollama clients use fake servers in CI. Browser tests run in Chromium only; Firefox and Safari are untested.
+- Live CI uses single-node kind on Kubernetes 1.37.0, Linux amd64; other Kubernetes versions are untested. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI, Anthropic and Ollama clients use fake servers in CI; the Anthropic client has not yet been run against the real API. Browser tests run in Chromium only; Firefox and Safari are untested.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - Accessibility is checked with axe's automated rules in Chromium only; there is no manual screen-reader audit.
 - Exports are created in the browser; the server does not record who exported what.
@@ -178,7 +178,7 @@ axe WCAG 2.1 A/AA rules in light and dark mode, and a 390 px width. The
 diagnostics, RBAC and NetworkPolicy. CI also runs govulncheck and `npm audit`; the
 UI jobs run only when the UI, its API or CI change, and releases run everything.
 See [evaluation commands](docs/evaluation.md) for offline checks and the opt-in
-OpenAI/Ollama tool.
+OpenAI/Anthropic/Ollama tool.
 
 Built with an AI coding assistant. I wrote the spec and reviewed every change.
 

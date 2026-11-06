@@ -14,7 +14,7 @@ import (
 )
 
 func TestMeasuredProviders(t *testing.T) {
-	for _, provider := range []string{"openai", "ollama"} {
+	for _, provider := range []string{"openai", "anthropic", "ollama"} {
 		for _, output := range []string{"valid", "missing usage", "invalid analysis", "truncated", "refusal"} {
 			t.Run(provider+"/"+output, func(t *testing.T) {
 				var request map[string]any
@@ -34,7 +34,19 @@ func TestMeasuredProviders(t *testing.T) {
 						reason = "length"
 					}
 					body := map[string]any{"model": "reported password=synthetic-value"}
-					if provider == "openai" {
+					switch provider {
+					case "anthropic":
+						reason = map[string]string{"stop": "end_turn", "length": "max_tokens"}[reason]
+						if output == "refusal" {
+							// A refusal is rejected even when the text happens to parse.
+							content, reason = validJSON, "refusal"
+						}
+						body["stop_reason"] = reason
+						body["content"] = []any{map[string]any{"type": "thinking", "thinking": ""}, map[string]any{"type": "text", "text": content}}
+						if output != "missing usage" {
+							body["usage"] = map[string]int{"input_tokens": 11, "output_tokens": 0}
+						}
+					case "openai":
 						body["choices"] = []any{map[string]any{"finish_reason": reason, "message": map[string]any{"content": content}}}
 						if output == "refusal" {
 							body["choices"] = []any{map[string]any{"message": map[string]any{"refusal": "declined"}}}
@@ -42,7 +54,7 @@ func TestMeasuredProviders(t *testing.T) {
 						if output != "missing usage" {
 							body["usage"] = map[string]int{"prompt_tokens": 11, "completion_tokens": 0, "total_tokens": 11}
 						}
-					} else {
+					default:
 						body["message"], body["done_reason"] = map[string]any{"content": content}, reason
 						if output != "missing usage" {
 							body["prompt_eval_count"], body["eval_count"], body["total_duration"], body["load_duration"], body["prompt_eval_duration"], body["eval_duration"] = 11, 0, 900, 100, 300, 500
@@ -55,12 +67,18 @@ func TestMeasuredProviders(t *testing.T) {
 				defer srv.Close()
 				var result Measurement
 				var err error
-				if provider == "openai" {
+				switch provider {
+				case "openai":
 					result, err = NewOpenAIProvider(srv.URL, "synthetic", "requested", time.Second).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
 					if request["max_completion_tokens"] != float64(4096) {
 						t.Fatalf("missing token cap: %v", request)
 					}
-				} else {
+				case "anthropic":
+					result, err = NewAnthropicProvider(srv.URL, "synthetic", "requested", "", time.Second).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
+					if request["max_tokens"] != float64(4096) {
+						t.Fatalf("missing token cap: %v", request)
+					}
+				default:
 					result, err = NewOllamaProvider(srv.URL, "requested", time.Second).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
 					if request["options"].(map[string]any)["num_predict"] != float64(4096) {
 						t.Fatalf("missing token cap: %v", request)
@@ -98,12 +116,15 @@ func TestMeasuredLimitsAndRedirects(t *testing.T) {
 		http.Redirect(w, r, "/second", http.StatusTemporaryRedirect)
 	}))
 	defer srv.Close()
-	for _, provider := range []string{"openai", "ollama"} {
+	for _, provider := range []string{"openai", "anthropic", "ollama"} {
 		t.Run(provider, func(t *testing.T) {
 			var analyze func(context.Context, AnalysisInput, int) (Measurement, error)
-			if provider == "openai" {
+			switch provider {
+			case "openai":
 				analyze = NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second).AnalyzeMeasured
-			} else {
+			case "anthropic":
+				analyze = NewAnthropicProvider(srv.URL, "synthetic", "m", "", time.Second).AnalyzeMeasured
+			default:
 				analyze = NewOllamaProvider(srv.URL, "m", time.Second).AnalyzeMeasured
 			}
 			for _, limit := range []int{-1, 0, 4097} {

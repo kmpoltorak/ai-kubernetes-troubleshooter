@@ -49,6 +49,8 @@ services:
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120s}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://api.anthropic.com}
       # Ollama runs natively on the host (GPU); in Docker it was too slow on CPU.
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       # Simulation by default; add -f docker-compose.live.yml for a live cluster.
