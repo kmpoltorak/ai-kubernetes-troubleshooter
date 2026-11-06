@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/llm"
@@ -39,6 +40,7 @@ func TestModelEvaluationRequiresOptIn(t *testing.T) {
 func TestModelEvaluationRejectsConfigurationBeforeRequests(t *testing.T) {
 	for _, tc := range []struct{ key, value string }{
 		{"MODEL_EVAL_ALLOW_NETWORK", "yes"}, {"MODEL_EVAL_PROVIDER", "rules"}, {"MODEL_EVAL_MODEL", ""}, {"MODEL_EVAL_MODEL", "m\nsecret"}, {"OPENAI_API_KEY", ""},
+		{"MODEL_EVAL_TIMEOUT_SECONDS", "0"}, {"MODEL_EVAL_TIMEOUT_SECONDS", "601"}, {"MODEL_EVAL_TIMEOUT_SECONDS", "1.5"},
 		{"OPENAI_BASE_URL", "https://user:password@example.com"}, {"OPENAI_BASE_URL", "https://example.com?token=synthetic"}, {"OPENAI_BASE_URL", "https://example.com#token"}, {"OPENAI_BASE_URL", "http://example.com"}, {"OPENAI_BASE_URL", "file:///tmp/api"}, {"OPENAI_BASE_URL", "https://example.com:99999"},
 	} {
 		t.Run(tc.key+"/"+tc.value, func(t *testing.T) {
@@ -333,5 +335,22 @@ func TestModelEvaluationAnthropicConfig(t *testing.T) {
 	env["ANTHROPIC_API_KEY"] = " "
 	if _, err := loadModelEvaluation(func(k string) string { return env[k] }); err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
 		t.Fatalf("missing key accepted: %v", err)
+	}
+}
+
+func TestModelEvaluationTimeout(t *testing.T) {
+	env := evaluationEnvironment("http://localhost:11434", "ollama")
+	env["MODEL_EVAL_TIMEOUT_SECONDS"] = "300"
+	if cfg, err := loadModelEvaluation(func(k string) string { return env[k] }); err != nil || cfg.TimeoutSeconds != 300 {
+		t.Fatalf("timeout not recorded: %+v %v", cfg, err)
+	}
+	for _, tc := range []struct {
+		seconds                       int
+		request, investigation, suite time.Duration
+	}{{60, time.Minute, 90 * time.Second, 20 * time.Minute}, {600, 10 * time.Minute, 630 * time.Second, 182 * time.Minute}} {
+		r, i, s := evaluationDeadlines(tc.seconds)
+		if r != tc.request || i != tc.investigation || s != tc.suite {
+			t.Fatalf("%d s: request %v investigation %v suite %v", tc.seconds, r, i, s)
+		}
 	}
 }
