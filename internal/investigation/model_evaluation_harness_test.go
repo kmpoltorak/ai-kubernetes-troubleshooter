@@ -15,7 +15,7 @@ import (
 )
 
 func evaluationEnvironment(endpoint, provider string) map[string]string {
-	return map[string]string{"MODEL_EVAL_ALLOW_NETWORK": "true", "MODEL_EVAL_PROVIDER": provider, "MODEL_EVAL_MODEL": "synthetic-model", "OPENAI_API_KEY": "opaque-synthetic-credential", "OPENAI_BASE_URL": endpoint, "OLLAMA_BASE_URL": endpoint}
+	return map[string]string{"MODEL_EVAL_ALLOW_NETWORK": "true", "MODEL_EVAL_PROVIDER": provider, "MODEL_EVAL_MODEL": "synthetic-model", "OPENAI_API_KEY": "opaque-synthetic-credential", "ANTHROPIC_API_KEY": "opaque-synthetic-credential", "OPENAI_BASE_URL": endpoint, "ANTHROPIC_BASE_URL": endpoint, "OLLAMA_BASE_URL": endpoint}
 }
 
 func TestModelEvaluationRequiresOptIn(t *testing.T) {
@@ -63,17 +63,20 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 			Messages []struct {
 				Content string `json:"content"`
 			} `json:"messages"`
-			MaxTokens int `json:"max_completion_tokens"`
-			Options   struct {
+			MaxTokens          int `json:"max_completion_tokens"`
+			AnthropicMaxTokens int `json:"max_tokens"`
+			Options            struct {
 				NumPredict int `json:"num_predict"`
 			} `json:"options"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Messages) != 2 {
+		// Anthropic sends the system prompt as a separate field.
+		want := map[bool]int{true: 1, false: 2}[provider == "anthropic"]
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Messages) != want {
 			t.Errorf("invalid request: %v", err)
 			w.WriteHeader(500)
 			return
 		}
-		if (provider == "openai" && request.MaxTokens != 4096) || (provider == "ollama" && request.Options.NumPredict != 4096) {
+		if (provider == "openai" && request.MaxTokens != 4096) || (provider == "anthropic" && request.AnthropicMaxTokens != 4096) || (provider == "ollama" && request.Options.NumPredict != 4096) {
 			t.Error("unbounded evaluation request")
 			w.WriteHeader(500)
 			return
@@ -84,7 +87,7 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 			Failed      []struct{ Source, Error string } `json:"failed_diagnostics"`
 			Limitations []string                         `json:"limitations"`
 		}
-		if err := json.Unmarshal([]byte(request.Messages[1].Content), &prompt); err != nil {
+		if err := json.Unmarshal([]byte(request.Messages[want-1].Content), &prompt); err != nil {
 			t.Error(err)
 			w.WriteHeader(500)
 			return
@@ -109,13 +112,16 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 			return
 		}
 		var body any
-		if provider == "openai" {
+		switch provider {
+		case "openai":
 			body = map[string]any{"model": "reported-opaque-synthetic-credential", "usage": map[string]int{"prompt_tokens": 12, "completion_tokens": 0, "total_tokens": 12}, "choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]string{"content": string(content)}}}}
 			if r.Header.Get("Authorization") == "Bearer a" {
 				// A counter above float64's exact integer range exercises output masking.
 				body.(map[string]any)["usage"] = map[string]int64{"prompt_tokens": 12, "completion_tokens": 0, "total_tokens": 9007199254740993}
 			}
-		} else {
+		case "anthropic":
+			body = map[string]any{"model": "reported", "stop_reason": "end_turn", "usage": map[string]int{"input_tokens": 12, "output_tokens": 0}, "content": []any{map[string]string{"type": "text", "text": string(content)}}}
+		default:
 			body = map[string]any{"model": "reported", "prompt_eval_count": 12, "eval_count": 0, "total_duration": 500, "done_reason": "stop", "message": map[string]string{"content": string(content)}}
 		}
 		if err := json.NewEncoder(w).Encode(body); err != nil {
@@ -125,7 +131,7 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 }
 
 func TestModelEvaluationRunsBoundedCorpus(t *testing.T) {
-	for _, provider := range []string{"openai", "ollama"} {
+	for _, provider := range []string{"openai", "anthropic", "ollama"} {
 		t.Run(provider, func(t *testing.T) {
 			srv, calls := evaluationServer(t, provider, nil)
 			defer srv.Close()
@@ -310,5 +316,22 @@ func TestModelEvaluationReasoningEffort(t *testing.T) {
 	env = evaluationEnvironment("https://api.example.com/v1", "openai")
 	if cfg, err := loadModelEvaluation(func(k string) string { return env[k] }); err != nil || cfg.Temperature == nil || *cfg.Temperature != 0 {
 		t.Fatalf("default config: %+v %v", cfg, err)
+	}
+}
+
+func TestModelEvaluationAnthropicConfig(t *testing.T) {
+	env := evaluationEnvironment("", "anthropic")
+	delete(env, "ANTHROPIC_BASE_URL")
+	cfg, err := loadModelEvaluation(func(k string) string { return env[k] })
+	if err != nil || cfg.Endpoint != "https://api.anthropic.com" || cfg.Temperature != nil || cfg.apiKey == "" {
+		t.Fatalf("anthropic config: %+v %v", cfg, err)
+	}
+	env["MODEL_EVAL_REASONING_EFFORT"] = "medium"
+	if cfg, err := loadModelEvaluation(func(k string) string { return env[k] }); err != nil || cfg.ReasoningEffort != "medium" {
+		t.Fatalf("anthropic effort: %+v %v", cfg, err)
+	}
+	env["ANTHROPIC_API_KEY"] = " "
+	if _, err := loadModelEvaluation(func(k string) string { return env[k] }); err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Fatalf("missing key accepted: %v", err)
 	}
 }

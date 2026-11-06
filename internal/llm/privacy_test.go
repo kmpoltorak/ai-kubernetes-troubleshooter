@@ -16,7 +16,7 @@ import (
 )
 
 func TestProvidersMaskDataAndLimitWholeRequest(t *testing.T) {
-	for _, name := range []string{"openai", "ollama"} {
+	for _, name := range []string{"openai", "anthropic", "ollama"} {
 		t.Run(name, func(t *testing.T) {
 			var body []byte
 			calls := 0
@@ -24,14 +24,17 @@ func TestProvidersMaskDataAndLimitWholeRequest(t *testing.T) {
 				calls++
 				body, _ = io.ReadAll(r.Body)
 				content := strings.Replace(validJSON, `"summary":"s"`, `"summary":"password=synthetic-output"`, 1)
-				if name == "openai" {
+				switch name {
+				case "openai":
 					_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
-				} else {
+				case "anthropic":
+					_ = json.NewEncoder(w).Encode(map[string]any{"stop_reason": "end_turn", "content": []any{map[string]string{"type": "text", "text": content}}})
+				default:
 					_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": content}})
 				}
 			}))
 			defer srv.Close()
-			cfg := config.Config{LLMProvider: name, LLMModel: "test", LLMTimeout: time.Second, OpenAIBaseURL: srv.URL, OllamaBaseURL: srv.URL}
+			cfg := config.Config{LLMProvider: name, LLMModel: "test", LLMTimeout: time.Second, OpenAIBaseURL: srv.URL, AnthropicBaseURL: srv.URL, OllamaBaseURL: srv.URL}
 			in := sampleInput()
 			in.Limitations = []string{"password=synthetic-limitation"}
 			in.Incident.Title = "password=synthetic-title"
@@ -73,12 +76,12 @@ func TestProvidersMaskDataAndLimitWholeRequest(t *testing.T) {
 }
 
 func TestProvidersMaskErrors(t *testing.T) {
-	for _, name := range []string{"openai", "ollama"} {
+	for _, name := range []string{"openai", "anthropic", "ollama"} {
 		for _, body := range []string{`{"error":{"password":"short-secret","message":"password=synthetic-error"}}`, "password=synthetic-error"} {
 			t.Run(name+body, func(t *testing.T) {
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500); _, _ = w.Write([]byte(body)) }))
 				defer srv.Close()
-				cfg := config.Config{LLMProvider: name, LLMModel: "test", LLMTimeout: time.Second, OpenAIBaseURL: srv.URL, OllamaBaseURL: srv.URL}
+				cfg := config.Config{LLMProvider: name, LLMModel: "test", LLMTimeout: time.Second, OpenAIBaseURL: srv.URL, AnthropicBaseURL: srv.URL, OllamaBaseURL: srv.URL}
 				_, err := FromConfig(cfg).Analyze(context.Background(), sampleInput())
 				if err == nil || strings.Contains(err.Error(), "synthetic-error") || strings.Contains(err.Error(), "short-secret") || !strings.Contains(err.Error(), "500") {
 					t.Fatalf("unsafe error: %v", err)

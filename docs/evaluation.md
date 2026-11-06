@@ -24,12 +24,14 @@ before running. There are no automatic retries or redirects.
 
 | Setting | Value |
 |---|---|
-| `MODEL_EVAL_PROVIDER` | required: `openai` or `ollama` |
+| `MODEL_EVAL_PROVIDER` | required: `openai`, `anthropic` or `ollama` |
 | `MODEL_EVAL_MODEL` | required; no default |
 | `MODEL_EVAL_ALLOW_NETWORK` | must equal `true`, including for local Ollama |
-| `MODEL_EVAL_REASONING_EFFORT` | OpenAI only, e.g. `medium`; sends `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`) |
+| `MODEL_EVAL_REASONING_EFFORT` | OpenAI or Anthropic, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and never a temperature |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
+| `ANTHROPIC_API_KEY` | environment only; required for Anthropic |
+| `ANTHROPIC_BASE_URL` | default `https://api.anthropic.com` |
 | `OLLAMA_BASE_URL` | default `http://localhost:11434` |
 | Endpoint | HTTPS, or HTTP loopback; no URL credentials, query or fragment |
 | Attempts | six fixed cases × three attempts, serially; at most 18 requests |
@@ -50,8 +52,9 @@ MODEL_EVAL_ALLOW_NETWORK=true MODEL_EVAL_PROVIDER=ollama \
   ./internal/investigation > report-model-evaluation.jsonl
 ```
 
-For OpenAI, set `OPENAI_API_KEY` in the environment and use
-`MODEL_EVAL_PROVIDER=openai`. Keep keys out of arguments and output files.
+For OpenAI or Anthropic, set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the
+environment and use `MODEL_EVAL_PROVIDER=openai` or `anthropic`. The 4096-token
+limit includes Anthropic thinking; a cut-off report fails the attempt. Keep keys out of arguments and output files.
 Choose a new output filename each time: `>` overwrites an existing file.
 Rerunning starts another set of calls; it does not resume failed attempts.
 
@@ -68,8 +71,9 @@ jq -cs '[.[] | select(.Action == "output") | .Output] | join("") | split("\n")[]
 Each attempt records case/repeat, evidence IDs, requested/reported model, request
 settings, prompt/schema hashes, timing, provider usage, decoded model analysis
 and the engine's final analysis. Timings are nanoseconds; absent counters are
-`null`. OpenAI reports token usage; Ollama also reports generation/load timings.
-See the [OpenAI response fields](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+`null`. OpenAI and Anthropic report token usage; Ollama also reports generation/load timings.
+See the [OpenAI response fields](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
+[Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)
 and [Ollama response fields](https://docs.ollama.com/api/chat).
 
 Transport, decoding and validation failures remain failed attempts. Usage can
