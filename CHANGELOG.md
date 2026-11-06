@@ -3,6 +3,10 @@
 ## [1.5.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.4.0...v1.5.0) (2026-11-06)
 
 
+### ⚠ BREAKING CHANGES
+
+* The Ollama provider is removed ([#87](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/87)). `LLM_PROVIDER=ollama` and `MODEL_EVAL_PROVIDER=ollama` are no longer accepted, and the application refuses to start with them; use `rules`, `openai` or `anthropic`. Local models were measured and none produced usable reports ([results](docs/evaluation.md#local-models)). This release was cut together with the removal, so its version did not change to 2.0.0.
+
 ### Features
 
 * add Anthropic (Claude) as an LLM provider ([#84](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/84)) ([8c66361](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/8c663611a9a87edaac8ad3b5e23694041a853a09))
