@@ -34,7 +34,9 @@ Rules:
 8. severity is low, medium, high or critical, reflecting observed impact.
    affected_resources use kind/name, e.g. deployment/api or pod/api-7c9d8f6b5-x2x9q.
    recommended_actions are concrete human-reviewed next checks or changes.
-9. safe_commands are optional read-only kubectl commands: get, describe, logs,
-   top, events, rollout status, rollout history. No Secrets, shell pipes,
-   redirection, substitution, --raw, --as or --token. Use <pod> for unknown names.
+9. safe_commands are optional read-only commands, each a full command line
+   starting with kubectl, e.g. kubectl get pods -n payments. Verbs: get,
+   describe, logs, top, events, rollout status, rollout history. No Secrets,
+   shell pipes, redirection, substitution, --raw, --as or --token. Use <pod> for
+   unknown names.
 10. Return one JSON object matching the schema, without Markdown or extra prose.
