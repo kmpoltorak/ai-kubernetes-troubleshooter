@@ -39,7 +39,8 @@ type modelEvaluationConfig struct {
 	MaxOutputTokens int    `json:"max_output_tokens"`
 	TimeoutSeconds  int    `json:"request_timeout_seconds"`
 	// Temperature is 0, or null where it is not sent: OpenAI reasoning models
-	// accept only the default, and the Anthropic API version rejects it.
+	// accept only the default, the Anthropic API version rejects it, and
+	// Gemini's thinking models are tuned for the default.
 	Temperature     *int   `json:"temperature"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	apiKey          string
@@ -73,8 +74,13 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 		if c.Endpoint == "" {
 			c.Endpoint = "https://api.anthropic.com"
 		}
+	case "gemini":
+		c.Endpoint, c.Temperature = getenv("GEMINI_BASE_URL"), nil
+		if c.Endpoint == "" {
+			c.Endpoint = "https://generativelanguage.googleapis.com/v1beta"
+		}
 	default:
-		return c, errors.New("MODEL_EVAL_PROVIDER must be openai or anthropic")
+		return c, errors.New("MODEL_EVAL_PROVIDER must be openai, anthropic or gemini")
 	}
 	u, err := url.Parse(c.Endpoint)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
@@ -97,7 +103,7 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 		}
 		c.Temperature = nil
 	}
-	key := map[string]string{"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}[c.Provider]
+	key := map[string]string{"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}[c.Provider]
 	if c.apiKey = getenv(key); strings.TrimSpace(c.apiKey) == "" {
 		return c, errors.New(key + " is required")
 	}
@@ -172,10 +178,13 @@ func runModelEvaluation(ctx context.Context, getenv func(string) string, emit fu
 	ctx, cancel := context.WithTimeout(ctx, suite)
 	defer cancel()
 	var analyze func(context.Context, llm.AnalysisInput, int) (llm.Measurement, error)
-	if cfg.Provider == "openai" {
+	switch cfg.Provider {
+	case "openai":
 		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, request).WithReasoningEffort(cfg.ReasoningEffort).AnalyzeMeasured
-	} else {
+	case "anthropic":
 		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
+	default:
+		analyze = llm.NewGeminiProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
 	}
 	write := func(value any) error {
 		data, err := json.Marshal(value)

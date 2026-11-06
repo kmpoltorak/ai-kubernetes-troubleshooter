@@ -14,7 +14,7 @@ import (
 )
 
 func TestMeasuredProviders(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic"} {
+	for _, provider := range []string{"openai", "anthropic", "gemini"} {
 		for _, output := range []string{"valid", "missing usage", "invalid analysis", "truncated", "refusal"} {
 			t.Run(provider+"/"+output, func(t *testing.T) {
 				var request map[string]any
@@ -46,6 +46,17 @@ func TestMeasuredProviders(t *testing.T) {
 						if output != "missing usage" {
 							body["usage"] = map[string]int{"input_tokens": 11, "output_tokens": 0}
 						}
+					case "gemini":
+						reason = map[string]string{"stop": "STOP", "length": "MAX_TOKENS"}[reason]
+						if output == "refusal" {
+							// A safety stop is rejected even when the text happens to parse.
+							content, reason = validJSON, "SAFETY"
+						}
+						body["modelVersion"] = body["model"]
+						body["candidates"] = []any{map[string]any{"finishReason": reason, "content": map[string]any{"parts": []any{map[string]any{"text": "thinking", "thought": true}, map[string]any{"text": content}}}}}
+						if output != "missing usage" {
+							body["usageMetadata"] = map[string]int{"promptTokenCount": 11, "candidatesTokenCount": 0, "totalTokenCount": 11}
+						}
 					case "openai":
 						body["choices"] = []any{map[string]any{"finish_reason": reason, "message": map[string]any{"content": content}}}
 						if output == "refusal" {
@@ -73,6 +84,11 @@ func TestMeasuredProviders(t *testing.T) {
 					if request["max_tokens"] != float64(4096) {
 						t.Fatalf("missing token cap: %v", request)
 					}
+				case "gemini":
+					result, err = NewGeminiProvider(srv.URL, "synthetic", "requested", "", time.Second).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
+					if request["generationConfig"].(map[string]any)["maxOutputTokens"] != float64(4096) {
+						t.Fatalf("missing token cap: %v", request)
+					}
 				}
 				invalid := output == "invalid analysis" || output == "truncated" || output == "refusal"
 				if errors.Is(err, ErrInvalidOutput) != invalid || (result.Analysis == nil) != invalid {
@@ -88,7 +104,7 @@ func TestMeasuredProviders(t *testing.T) {
 				} else if result.Usage.InputTokens == nil || *result.Usage.InputTokens != 11 || result.Usage.OutputTokens == nil || *result.Usage.OutputTokens != 0 {
 					t.Fatalf("usage lost, including zero/invalid output: %+v", result.Usage)
 				}
-				if provider == "openai" && output != "missing usage" && (result.Usage.TotalTokens == nil || *result.Usage.TotalTokens != 11) {
+				if provider != "anthropic" && output != "missing usage" && (result.Usage.TotalTokens == nil || *result.Usage.TotalTokens != 11) {
 					t.Fatal("reported total lost")
 				}
 			})
@@ -103,7 +119,7 @@ func TestMeasuredLimitsAndRedirects(t *testing.T) {
 		http.Redirect(w, r, "/second", http.StatusTemporaryRedirect)
 	}))
 	defer srv.Close()
-	for _, provider := range []string{"openai", "anthropic"} {
+	for _, provider := range []string{"openai", "anthropic", "gemini"} {
 		t.Run(provider, func(t *testing.T) {
 			var analyze func(context.Context, AnalysisInput, int) (Measurement, error)
 			switch provider {
@@ -111,6 +127,8 @@ func TestMeasuredLimitsAndRedirects(t *testing.T) {
 				analyze = NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second).AnalyzeMeasured
 			case "anthropic":
 				analyze = NewAnthropicProvider(srv.URL, "synthetic", "m", "", time.Second).AnalyzeMeasured
+			case "gemini":
+				analyze = NewGeminiProvider(srv.URL, "synthetic", "m", "", time.Second).AnalyzeMeasured
 			}
 			for _, limit := range []int{-1, 0, 4097} {
 				before := calls.Load()

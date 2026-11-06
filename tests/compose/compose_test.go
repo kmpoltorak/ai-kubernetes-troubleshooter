@@ -178,7 +178,7 @@ func TestExternalDatabaseNetworkJoinsExistingNetwork(t *testing.T) {
 }
 
 func TestComposePassesProviderSettings(t *testing.T) {
-	env := map[string]string{"LLM_PROVIDER": "anthropic", "LLM_MODEL": "claude-test", "LLM_REASONING_EFFORT": "medium"}
+	env := map[string]string{"LLM_PROVIDER": "gemini", "LLM_MODEL": "gemini-test", "LLM_REASONING_EFFORT": "medium", "GEMINI_API_KEY": "synthetic", "GEMINI_BASE_URL": "https://gemini.example.com/v1beta"}
 	r, stderr, err := renderEnv(t, env, "docker-compose.yml")
 	if err != nil {
 		t.Fatalf("render: %v %s", err, stderr)

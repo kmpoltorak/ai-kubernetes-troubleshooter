@@ -24,15 +24,17 @@ before running. There are no automatic retries or redirects.
 
 | Setting | Value |
 |---|---|
-| `MODEL_EVAL_PROVIDER` | required: `openai` or `anthropic` |
+| `MODEL_EVAL_PROVIDER` | required: `openai`, `anthropic` or `gemini` |
 | `MODEL_EVAL_MODEL` | required; no default |
 | `MODEL_EVAL_ALLOW_NETWORK` | must equal `true` |
 | `MODEL_EVAL_TIMEOUT_SECONDS` | default `60`, at most `600`; per request, recorded as `request_timeout_seconds` |
-| `MODEL_EVAL_REASONING_EFFORT` | OpenAI or Anthropic, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and never a temperature |
+| `MODEL_EVAL_REASONING_EFFORT` | OpenAI or Anthropic, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and Gemini `thinkingLevel`; neither ever gets a temperature |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
 | `ANTHROPIC_API_KEY` | environment only; required for Anthropic |
 | `ANTHROPIC_BASE_URL` | default `https://api.anthropic.com` |
+| `GEMINI_API_KEY` | environment only; required for Gemini |
+| `GEMINI_BASE_URL` | default `https://generativelanguage.googleapis.com/v1beta` |
 | Endpoint | HTTPS, or HTTP loopback; no URL credentials, query or fragment |
 | Attempts | six fixed cases × three attempts, serially; at most 18 requests |
 | Time | the request timeout; each investigation gets 30 seconds more, and the suite 18 requests plus 2 minutes (20 minutes at 60 seconds) |
@@ -43,7 +45,7 @@ Other limits are fixed; application `LLM_*` settings do not change them. The byt
 limit does not ensure a model context fit. Request/token caps are not a currency
 budget. Interrupted calls may be billed, and missing usage does not mean zero.
 
-Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the environment, choose the
+Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in the environment, choose the
 provider and an exact model name, then run:
 
 ```bash
@@ -73,9 +75,10 @@ jq -cs '[.[] | select(.Action == "output") | .Output] | join("") | split("\n")[]
 Each attempt records case/repeat, evidence IDs, requested/reported model, request
 settings, prompt/schema hashes, timing, provider usage, decoded model analysis
 and the engine's final analysis. Timings are nanoseconds; absent counters are
-`null`. Both providers report token usage.
+`null`. All three providers report token usage.
 See the [OpenAI response fields](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
-and the [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages).
+the [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)
+and the [Gemini generateContent reference](https://ai.google.dev/api/generate-content).
 
 Transport, decoding and validation failures remain failed attempts. Usage can
 still be available for a rejected report. Raw HTTP responses and undecodable

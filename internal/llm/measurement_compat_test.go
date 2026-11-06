@@ -11,7 +11,7 @@ import (
 )
 
 func TestOrdinaryAnalysisIgnoresUnusedProviderMetadata(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic"} {
+	for _, provider := range []string{"openai", "anthropic", "gemini"} {
 		t.Run(provider, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				body := map[string]any{"model": 42, "usage": "unsupported"}
@@ -20,6 +20,8 @@ func TestOrdinaryAnalysisIgnoresUnusedProviderMetadata(t *testing.T) {
 					body["choices"] = []any{map[string]any{"message": map[string]string{"content": validJSON}}}
 				case "anthropic":
 					body["content"] = []any{map[string]string{"type": "text", "text": validJSON}}
+				case "gemini":
+					body["candidates"], body["usageMetadata"], body["modelVersion"] = []any{map[string]any{"finishReason": "STOP", "content": map[string]any{"parts": []any{map[string]string{"text": validJSON}}}}}, "unsupported", 42
 				}
 				if err := json.NewEncoder(w).Encode(body); err != nil {
 					t.Error(err)
@@ -32,6 +34,8 @@ func TestOrdinaryAnalysisIgnoresUnusedProviderMetadata(t *testing.T) {
 				p = NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second)
 			case "anthropic":
 				p = NewAnthropicProvider(srv.URL, "synthetic", "m", "", time.Second)
+			case "gemini":
+				p = NewGeminiProvider(srv.URL, "synthetic", "m", "", time.Second)
 			}
 			a, err := p.Analyze(context.Background(), sampleInput())
 			if err != nil || a.RootCause != "r" {
