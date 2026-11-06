@@ -23,14 +23,13 @@ see [several clusters](clusters.md).
 | `KUBERNETES_CLUSTERS_FILE` | empty | YAML list of clusters, each with its kubeconfig, context and allowed namespaces; replaces `KUBERNETES_CLUSTER_NAME`, `KUBERNETES_CONTEXT` and `KUBERNETES_ALLOWED_NAMESPACES` ([several clusters](clusters.md)) |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see [custom resources](#custom-resources)) |
-| `LLM_PROVIDER` | `rules` | `rules`, `openai`, `anthropic`, `ollama` |
-| `LLM_MODEL` | per provider | `gpt-4o-mini`, `claude-opus-5-5`, `llama3.2` |
+| `LLM_PROVIDER` | `rules` | `rules`, `openai`, `anthropic`; local models are not supported ([why](evaluation.md#local-models)) |
+| `LLM_MODEL` | per provider | `gpt-4o-mini`, `claude-opus-5-5` |
 | `LLM_REASONING_EFFORT` | empty | OpenAI reasoning models (e.g. `gpt-6-luna`): `low`, `medium`, `high`, sent instead of temperature 0, which they reject; Anthropic: `output_config.effort` (`low` to `max`), empty uses the model default |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized provider request body; overflow fails analysis without sending, preserving evidence |
 | `LLM_TIMEOUT` | `60s` | per LLM request |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude Messages API; no temperature is sent, and thinking counts against the 16000-token output limit |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | |
 | `INVESTIGATION_TIMEOUT` | `90s` | per execution attempt |
 | `JOB_TIMEOUT`, `JOB_QUEUE_CAPACITY` | `15m`, `100` | total time from acceptance; maximum waiting jobs |
 | `MAX_CONCURRENT_INVESTIGATIONS` | `4` | valid active leases across replicas sharing the database |

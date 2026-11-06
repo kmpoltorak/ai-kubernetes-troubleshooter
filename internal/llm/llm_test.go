@@ -151,38 +151,9 @@ func TestProviderTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 	start := time.Now()
-	_, err := NewOllamaProvider(srv.URL, "m", 100*time.Millisecond).Analyze(context.Background(), sampleInput())
+	_, err := NewOpenAIProvider(srv.URL, "k", "m", 100*time.Millisecond).Analyze(context.Background(), sampleInput())
 	if err == nil || time.Since(start) > time.Second {
 		t.Fatalf("timeout not enforced: err=%v elapsed=%s", err, time.Since(start))
-	}
-}
-
-func TestOllamaProvider(t *testing.T) {
-	var got map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/chat" {
-			http.NotFound(w, r)
-			return
-		}
-		_ = json.NewDecoder(r.Body).Decode(&got)
-		content, _ := json.Marshal("```json\n" + validJSON + "\n```")
-		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":` + string(content) + `},"done":true}`))
-	}))
-	defer srv.Close()
-
-	a, err := NewOllamaProvider(srv.URL, "llama3.1", time.Second).Analyze(context.Background(), sampleInput())
-	if err != nil || a.Severity != domain.SeverityHigh {
-		t.Fatalf("a=%+v err=%v", a, err)
-	}
-	if got["stream"] != false || got["format"] == nil {
-		t.Fatalf("request missing stream=false or format schema: %v", got)
-	}
-	if _, exists := got["options"].(map[string]any)["num_predict"]; exists {
-		t.Fatal("ordinary Analyze gained an evaluation-only output cap")
-	}
-	msgs := got["messages"].([]any)
-	if len(msgs) != 2 || !strings.Contains(msgs[0].(map[string]any)["content"].(string), "Kubernetes SRE") {
-		t.Fatalf("system prompt not sent: %v", msgs)
 	}
 }
 

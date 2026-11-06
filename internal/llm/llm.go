@@ -56,12 +56,6 @@ func FromConfig(cfg config.Config) Provider {
 			p.maxInputBytes = cfg.LLMMaxInputBytes
 		}
 		return p
-	case "ollama":
-		p := NewOllamaProvider(cfg.OllamaBaseURL, cfg.LLMModel, cfg.LLMTimeout)
-		if cfg.LLMMaxInputBytes > 0 {
-			p.maxInputBytes = cfg.LLMMaxInputBytes
-		}
-		return p
 	default:
 		return RulesProvider{}
 	}

@@ -13,7 +13,7 @@ var systemPrompt string
 
 // analysisSchema is the JSON schema sent to providers that support
 // constrained output. It is written in OpenAI strict-mode form (every
-// property required, no additional properties), which Ollama also accepts.
+// property required, no additional properties), which Anthropic also accepts.
 var analysisSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,

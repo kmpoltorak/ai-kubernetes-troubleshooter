@@ -73,13 +73,8 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 		if c.Endpoint == "" {
 			c.Endpoint = "https://api.anthropic.com"
 		}
-	case "ollama":
-		c.Endpoint = getenv("OLLAMA_BASE_URL")
-		if c.Endpoint == "" {
-			c.Endpoint = "http://localhost:11434"
-		}
 	default:
-		return c, errors.New("MODEL_EVAL_PROVIDER must be openai, anthropic or ollama")
+		return c, errors.New("MODEL_EVAL_PROVIDER must be openai or anthropic")
 	}
 	u, err := url.Parse(c.Endpoint)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
@@ -97,16 +92,14 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 	}
 	c.Endpoint = strings.TrimRight(c.Endpoint, "/")
 	if c.ReasoningEffort != "" {
-		if c.Provider == "ollama" || !regexp.MustCompile(`^[a-z]{1,16}$`).MatchString(c.ReasoningEffort) {
-			return c, errors.New("MODEL_EVAL_REASONING_EFFORT must be a lowercase word, with MODEL_EVAL_PROVIDER=openai or anthropic")
+		if !regexp.MustCompile(`^[a-z]{1,16}$`).MatchString(c.ReasoningEffort) {
+			return c, errors.New("MODEL_EVAL_REASONING_EFFORT must be a lowercase word")
 		}
 		c.Temperature = nil
 	}
-	if key := map[string]string{"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}[c.Provider]; key != "" {
-		c.apiKey = getenv(key)
-		if strings.TrimSpace(c.apiKey) == "" {
-			return c, errors.New(key + " is required")
-		}
+	key := map[string]string{"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}[c.Provider]
+	if c.apiKey = getenv(key); strings.TrimSpace(c.apiKey) == "" {
+		return c, errors.New(key + " is required")
 	}
 	return c, nil
 }
@@ -179,13 +172,10 @@ func runModelEvaluation(ctx context.Context, getenv func(string) string, emit fu
 	ctx, cancel := context.WithTimeout(ctx, suite)
 	defer cancel()
 	var analyze func(context.Context, llm.AnalysisInput, int) (llm.Measurement, error)
-	switch cfg.Provider {
-	case "openai":
+	if cfg.Provider == "openai" {
 		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, request).WithReasoningEffort(cfg.ReasoningEffort).AnalyzeMeasured
-	case "anthropic":
+	} else {
 		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
-	default:
-		analyze = llm.NewOllamaProvider(cfg.Endpoint, cfg.Model, request).AnalyzeMeasured
 	}
 	write := func(value any) error {
 		data, err := json.Marshal(value)

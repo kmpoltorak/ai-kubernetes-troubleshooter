@@ -66,11 +66,11 @@ func TestAuthConfiguration(t *testing.T) {
 }
 
 func TestLoadProviderDefaultModel(t *testing.T) {
-	c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "Ollama"}))
+	c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "Anthropic", "ANTHROPIC_API_KEY": "k"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.LLMProvider != "ollama" || c.LLMModel != "llama3.2" {
+	if c.LLMProvider != "anthropic" || c.LLMModel != "claude-opus-5-5" {
 		t.Fatalf("got provider=%s model=%s", c.LLMProvider, c.LLMModel)
 	}
 }
@@ -85,6 +85,7 @@ func TestLoadErrors(t *testing.T) {
 		{"bad port", map[string]string{"DATABASE_URL": "x", "HTTP_PORT": "99999"}, "HTTP_PORT"},
 		{"non numeric port", map[string]string{"DATABASE_URL": "x", "HTTP_PORT": "abc"}, "HTTP_PORT must be an integer"},
 		{"unknown provider", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "bard"}, "LLM_PROVIDER"},
+		{"removed ollama provider", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "ollama"}, "LLM_PROVIDER"},
 		{"openai without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai"}, "OPENAI_API_KEY"},
 		{"anthropic without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "anthropic"}, "ANTHROPIC_API_KEY"},
 		{"bad bool", map[string]string{"DATABASE_URL": "x", "SIMULATION_ENABLED": "maybe"}, "SIMULATION_ENABLED"},
