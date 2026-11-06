@@ -61,12 +61,15 @@ func (a Analysis) MarshalJSON() ([]byte, error) {
 }
 
 // HealthUnconfirmed checks observations, not the truth of an analyzer's prose.
+// CoreReads are the target and its pods; a failed one leaves health unconfirmed.
+// References (configmaps, secrets, claims), nodes and metrics are optional.
+// The LLM system prompt lists the same names.
+var CoreReads = []string{"get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa",
+	"get_custom_resource", "get_service", "get_pods", "get_events", "get_pod_logs"}
+
 func HealthUnconfirmed(evidence []Evidence, failed []ToolExecution) bool {
 	for _, te := range failed {
-		switch te.ToolName {
-		// The target and its pods. References (configmaps, secrets, claims), nodes and metrics are optional.
-		case "get_namespace", "get_deployment", "get_statefulset", "get_daemonset", "get_job", "get_cronjob", "get_ingress", "get_hpa", "get_custom_resource",
-			"get_service", "get_pods", "get_events", "get_pod_logs":
+		if slices.Contains(CoreReads, te.ToolName) {
 			return true
 		}
 	}

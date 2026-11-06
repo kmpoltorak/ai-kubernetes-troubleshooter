@@ -464,9 +464,38 @@ func TestRulesForCustomResource(t *testing.T) {
 func TestPromptExampleCommandIsValid(t *testing.T) {
 	example := regexp.MustCompile(`e\.g\. (kubectl [^.\n]+)\.`).FindStringSubmatch(systemPrompt)
 	if example == nil || !strings.Contains(systemPrompt, "starting with kubectl") {
-		t.Fatal("rule 9 must say each safe command starts with kubectl and show an example")
+		t.Fatal("the prompt must say each safe command starts with kubectl and show an example")
 	}
 	if err := domain.ValidateSafeCommand(example[1]); err != nil {
 		t.Fatalf("prompt example %q is rejected: %v", example[1], err)
+	}
+}
+
+// T07 (2026-11-05): gpt-6-luna recommended actions with no_fault_observed in every
+// attempt because the prompt never said the list must be empty. Every check the
+// validator rejects on is stated in the prompt, in words a model can follow.
+func TestPromptStatesEveryHardCheck(t *testing.T) {
+	prompt := strings.Join(strings.Fields(systemPrompt), " ")
+	for _, read := range domain.CoreReads {
+		if !strings.Contains(prompt, read) {
+			t.Errorf("core read %s is missing from the verdict order", read)
+		}
+	}
+	for check, phrase := range map[string]string{
+		"schema_version must be 2":                      "schema_version is 2",
+		"support contradicts verdict (strong)":          "strong only with observed_fault",
+		"support contradicts verdict (inconclusive)":    "inconclusive always with insufficient",
+		"no_fault_observed contradicts diagnostics":     "Then the verdict must not be no_fault_observed",
+		"summary or root_cause is empty":                "summary and root_cause are never empty",
+		"evidence is empty":                             "evidence has at least one item",
+		"observed_fault requires an unhealthy citation": "observed_fault cites at least one item whose health is not healthy",
+		"recommended_actions is empty":                  "at least one entry for observed_fault, suspected_fault and inconclusive",
+		"no_fault_observed must not recommend actions":  "is exactly [] for no_fault_observed",
+		"affected resource must be kind/name":           "kind/name with a lowercase kind",
+		"safe command must be a kubectl command":        "starting with kubectl",
+	} {
+		if !strings.Contains(prompt, phrase) {
+			t.Errorf("validator check %q is not stated in the prompt (want %q)", check, phrase)
+		}
 	}
 }
