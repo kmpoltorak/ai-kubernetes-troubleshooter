@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.4.0...v2.0.0) (2026-11-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* LLM_PROVIDER=ollama and MODEL_EVAL_PROVIDER=ollama are no longer accepted; the application refuses to start with them. Use rules, openai or anthropic.
+
+### Features
+
+* add Anthropic (Claude) as an LLM provider ([#84](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/84)) ([8c66361](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/8c663611a9a87edaac8ad3b5e23694041a853a09))
+* make the model evaluation request timeout configurable ([#86](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/86)) ([2255677](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/2255677b4e779ce23a3c94baa33a163e6c8f4bac))
+* remove the Ollama provider ([#87](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/87)) ([57e7739](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/57e773971afb151efafb85836a7106a5b85c3d56))
+
 ## [1.4.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.3.0...v1.4.0) (2026-11-06)
 
 
