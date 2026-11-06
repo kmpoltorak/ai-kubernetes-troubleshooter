@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.4.0...v1.5.0) (2026-11-06)
+
+
+### Features
+
+* add Anthropic (Claude) as an LLM provider ([#84](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/84)) ([8c66361](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/8c663611a9a87edaac8ad3b5e23694041a853a09))
+* make the model evaluation request timeout configurable ([#86](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/86)) ([2255677](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/2255677b4e779ce23a3c94baa33a163e6c8f4bac))
+
 ## [1.4.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.3.0...v1.4.0) (2026-11-06)
 
 
