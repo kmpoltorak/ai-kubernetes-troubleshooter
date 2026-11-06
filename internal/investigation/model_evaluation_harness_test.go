@@ -112,15 +112,16 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 			return
 		}
 		var body any
-		if provider == "openai" {
+		switch provider {
+		case "openai":
 			body = map[string]any{"model": "reported-opaque-synthetic-credential", "usage": map[string]int{"prompt_tokens": 12, "completion_tokens": 0, "total_tokens": 12}, "choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]string{"content": string(content)}}}}
 			if r.Header.Get("Authorization") == "Bearer a" {
 				// A counter above float64's exact integer range exercises output masking.
 				body.(map[string]any)["usage"] = map[string]int64{"prompt_tokens": 12, "completion_tokens": 0, "total_tokens": 9007199254740993}
 			}
-		} else if provider == "anthropic" {
+		case "anthropic":
 			body = map[string]any{"model": "reported", "stop_reason": "end_turn", "usage": map[string]int{"input_tokens": 12, "output_tokens": 0}, "content": []any{map[string]string{"type": "text", "text": string(content)}}}
-		} else {
+		default:
 			body = map[string]any{"model": "reported", "prompt_eval_count": 12, "eval_count": 0, "total_duration": 500, "done_reason": "stop", "message": map[string]string{"content": string(content)}}
 		}
 		if err := json.NewEncoder(w).Encode(body); err != nil {
