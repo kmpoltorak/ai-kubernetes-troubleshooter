@@ -91,7 +91,7 @@ func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 	headers := map[string]string{"Authorization": "Bearer " + p.apiKey}
 	var raw json.RawMessage
 	if err := postJSON(ctx, evaluationClient(p.client, measured), p.baseURL+"/chat/completions", headers, req, &raw, p.maxInputBytes); err != nil {
-		return result, fmt.Errorf("openai: %w", err)
+		return result, fmt.Errorf("openai: %w", effortHint(err, p.effort))
 	}
 
 	if measured {

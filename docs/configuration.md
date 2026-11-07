@@ -45,7 +45,7 @@ for example during a provider outage, the app logs a warning and starts.
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see [custom resources](#custom-resources)) |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `anthropic`, `gemini`; local models are not supported ([why](evaluation.md#local-models)) |
 | `LLM_MODEL` | none (`rules-v2` for `rules`) | exact model name from the provider's list for the key, e.g. `gpt-6-luna`, `claude-opus-5-5`, `gemini-3.8-flash`; checked at startup |
-| `LLM_REASONING_EFFORT` | `medium` | sent to every provider: OpenAI `reasoning_effort`, Anthropic `output_config.effort`, Gemini `thinkingLevel`; `low`, `medium` or `high` work for all three. `off` sends none, for models without reasoning: OpenAI then gets temperature 0, Anthropic and Gemini use the model default |
+| `LLM_REASONING_EFFORT` | `medium` | sent to every provider: OpenAI `reasoning_effort`, Anthropic `output_config.effort`, Gemini `thinkingLevel`; `low`, `medium` or `high` work for all three. `off` sends none, for models without reasoning: OpenAI then gets temperature 0, Anthropic and Gemini use the model default. A model that rejects the parameter (`400`) fails the analysis with a hint to set `off` |
 | `LLM_MAX_OUTPUT_TOKENS` | `16000` | output limit per analysis (1–128000), thinking included; a cut-off report fails the analysis |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized provider request body; overflow fails analysis without sending, preserving evidence |
 | `LLM_TIMEOUT` | `300s` | per LLM request; thinking models can need minutes at a high output limit |
