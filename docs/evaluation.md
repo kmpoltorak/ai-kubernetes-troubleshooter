@@ -93,6 +93,41 @@ read-only follow-up. Do not count engine-added context as model-authored.
 Keep failures in the assessment; three repetitions across six synthetic cases
 are not a statistical accuracy estimate or a production benchmark.
 
+## Measured models
+
+Each model ran the 18 attempts once on 2026-11-07 with the defaults:
+`LLM_REASONING_EFFORT=medium`, `LLM_MAX_OUTPUT_TOKENS=16000`, a 300-second
+request timeout. The validator accepted all 18 reports of every model; human
+review is still pending, so none is `qualified`.
+
+| Model | Accepted | Seconds per request (median, range) | Output tokens (median) |
+|---|---|---|---|
+| `gpt-6-luna` | 18 of 18 | 11 (6–14) | 1621 |
+| `gpt-6.1-terra` | 18 of 18 | 15 (10–19) | 1287 |
+| `claude-opus-5-5` | 18 of 18 | 21 (15–25) | 2257 |
+| `claude-haiku-5-5` | 18 of 18 | 9 (7–14) | 2308 |
+| `gemini-3.8-flash` | 18 of 18 | 19 (11–111) | 952 |
+| `gemini-4-argon` | 18 of 18 | 29 (18–58) | 1575 |
+
+Output tokens include thinking. Accepted reports still differ in how far they
+read the evidence. Verdicts in the three repetitions of the cases where
+models disagreed:
+
+| Model | Healthy pod, old memory error in logs | NetworkPolicy plus timeouts | Unknown application error |
+|---|---|---|---|
+| `gpt-6-luna` | inconclusive ×3 | observed ×3 | observed ×3 |
+| `gpt-6.1-terra` | inconclusive ×1, observed ×2 | observed ×3 | observed ×3 |
+| `claude-opus-5-5` | inconclusive ×1, suspected ×2 | observed ×3 | observed ×3 |
+| `claude-haiku-5-5` | suspected ×3 | observed ×3 | observed ×3 |
+| `gemini-3.8-flash` | inconclusive ×2, suspected ×1 | suspected ×3 | observed ×3 |
+| `gemini-4-argon` | inconclusive ×3 | observed ×1, suspected ×2 | inconclusive ×2, suspected ×1 |
+
+The memory error belongs to a past incident on a healthy Deployment, so
+`inconclusive` matches the evidence; `suspected_fault` overstates it and
+`observed_fault` misreads history as the current state. All models agreed on
+the other three cases: OOMKilled observed, denied logs inconclusive, and no
+fault for the logs that contain instructions.
+
 ## Local models
 
 Local models through Ollama were measured with this tool and removed, because
@@ -107,6 +142,6 @@ a 300-second request timeout:
 | `phi4-mini` | 1 of 5 | evidence IDs that do not match their source |
 | `qwen2.5:7b` | 9 of 18 | `no_fault_observed` although logs could not be read; a `kubectl get secret` command |
 
-These runs used a 4096-token limit. The validator rejected the failing reports,
+These runs used a 4096-token limit and are not comparable with the table above. The validator rejected the failing reports,
 so they would not reach a user; some accepted ones still overstated a past
 error as a suspected fault. Local requests took 40–290 seconds.
