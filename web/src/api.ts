@@ -38,8 +38,11 @@ export interface Runtime {
   /** The configured clusters in order, each with its allowed namespaces (empty: any). */
   clusters: { name: string; allowed_namespaces: string[] }[];
   /** Effort, output limit and timeout are sent for API providers only. */
-  analyzer: { provider: string; model: string; reasoning_effort?: string; max_output_tokens?: number; timeout_seconds?: number };
+  analyzer: { provider: string; model: string; reasoning_effort?: string; max_output_tokens?: number; timeout_seconds?: number; max_input_bytes?: number };
   /** Job and request bounds; absent from older servers. */
+  environment?: string;
+  log_level?: string;
+  default_scenario?: string;
   limits?: { investigation_timeout_seconds: number; job_timeout_seconds: number; job_queue_capacity: number; max_concurrent_investigations: number; rate_limit_rps: number };
   authentication?: boolean;
   scenarios: string[];

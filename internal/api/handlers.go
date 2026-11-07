@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -53,7 +54,11 @@ type Runtime struct {
 	Analyzer          Analyzer         `json:"analyzer"`
 	Limits            Limits           `json:"limits"`
 	Authentication    bool             `json:"authentication"`
-	Scenarios         []string         `json:"scenarios"`
+	Environment       string           `json:"environment"`
+	LogLevel          string           `json:"log_level"`
+	// DefaultScenario is SIMULATION_SCENARIO, set in simulation only.
+	DefaultScenario string   `json:"default_scenario,omitempty"`
+	Scenarios       []string `json:"scenarios"`
 	// ResourceTypes are the kinds an incident can target, in form order.
 	ResourceTypes []domain.ResourceType `json:"resource_types"`
 }
@@ -73,6 +78,7 @@ type Analyzer struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	MaxOutputTokens int    `json:"max_output_tokens,omitempty"`
 	TimeoutSeconds  int    `json:"timeout_seconds,omitempty"`
+	MaxInputBytes   int    `json:"max_input_bytes,omitempty"`
 }
 
 // Limits are the job and request bounds of this installation.
@@ -90,7 +96,7 @@ func RuntimeFrom(cfg config.Config) Runtime {
 		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel},
 		Limits: Limits{InvestigationTimeoutSeconds: int(cfg.InvestigationTimeout.Seconds()), JobTimeoutSeconds: int(cfg.JobTimeout.Seconds()),
 			JobQueueCapacity: cfg.JobQueueCapacity, MaxConcurrentInvestigations: cfg.MaxConcurrentInvestigations, RateLimitRPS: cfg.RateLimitRPS},
-		Authentication: cfg.Auth.Enabled, Scenarios: []string{}, ResourceTypes: append(slices.Clone(domain.ResourceTypes), cfg.CustomKinds()...)}
+		Authentication: cfg.Auth.Enabled, Environment: cfg.AppEnv, LogLevel: strings.ToLower(cfg.LogLevel.String()), Scenarios: []string{}, ResourceTypes: append(slices.Clone(domain.ResourceTypes), cfg.CustomKinds()...)}
 	for _, c := range cfg.Clusters {
 		rt.Clusters = append(rt.Clusters, RuntimeCluster{Name: c.Name, AllowedNamespaces: append([]string{}, c.AllowedNamespaces...)})
 	}
@@ -100,9 +106,10 @@ func RuntimeFrom(cfg config.Config) Runtime {
 	if cfg.LLMProvider != "rules" {
 		rt.Analyzer.ReasoningEffort = cmp.Or(cfg.LLMReasoningEffort, "off")
 		rt.Analyzer.MaxOutputTokens, rt.Analyzer.TimeoutSeconds = cfg.LLMMaxOutputTokens, int(cfg.LLMTimeout.Seconds())
+		rt.Analyzer.MaxInputBytes = cfg.LLMMaxInputBytes
 	}
 	if cfg.SimulationEnabled {
-		rt.Mode, rt.Scenarios = "simulation", simulation.Scenarios
+		rt.Mode, rt.Scenarios, rt.DefaultScenario = "simulation", simulation.Scenarios, cfg.SimulationScenario
 	}
 	return rt
 }

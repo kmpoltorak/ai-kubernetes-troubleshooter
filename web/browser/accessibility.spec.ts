@@ -15,7 +15,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   test(`main states meet WCAG A/AA automated checks in ${colorScheme} mode`, async ({ page }) => {
     await page.emulateMedia({ colorScheme });
     await page.goto(rules);
-    await expect(page.getByText("simulation ·")).toBeVisible();
+    await expect(page.getByText("mode: simulation")).toBeVisible();
     await expectNoViolations(page, "start");
     await page.getByRole("button", { name: "OOM" }).click();
     await page.getByRole("button", { name: "Create incident" }).click();
@@ -23,7 +23,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await expect(page.getByRole("heading", { name: /OOMKilled/ })).toBeVisible();
     await expectNoViolations(page, "report");
     await page.goto(live);
-    await expect(page.getByText("live ·")).toBeVisible();
+    await expect(page.getByText("mode: live")).toBeVisible();
     await expectNoViolations(page, "live");
     await page.getByRole("button", { name: "Settings" }).click();
     await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
