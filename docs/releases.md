@@ -24,8 +24,10 @@ Requirements and limits:
 
 - Settings → Actions → General must allow GitHub Actions to create pull requests.
 - The release PR is opened with the workflow token, so its CI run waits for
-  manual approval and is not needed. It changes only `CHANGELOG.md` and `.release-please-manifest.json`; the full CI runs
-  on its merge commit before anything is published.
+  manual approval ("Approve and run workflows"); left unapproved, it expires and
+  shows as failed. It is not needed: the PR changes only `CHANGELOG.md` and
+  `.release-please-manifest.json`, and the full CI runs on its merge commit
+  before anything is published.
 
 ## Publish
 
