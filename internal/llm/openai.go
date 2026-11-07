@@ -14,8 +14,8 @@ import (
 
 // OpenAIProvider calls the Chat Completions API (or any compatible endpoint)
 // with a strict JSON schema response format.
-// No temperature is sent: reasoning models accept only the default, and
-// reasoning_effort controls depth instead.
+// Reasoning models get reasoning_effort and no temperature, which they reject;
+// with effort off, other models get temperature 0.
 type OpenAIProvider struct {
 	maxInputBytes   int
 	maxOutputTokens int
@@ -76,6 +76,8 @@ func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 	}
 	if p.effort != "" {
 		req["reasoning_effort"] = p.effort
+	} else {
+		req["temperature"] = 0
 	}
 	var resp struct {
 		Choices []struct {

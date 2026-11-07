@@ -52,7 +52,8 @@ type Config struct {
 	LLMProvider        string
 	LLMModel           string
 	// LLMReasoningEffort is OpenAI's reasoning_effort, Anthropic's
-	// output_config.effort or Gemini's thinkingLevel; the rules analyzer ignores it.
+	// output_config.effort or Gemini's thinkingLevel; empty (LLM_REASONING_EFFORT=off)
+	// sends none, for models without reasoning. The rules analyzer ignores it.
 	LLMReasoningEffort string
 	LLMTimeout         time.Duration
 	OpenAIAPIKey       string
@@ -161,7 +162,10 @@ func Load(getenv func(string) string) (Config, error) {
 		c.LLMModel = defaultModels[c.LLMProvider]
 	}
 	if !reasoningEffort.MatchString(c.LLMReasoningEffort) {
-		p.fail("LLM_REASONING_EFFORT", "must be a lowercase word such as low, medium or high")
+		p.fail("LLM_REASONING_EFFORT", "must be off or a lowercase word such as low, medium or high")
+	}
+	if c.LLMReasoningEffort == "off" {
+		c.LLMReasoningEffort = "" // providers send no effort parameter
 	}
 	if c.LLMProvider == "openai" && c.OpenAIAPIKey == "" {
 		p.fail("OPENAI_API_KEY", "is required when LLM_PROVIDER=openai")

@@ -27,7 +27,7 @@ before running. There are no automatic retries or redirects.
 | `MODEL_EVAL_MODEL` | required; no default |
 | `MODEL_EVAL_ALLOW_NETWORK` | must equal `true` |
 | `MODEL_EVAL_TIMEOUT_SECONDS` | default `60`, at most `600`; per request, recorded as `request_timeout_seconds` |
-| `MODEL_EVAL_REASONING_EFFORT` | default `medium`; sent as OpenAI `reasoning_effort`, Anthropic `output_config.effort` or Gemini `thinkingLevel`. No provider gets a temperature |
+| `MODEL_EVAL_REASONING_EFFORT` | default `medium`; sent as OpenAI `reasoning_effort`, Anthropic `output_config.effort` or Gemini `thinkingLevel`; `off` sends none (OpenAI then gets temperature 0) |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
 | `ANTHROPIC_API_KEY` | environment only; required for Anthropic |

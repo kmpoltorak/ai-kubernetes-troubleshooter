@@ -257,4 +257,8 @@ func TestLoadLLMDefaults(t *testing.T) {
 	if err != nil || c.LLMReasoningEffort != "high" || c.LLMMaxOutputTokens != 32000 {
 		t.Fatalf("overrides: effort=%q tokens=%d err=%v", c.LLMReasoningEffort, c.LLMMaxOutputTokens, err)
 	}
+	// off sends no effort parameter, for models without reasoning.
+	if c, err = Load(env(map[string]string{"DATABASE_URL": "x", "LLM_REASONING_EFFORT": "off"})); err != nil || c.LLMReasoningEffort != "" {
+		t.Fatalf("off: effort=%q err=%v", c.LLMReasoningEffort, err)
+	}
 }

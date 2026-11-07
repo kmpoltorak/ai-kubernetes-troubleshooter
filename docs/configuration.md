@@ -25,7 +25,7 @@ see [several clusters](clusters.md).
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see [custom resources](#custom-resources)) |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `anthropic`, `gemini`; local models are not supported ([why](evaluation.md#local-models)) |
 | `LLM_MODEL` | per provider | `gpt-6-luna`, `claude-opus-5-5`, `gemini-3.8-flash` |
-| `LLM_REASONING_EFFORT` | `medium` | sent to every provider: OpenAI `reasoning_effort`, Anthropic `output_config.effort`, Gemini `thinkingLevel`; `low`, `medium` or `high` work for all three. No provider gets a temperature, so OpenAI models must accept `reasoning_effort` |
+| `LLM_REASONING_EFFORT` | `medium` | sent to every provider: OpenAI `reasoning_effort`, Anthropic `output_config.effort`, Gemini `thinkingLevel`; `low`, `medium` or `high` work for all three. `off` sends none, for models without reasoning: OpenAI then gets temperature 0, Anthropic and Gemini use the model default |
 | `LLM_MAX_OUTPUT_TOKENS` | `16000` | output limit per analysis (1–128000), thinking included; a cut-off report fails the analysis |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized provider request body; overflow fails analysis without sending, preserving evidence |
 | `LLM_TIMEOUT` | `60s` | per LLM request |

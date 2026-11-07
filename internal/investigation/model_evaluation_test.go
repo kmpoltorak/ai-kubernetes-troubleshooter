@@ -39,7 +39,8 @@ type modelEvaluationConfig struct {
 	MaxInputBytes   int    `json:"max_input_bytes"`
 	MaxOutputTokens int    `json:"max_output_tokens"`
 	TimeoutSeconds  int    `json:"request_timeout_seconds"`
-	// ReasoningEffort replaces a temperature, which no provider is sent.
+	// ReasoningEffort is sent to the provider; "off" sends none, and OpenAI
+	// then gets temperature 0.
 	ReasoningEffort string `json:"reasoning_effort"`
 	apiKey          string
 }
@@ -173,13 +174,17 @@ func runModelEvaluation(ctx context.Context, getenv func(string) string, emit fu
 	ctx, cancel := context.WithTimeout(ctx, suite)
 	defer cancel()
 	var analyze func(context.Context, llm.AnalysisInput, int) (llm.Measurement, error)
+	effort := cfg.ReasoningEffort
+	if effort == "off" {
+		effort = ""
+	}
 	switch cfg.Provider {
 	case "openai":
-		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
+		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, effort, request).AnalyzeMeasured
 	case "anthropic":
-		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
+		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, effort, request).AnalyzeMeasured
 	default:
-		analyze = llm.NewGeminiProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
+		analyze = llm.NewGeminiProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, effort, request).AnalyzeMeasured
 	}
 	write := func(value any) error {
 		data, err := json.Marshal(value)

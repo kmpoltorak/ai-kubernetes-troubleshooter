@@ -14,8 +14,8 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 )
 
-// Reasoning models (e.g. gpt-6-luna) reject temperature 0, so none is sent;
-// reasoning_effort goes only when set.
+// Reasoning models (e.g. gpt-6-luna) reject temperature 0, so they get
+// reasoning_effort instead; with effort off, other models get temperature 0.
 func TestOpenAIReasoningEffortReplacesTemperature(t *testing.T) {
 	for _, effort := range []string{"", "medium"} {
 		var body map[string]any
@@ -26,11 +26,12 @@ func TestOpenAIReasoningEffortReplacesTemperature(t *testing.T) {
 		}))
 		_, _ = NewOpenAIProvider(srv.URL, "k", "m", effort, time.Second).Analyze(context.Background(), sampleInput())
 		srv.Close()
-		if _, ok := body["temperature"]; ok {
-			t.Fatalf("temperature sent: %v", body["temperature"])
+		temperature, hasTemperature := body["temperature"]
+		if effort == "" && (!hasTemperature || temperature != float64(0) || body["reasoning_effort"] != nil) {
+			t.Fatalf("effort off: %v", body)
 		}
-		if got, ok := body["reasoning_effort"]; (effort == "") == ok || (ok && got != effort) {
-			t.Fatalf("effort %q: %v", effort, got)
+		if effort != "" && (hasTemperature || body["reasoning_effort"] != effort) {
+			t.Fatalf("effort %q: temperature=%v effort=%v", effort, temperature, body["reasoning_effort"])
 		}
 	}
 }
