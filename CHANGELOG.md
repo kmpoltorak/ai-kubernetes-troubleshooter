@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.7.0...v1.8.0) (2026-11-07)
+
+
+### Features
+
+* run a published release image from Docker Compose with APP_IMAGE ([#115](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/115)) ([add39af](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/add39af574a538c6fdd86dbdf9ea7a7617263918))
+
 ## [1.7.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.6.0...v1.7.0) (2026-11-07)
 
 
