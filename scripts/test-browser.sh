@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the Playwright suite against the real binary with the embedded UI: a
-# simulation server with the rules analyzer, one whose OpenAI-compatible provider
+# simulation server with the rules analyzer, one whose fake OpenAI provider
 # fails after a delay, and a live-mode server with an unreachable cluster, each
 # on its own database in a disposable PostgreSQL container.
 set -Eeuo pipefail

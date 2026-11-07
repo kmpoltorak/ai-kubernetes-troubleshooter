@@ -12,7 +12,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
-// OpenAIProvider calls the Chat Completions API (or any compatible endpoint)
+// OpenAIProvider calls the OpenAI Chat Completions API
 // with a strict JSON schema response format.
 // Reasoning models get reasoning_effort and no temperature, which they reject;
 // with effort off, other models get temperature 0.

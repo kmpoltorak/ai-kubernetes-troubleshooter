@@ -150,19 +150,12 @@ for a digest-pinned release see [releases](docs/releases.md).
 
 ## Limitations
 
-- Authentication is off by default for local/test use. Enable it before exposing incident data; all admitted users share the installation's incidents.
-- Custom resources are judged by the [condition names listed in configuration](docs/configuration.md#custom-resources); a controller using other names is not interpreted, and a resource without conditions or phase is `inconclusive`. Pods are found only through a label selector, not owner references. A configured resource the cluster does not serve fails its investigations. A CronJob is judged by its latest Job only (found among at most 500 Jobs in the namespace); missed schedules are not detected. An Ingress is followed to its first existing backend's pods; an autoscaler only to a Deployment or StatefulSet. A Pending claim no pod uses is not called a fault (WaitForFirstConsumer classes bind later); StorageClasses are not read. Nodes are read only when they run the target's pods, so a Pending pod's candidate nodes are not inspected.
-- Clusters of one installation share custom resources, limits and analyzer; replicas must use the same limits, target policy and analyzer. Kubeconfig changes need a restart. No remediation is executed.
-- The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`; the "?" hints need the Popover API (Chrome 114, Safari 17, Firefox 125). It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
-- An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
-- Live CI uses single-node kind on Kubernetes 1.37.0, Linux amd64; other Kubernetes versions are untested. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI, Anthropic and Gemini clients use fake servers in CI; two models per provider were run against the real APIs on 18 synthetic attempts, with human review pending ([results](docs/evaluation.md#measured-models)). Local models (Ollama) were measured and removed: none produced usable reports ([results](docs/evaluation.md#local-models)). Browser tests run in Chromium only; Firefox and Safari are untested.
-- Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
-- Accessibility is checked with axe's automated rules in Chromium only; there is no manual screen-reader audit.
-- Exports are created in the browser; the server does not record who exported what.
-- Empty observations count as missing data: no log lines (core) or no usage samples (optional). A healthy workload whose containers write no logs is therefore `inconclusive`, not `no_fault_observed`.
-- The LLM input limit counts JSON bytes, not tokens; it does not guarantee a model context fit.
-- Upgrades are tested from commit `06db1ed` (schema 1) and from the newest published release, built from its tag's source (not its image). The application refuses to start on a newer database schema; roll back by restoring the pre-upgrade backup. Builds before this check lack it.
-- Citation validation checks membership, not the truth of model prose. After v2 reports exist, schema downgrade is blocked; see [upgrade and rollback](docs/analysis-contract.md#upgrade-and-rollback).
+- Authentication is off by default; enable it before exposing incident data. All admitted users see every incident.
+- Reports are advice, nothing is executed. A report written by a language model can be wrong: verify it against the cited evidence.
+- With OpenAI, Anthropic or Gemini, masked incident and diagnostic data is sent to that provider. Masking uses patterns and can miss a secret.
+- Tested on kind with Kubernetes 1.37.0 (Linux amd64) and in Chromium; other versions, clouds and browsers are untested.
+
+All known gaps, per area: [limitations](docs/limitations.md).
 
 ## Development
 
