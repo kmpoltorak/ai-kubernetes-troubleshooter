@@ -71,7 +71,7 @@ pages. Invalid IDs/paging return `400`; missing or foreign attempts return `404`
 | `JOB_QUEUE_CAPACITY` | `100` | waiting jobs across the database, including retry backoff; active jobs excluded |
 | `MAX_CONCURRENT_INVESTIGATIONS` | `4` | running jobs with a valid database lease across replicas |
 | `JOB_TIMEOUT` | `15m` | queue, backoff and all attempts from acceptance |
-| `INVESTIGATION_TIMEOUT` | `90s` | one attempt |
+| `INVESTIGATION_TIMEOUT` | `360s` | one attempt |
 | Lease / heartbeat | `30s` / `10s` | fixed; failed renewal cancels that worker |
 | Execution attempts | at most `3` | first attempt included; backoff `1s`, then `2s` |
 

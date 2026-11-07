@@ -21,7 +21,7 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.HTTPPort != 8080 || c.LLMProvider != "rules" || c.LLMModel != "rules-v2" ||
 		!c.SimulationEnabled || c.SimulationScenario != "healthy" || c.LogLevel != slog.LevelInfo ||
-		c.InvestigationTimeout != 90*time.Second || c.MaxConcurrentInvestigations != 4 ||
+		c.InvestigationTimeout != 360*time.Second || c.MaxConcurrentInvestigations != 4 ||
 		len(c.Clusters) != 1 || c.Clusters[0].Name != "local" || c.Clusters[0].AllowedNamespaces != nil || c.RateLimitRPS != 5 || c.Auth.Enabled {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
@@ -103,6 +103,7 @@ func TestLoadErrors(t *testing.T) {
 		{"bad cluster name", map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTER_NAME": "Prod Cluster"}, "KUBERNETES_CLUSTER_NAME"},
 		{"bad namespace", map[string]string{"DATABASE_URL": "x", "KUBERNETES_ALLOWED_NAMESPACES": "payments,Bad_NS"}, `"Bad_NS"`},
 		{"output tokens zero", map[string]string{"DATABASE_URL": "x", "LLM_MAX_OUTPUT_TOKENS": "0"}, "LLM_MAX_OUTPUT_TOKENS"},
+		{"investigation shorter than llm", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai", "LLM_MODEL": "m", "OPENAI_API_KEY": "k", "LLM_TIMEOUT": "300s", "INVESTIGATION_TIMEOUT": "300s"}, "must be longer than LLM_TIMEOUT"},
 		{"output tokens above limit", map[string]string{"DATABASE_URL": "x", "LLM_MAX_OUTPUT_TOKENS": "128001"}, "LLM_MAX_OUTPUT_TOKENS"},
 		{"bad reasoning effort", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "k", "LLM_REASONING_EFFORT": "Medium!"}, "LLM_REASONING_EFFORT"},
 		{"zero rate limit", map[string]string{"DATABASE_URL": "x", "RATE_LIMIT_RPS": "0"}, "RATE_LIMIT_RPS"},
@@ -267,5 +268,16 @@ func TestLoadLLMDefaults(t *testing.T) {
 	// off sends no effort parameter, for models without reasoning.
 	if c, err = Load(env(map[string]string{"DATABASE_URL": "x", "LLM_REASONING_EFFORT": "off"})); err != nil || c.LLMReasoningEffort != "" {
 		t.Fatalf("off: effort=%q err=%v", c.LLMReasoningEffort, err)
+	}
+}
+
+func TestLoadTimeoutDefaults(t *testing.T) {
+	c, err := Load(env(map[string]string{"DATABASE_URL": "x"}))
+	if err != nil || c.LLMTimeout != 300*time.Second || c.InvestigationTimeout != 360*time.Second {
+		t.Fatalf("timeouts: llm=%s investigation=%s err=%v", c.LLMTimeout, c.InvestigationTimeout, err)
+	}
+	// The rules analyzer makes no LLM request, so a short attempt is fine.
+	if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "INVESTIGATION_TIMEOUT": "30s"})); err != nil {
+		t.Fatalf("rules with a short attempt: %v", err)
 	}
 }

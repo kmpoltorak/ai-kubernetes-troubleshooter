@@ -178,7 +178,7 @@ func TestModelEvaluationRunsBoundedCorpus(t *testing.T) {
 			ids := map[string]bool{}
 			for _, r := range results {
 				seen[r.Case]++
-				if r.Repeat != seen[r.Case] || r.Repeat > 3 || r.Measurement.Analysis == nil || r.EngineAnalysis == nil || len(r.Violations) != 0 || r.Config.MaxOutputTokens != 16000 || r.Config.TimeoutSeconds != 60 || r.Config.MaxInputBytes != 262144 {
+				if r.Repeat != seen[r.Case] || r.Repeat > 3 || r.Measurement.Analysis == nil || r.EngineAnalysis == nil || len(r.Violations) != 0 || r.Config.MaxOutputTokens != 16000 || r.Config.TimeoutSeconds != 300 || r.Config.MaxInputBytes != 262144 {
 					t.Fatalf("invalid trial: %+v", r)
 				}
 				for _, e := range r.Input.Evidence {

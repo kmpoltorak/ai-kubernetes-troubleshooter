@@ -48,11 +48,11 @@ for example during a provider outage, the app logs a warning and starts.
 | `LLM_REASONING_EFFORT` | `medium` | sent to every provider: OpenAI `reasoning_effort`, Anthropic `output_config.effort`, Gemini `thinkingLevel`; `low`, `medium` or `high` work for all three. `off` sends none, for models without reasoning: OpenAI then gets temperature 0, Anthropic and Gemini use the model default |
 | `LLM_MAX_OUTPUT_TOKENS` | `16000` | output limit per analysis (1–128000), thinking included; a cut-off report fails the analysis |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized provider request body; overflow fails analysis without sending, preserving evidence |
-| `LLM_TIMEOUT` | `60s` | per LLM request |
+| `LLM_TIMEOUT` | `300s` | per LLM request; thinking models can need minutes at a high output limit |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude Messages API |
 | `GEMINI_API_KEY`, `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini `generateContent` with `responseJsonSchema` |
-| `INVESTIGATION_TIMEOUT` | `90s` | per execution attempt |
+| `INVESTIGATION_TIMEOUT` | `360s` | per execution attempt (diagnostics and analysis); must be longer than `LLM_TIMEOUT` for an API provider |
 | `JOB_TIMEOUT`, `JOB_QUEUE_CAPACITY` | `15m`, `100` | total time from acceptance; maximum waiting jobs |
 | `MAX_CONCURRENT_INVESTIGATIONS` | `4` | valid active leases across replicas sharing the database |
 | `RATE_LIMIT_RPS` | `5` | per-IP rate limit |
