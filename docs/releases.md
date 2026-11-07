@@ -23,8 +23,8 @@ next version and its `CHANGELOG.md` entry. Merging that PR is the decision to re
 Requirements and limits:
 
 - Settings → Actions → General must allow GitHub Actions to create pull requests.
-- The release PR is opened with the workflow token, so GitHub runs no CI on it. It
-  changes only `CHANGELOG.md` and `.release-please-manifest.json`; the full CI runs
+- The release PR is opened with the workflow token, so its CI run waits for
+  manual approval and is not needed. It changes only `CHANGELOG.md` and `.release-please-manifest.json`; the full CI runs
   on its merge commit before anything is published.
 
 ## Publish

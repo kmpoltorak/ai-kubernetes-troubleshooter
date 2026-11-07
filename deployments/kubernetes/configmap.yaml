@@ -14,6 +14,7 @@ data:
   KUBERNETES_CLUSTER_NAME: local
   # Must match the namespaces that have a troubleshooter-reader RoleBinding.
   KUBERNETES_ALLOWED_NAMESPACES: payments
+  # openai | anthropic | gemini also need LLM_MODEL here and the key in troubleshooter-secrets.
   LLM_PROVIDER: rules
   LLM_TIMEOUT: 300s
   LLM_MAX_INPUT_BYTES: "262144"

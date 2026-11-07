@@ -22,12 +22,12 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
   "severity": "high",
   "safe_commands": [
     "kubectl top pod -n payments",
-    "kubectl describe pod <pod> -n payments"
+    "kubectl describe pod payment-service-7c9d8f6b5-k4m7p -n payments"
   ]
 }
 ```
 
-- The LLM gets data only: no tools, shell or Kubernetes client. The 10 diagnostics are a fixed allowlist calling only `Get`, `List` and `GetLogs`, and every tool input comes from earlier results, never from model output.
+- The LLM gets data only: no tools, shell or Kubernetes client. The 19 diagnostics are a fixed allowlist calling only `Get`, `List` and `GetLogs`, and every tool input comes from earlier results, never from model output.
 - Secret values are never read: Secrets are fetched as metadata only, env vars are reported as names and source kinds, ConfigMaps as key names and sizes.
 - Passwords, tokens, JWTs, API keys, URL credentials and private keys are masked in incident text, diagnostic data, reports and errors before storage, API responses and LLM requests, including multi-line PEM blocks.
 - New reports cite exact evidence IDs from their attempt and suggest only read-only `kubectl` commands (no Secret access, shell syntax, line breaks, `--as`, `--token` or `--raw`). Invalid output fails the investigation and keeps the evidence (`502` on the waiting endpoint).
@@ -132,8 +132,12 @@ See [data deletion](docs/data-deletion.md).
 ```bash
 kubectl apply -k deployments/kubernetes
 kubectl -n troubleshooter create secret generic troubleshooter-secrets \
-  --from-literal=DATABASE_URL='postgres://...' --from-literal=OPENAI_API_KEY=''
+  --from-literal=DATABASE_URL='postgres://...'
 ```
+
+The ConfigMap uses the `rules` analyzer. For an API provider set `LLM_PROVIDER` and
+`LLM_MODEL` there and add its key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or
+`GEMINI_API_KEY`) to the Secret.
 
 PostgreSQL is external. The kustomization has the Namespace (Pod Security
 `restricted`), ServiceAccount, read-only [RBAC](docs/operations.md#rbac), ConfigMap
