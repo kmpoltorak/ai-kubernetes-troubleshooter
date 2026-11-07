@@ -65,13 +65,20 @@ func TestAuthConfiguration(t *testing.T) {
 	}
 }
 
-func TestLoadProviderDefaultModel(t *testing.T) {
-	c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "Anthropic", "ANTHROPIC_API_KEY": "k"}))
-	if err != nil {
-		t.Fatal(err)
+func TestLoadProviderModel(t *testing.T) {
+	c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "Rules", "LLM_MODEL": "ignored"}))
+	if err != nil || c.LLMProvider != "rules" || c.LLMModel != "rules-v2" {
+		t.Fatalf("rules: provider=%s model=%s err=%v", c.LLMProvider, c.LLMModel, err)
 	}
-	if c.LLMProvider != "anthropic" || c.LLMModel != "claude-opus-5-5" {
-		t.Fatalf("got provider=%s model=%s", c.LLMProvider, c.LLMModel)
+	for _, provider := range []string{"openai", "anthropic", "gemini"} {
+		e := map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "OPENAI_API_KEY": "k", "ANTHROPIC_API_KEY": "k", "GEMINI_API_KEY": "k"}
+		if _, err := Load(env(e)); err == nil || !strings.Contains(err.Error(), "LLM_MODEL is required") {
+			t.Fatalf("%s without model: %v", provider, err)
+		}
+		e["LLM_MODEL"] = "chosen-model"
+		if c, err := Load(env(e)); err != nil || c.LLMModel != "chosen-model" {
+			t.Fatalf("%s with model: %+v %v", provider, c.LLMModel, err)
+		}
 	}
 }
 
@@ -179,7 +186,7 @@ func TestLoadClustersFile(t *testing.T) {
 
 func TestLoadReasoningEffort(t *testing.T) {
 	for _, provider := range []string{"openai", "anthropic", "gemini"} {
-		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "OPENAI_API_KEY": "k", "ANTHROPIC_API_KEY": "k", "GEMINI_API_KEY": "k", "LLM_REASONING_EFFORT": "medium"}))
+		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "LLM_MODEL": "m", "OPENAI_API_KEY": "k", "ANTHROPIC_API_KEY": "k", "GEMINI_API_KEY": "k", "LLM_REASONING_EFFORT": "medium"}))
 		if err != nil || c.LLMReasoningEffort != "medium" {
 			t.Fatalf("%s: got %q, %v", provider, c.LLMReasoningEffort, err)
 		}
@@ -188,7 +195,7 @@ func TestLoadReasoningEffort(t *testing.T) {
 
 func TestStringRedactsSecrets(t *testing.T) {
 	for _, provider := range []string{"openai", "anthropic", "gemini"} {
-		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "OPENAI_API_KEY": "sk-secret", "ANTHROPIC_API_KEY": "sk-ant-secret", "GEMINI_API_KEY": "gm-secret"}))
+		c, err := Load(env(map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": provider, "LLM_MODEL": "m", "OPENAI_API_KEY": "sk-secret", "ANTHROPIC_API_KEY": "sk-ant-secret", "GEMINI_API_KEY": "gm-secret"}))
 		if err != nil {
 			t.Fatal(err)
 		}

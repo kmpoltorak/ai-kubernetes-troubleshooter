@@ -95,12 +95,8 @@ type Auth struct {
 	PublicURL *url.URL
 }
 
-var defaultModels = map[string]string{
-	"rules":     "rules-v2", // must match llm.RulesProvider.Name
-	"openai":    "gpt-6-luna",
-	"anthropic": "claude-opus-5-5",
-	"gemini":    "gemini-3.8-flash",
-}
+// rulesModel must match llm.RulesProvider.Name.
+const rulesModel = "rules-v2"
 
 // Load reads configuration using getenv (typically os.Getenv) and validates it.
 // All problems are reported together so a misconfigured deployment can be
@@ -156,10 +152,17 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		c.CustomResources = append(c.CustomResources, cr)
 	}
-	if _, ok := defaultModels[c.LLMProvider]; !ok {
+	switch c.LLMProvider {
+	case "rules":
+		c.LLMModel = rulesModel
+	case "openai", "anthropic", "gemini":
+		// No built-in default: model names change, and startup checks this one
+		// against the provider's list for the configured key.
+		if c.LLMModel == "" {
+			p.fail("LLM_MODEL", "is required when LLM_PROVIDER="+c.LLMProvider)
+		}
+	default:
 		p.fail("LLM_PROVIDER", "must be one of rules, openai, anthropic, gemini")
-	} else if c.LLMModel == "" {
-		c.LLMModel = defaultModels[c.LLMProvider]
 	}
 	if !reasoningEffort.MatchString(c.LLMReasoningEffort) {
 		p.fail("LLM_REASONING_EFFORT", "must be off or a lowercase word such as low, medium or high")

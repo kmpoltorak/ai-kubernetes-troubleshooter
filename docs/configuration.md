@@ -4,6 +4,26 @@ All settings are environment variables; the app refuses to start on invalid valu
 and reports every problem at once. Several clusters are configured with a file,
 see [several clusters](clusters.md).
 
+## Required to start
+
+| Variable | Required when |
+|---|---|
+| `DATABASE_URL` | always; Docker Compose sets it to its own PostgreSQL |
+| `LLM_MODEL` | `LLM_PROVIDER` is `openai`, `anthropic` or `gemini`; there is no built-in default |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` | the matching `LLM_PROVIDER` is chosen |
+| `AUTH_PUBLIC_URL` | `AUTH_ENABLED=true` (with an [OAuth2 Proxy](authentication.md)) |
+
+Everything else is optional. The defaults below run the app in simulation with
+the offline `rules` analyzer. A live cluster (`SIMULATION_ENABLED=false`) reads
+`~/.kube/config`, or the in-cluster ServiceAccount in a pod, when `KUBECONFIG`
+is empty.
+
+At startup, `LLM_MODEL` is checked against the provider's model list for the
+key: OpenAI and Anthropic `GET /v1/models`, Gemini `GET /v1beta/models`, with
+only `generateContent` models counted for Gemini. A model missing from the
+list stops the app and lists the available ones. If the list cannot be read,
+for example during a provider outage, the app logs a warning and starts.
+
 ## Variables
 
 | Variable | Default | Meaning |
@@ -12,7 +32,7 @@ see [several clusters](clusters.md).
 | `AUTH_ENABLED` | `false` | no login/provider needed when off; checks UI, API and metrics through OAuth2 Proxy when on |
 | `AUTH_PROXY_URL` | `http://127.0.0.1:4180` | internal OAuth2 Proxy origin; Compose uses its own service address |
 | `AUTH_PUBLIC_URL` | empty | required when auth is on; HTTPS origin, or HTTP loopback for local auth tests |
-| `DATABASE_URL` | | PostgreSQL; Compose points it at its own container |
+| `DATABASE_URL` | | required; PostgreSQL; Compose points it at its own container |
 | `EXTERNAL_DATABASE_URL` | empty | Compose only: use this PostgreSQL instead; start with `up --no-deps app` |
 | `EXTERNAL_DATABASE_NETWORK` | | Compose with `docker-compose.external-db.yml`: existing Docker network of that database |
 | `POSTGRES_PORT` | `5432` | Compose only: host port of the bundled PostgreSQL, bound to `127.0.0.1` for `make run` |
@@ -24,7 +44,7 @@ see [several clusters](clusters.md).
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see [custom resources](#custom-resources)) |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `anthropic`, `gemini`; local models are not supported ([why](evaluation.md#local-models)) |
-| `LLM_MODEL` | per provider | `gpt-6-luna`, `claude-opus-5-5`, `gemini-3.8-flash` |
+| `LLM_MODEL` | none (`rules-v2` for `rules`) | exact model name from the provider's list for the key, e.g. `gpt-6-luna`, `claude-opus-5-5`, `gemini-3.8-flash`; checked at startup |
 | `LLM_REASONING_EFFORT` | `medium` | sent to every provider: OpenAI `reasoning_effort`, Anthropic `output_config.effort`, Gemini `thinkingLevel`; `low`, `medium` or `high` work for all three. `off` sends none, for models without reasoning: OpenAI then gets temperature 0, Anthropic and Gemini use the model default |
 | `LLM_MAX_OUTPUT_TOKENS` | `16000` | output limit per analysis (1–128000), thinking included; a cut-off report fails the analysis |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized provider request body; overflow fails analysis without sending, preserving evidence |

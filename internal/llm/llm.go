@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
@@ -62,6 +63,36 @@ func FromConfig(cfg config.Config) Provider {
 	}
 }
 
+// ErrModelUnavailable means the provider's model list for the configured key
+// does not include LLM_MODEL.
+var ErrModelUnavailable = errors.New("model not available")
+
+// CheckModel confirms that the configured model is in the provider's list for
+// its key. The rules analyzer has nothing to check. A list that cannot be read
+// returns another error, so callers can tell a wrong model from an outage.
+func CheckModel(ctx context.Context, p Provider, model string) error {
+	lister, ok := p.(interface {
+		Models(context.Context) ([]string, error)
+	})
+	if !ok {
+		return nil
+	}
+	models, err := lister.Models(ctx)
+	if err != nil {
+		return fmt.Errorf("list models: %w", redact.Error(err))
+	}
+	if slices.Contains(models, model) {
+		return nil
+	}
+	slices.Sort(models)
+	shown := models
+	if len(shown) > 60 {
+		shown = shown[:60]
+	}
+	return fmt.Errorf("%w: LLM_MODEL %q is not in %s's list for this key (%d models): %s",
+		ErrModelUnavailable, model, strings.SplitN(p.Name(), "/", 2)[0], len(models), strings.Join(shown, ", "))
+}
+
 // ErrInputTooLarge prevents sending requests that exceed the configured byte budget.
 var ErrInputTooLarge = errors.New("LLM request exceeds LLM_MAX_INPUT_BYTES")
 
@@ -111,6 +142,19 @@ func postJSON(ctx context.Context, client *http.Client, url string, headers map[
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	return send(client, req, headers, out)
+}
+
+// getJSON fetches url and decodes a 2xx JSON response into out.
+func getJSON(ctx context.Context, client *http.Client, url string, headers map[string]string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	return send(client, req, headers, out)
+}
+
+func send(client *http.Client, req *http.Request, headers map[string]string, out any) error {
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
