@@ -98,7 +98,7 @@ func (p *GeminiProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 	endpoint := p.baseURL + "/models/" + url.PathEscape(p.model) + ":generateContent"
 	var raw json.RawMessage
 	if err := postJSON(ctx, evaluationClient(p.client, measured), endpoint, map[string]string{"x-goog-api-key": p.apiKey}, req, &raw, p.maxInputBytes); err != nil {
-		return result, fmt.Errorf("gemini: %w", err)
+		return result, fmt.Errorf("gemini: %w", effortHint(err, p.effort))
 	}
 	if measured {
 		var metadata struct {

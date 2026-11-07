@@ -141,3 +141,30 @@ func TestFromConfigSendsOutputLimitAndEffort(t *testing.T) {
 		}
 	}
 }
+
+// A model without reasoning rejects the effort parameter with 400; the error names the fix.
+func TestRejectedEffortSuggestsOff(t *testing.T) {
+	status := http.StatusBadRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":{"message":"Unsupported parameter: 'reasoning_effort'"}}`, status)
+	}))
+	defer srv.Close()
+	const hint = "LLM_REASONING_EFFORT=off"
+	for _, tc := range []struct {
+		status int
+		effort string
+		want   bool
+	}{{http.StatusBadRequest, "medium", true}, {http.StatusBadRequest, "", false}, {http.StatusInternalServerError, "medium", false}} {
+		status = tc.status
+		for _, p := range []Provider{
+			NewOpenAIProvider(srv.URL, "k", "m", tc.effort, time.Second),
+			NewAnthropicProvider(srv.URL, "k", "m", tc.effort, time.Second),
+			NewGeminiProvider(srv.URL, "k", "m", tc.effort, time.Second),
+		} {
+			_, err := p.Analyze(context.Background(), sampleInput())
+			if err == nil || strings.Contains(err.Error(), hint) != tc.want || !strings.Contains(err.Error(), "Unsupported parameter") {
+				t.Fatalf("%s status %d effort %q: %v", p.Name(), tc.status, tc.effort, err)
+			}
+		}
+	}
+}

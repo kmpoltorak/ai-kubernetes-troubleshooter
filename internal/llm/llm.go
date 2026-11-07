@@ -168,12 +168,30 @@ func send(client *http.Client, req *http.Request, headers map[string]string, out
 		return fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, truncate(redactedBody(data), 300))
+		return &statusError{resp.StatusCode, truncate(redactedBody(data), 300)}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("%w: decode response envelope: %w", ErrInvalidOutput, err)
 	}
 	return nil
+}
+
+// statusError is a non-2xx provider response; body is masked and truncated.
+type statusError struct {
+	code int
+	body string
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("unexpected status %d: %s", e.code, e.body) }
+
+// effortHint names the likely fix when a request with an effort parameter is
+// rejected: models without reasoning refuse it.
+func effortHint(err error, effort string) error {
+	var se *statusError
+	if effort != "" && errors.As(err, &se) && se.code == http.StatusBadRequest {
+		return fmt.Errorf("%w (a model without reasoning needs LLM_REASONING_EFFORT=off)", err)
+	}
+	return err
 }
 
 func truncate(s string, n int) string {

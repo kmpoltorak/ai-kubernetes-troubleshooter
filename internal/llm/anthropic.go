@@ -85,7 +85,7 @@ func (p *AnthropicProvider) analyze(ctx context.Context, in AnalysisInput, maxOu
 	headers := map[string]string{"x-api-key": p.apiKey, "anthropic-version": anthropicVersion}
 	var raw json.RawMessage
 	if err := postJSON(ctx, evaluationClient(p.client, measured), p.baseURL+"/v1/messages", headers, req, &raw, p.maxInputBytes); err != nil {
-		return result, fmt.Errorf("anthropic: %w", err)
+		return result, fmt.Errorf("anthropic: %w", effortHint(err, p.effort))
 	}
 	if measured {
 		var metadata struct {
