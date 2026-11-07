@@ -109,7 +109,7 @@ func TestWorkerDoesNotRetryLLMTimeout(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	t.Cleanup(endpoint.Close)
-	provider := llm.NewOpenAIProvider(endpoint.URL, "fixture", "fixture", 100*time.Millisecond)
+	provider := llm.NewOpenAIProvider(endpoint.URL, "fixture", "fixture", "", 100*time.Millisecond)
 	svc := jobs.New(s, workerEngine(t, s, provider), slog.New(slog.NewTextHandler(io.Discard, nil)), workerConfig())
 	accepted, err := svc.Submit(context.Background(), inc.ID, domain.NewID(), investigation.Options{})
 	if err != nil {

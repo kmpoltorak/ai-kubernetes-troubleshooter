@@ -4,6 +4,7 @@ package llm
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,7 +19,7 @@ import (
 )
 
 type Provider interface {
-	// Name identifies provider and model, e.g. "openai/gpt-4o-mini".
+	// Name identifies provider and model, e.g. "openai/gpt-6-luna".
 	Name() string
 	Analyze(ctx context.Context, in AnalysisInput) (domain.Analysis, error)
 }
@@ -45,22 +46,16 @@ func (in AnalysisInput) MissingData() []string {
 func FromConfig(cfg config.Config) Provider {
 	switch cfg.LLMProvider {
 	case "openai":
-		p := NewOpenAIProvider(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.LLMModel, cfg.LLMTimeout).WithReasoningEffort(cfg.LLMReasoningEffort)
-		if cfg.LLMMaxInputBytes > 0 {
-			p.maxInputBytes = cfg.LLMMaxInputBytes
-		}
+		p := NewOpenAIProvider(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.LLMModel, cfg.LLMReasoningEffort, cfg.LLMTimeout)
+		p.maxInputBytes, p.maxOutputTokens = cmp.Or(cfg.LLMMaxInputBytes, p.maxInputBytes), cmp.Or(cfg.LLMMaxOutputTokens, p.maxOutputTokens)
 		return p
 	case "anthropic":
 		p := NewAnthropicProvider(cfg.AnthropicBaseURL, cfg.AnthropicAPIKey, cfg.LLMModel, cfg.LLMReasoningEffort, cfg.LLMTimeout)
-		if cfg.LLMMaxInputBytes > 0 {
-			p.maxInputBytes = cfg.LLMMaxInputBytes
-		}
+		p.maxInputBytes, p.maxOutputTokens = cmp.Or(cfg.LLMMaxInputBytes, p.maxInputBytes), cmp.Or(cfg.LLMMaxOutputTokens, p.maxOutputTokens)
 		return p
 	case "gemini":
 		p := NewGeminiProvider(cfg.GeminiBaseURL, cfg.GeminiAPIKey, cfg.LLMModel, cfg.LLMReasoningEffort, cfg.LLMTimeout)
-		if cfg.LLMMaxInputBytes > 0 {
-			p.maxInputBytes = cfg.LLMMaxInputBytes
-		}
+		p.maxInputBytes, p.maxOutputTokens = cmp.Or(cfg.LLMMaxInputBytes, p.maxInputBytes), cmp.Or(cfg.LLMMaxOutputTokens, p.maxOutputTokens)
 		return p
 	default:
 		return RulesProvider{}

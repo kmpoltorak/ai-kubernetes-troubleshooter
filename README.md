@@ -97,8 +97,9 @@ resources are in the [configuration reference](docs/configuration.md).
 | `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CLUSTERS_FILE` | empty | several clusters, each with its kubeconfig and namespaces ([several clusters](docs/clusters.md)) |
-| `LLM_PROVIDER`, `LLM_MODEL` | `rules`, per provider | `rules`, `openai` (`gpt-4o-mini`), `anthropic` (`claude-opus-5-5`), `gemini` (`gemini-3.5-flash`) |
+| `LLM_PROVIDER`, `LLM_MODEL` | `rules`, per provider | `rules`, `openai` (`gpt-6-luna`), `anthropic` (`claude-opus-5-5`), `gemini` (`gemini-3.8-flash`) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` | | required for the matching provider; environment only |
+| `LLM_REASONING_EFFORT`, `LLM_MAX_OUTPUT_TOKENS` | `medium`, `16000` | sent to every provider (`off` for models without reasoning); the token limit includes thinking |
 | `AUTH_ENABLED` | `false` | login through OAuth2 Proxy for UI, API and metrics ([authentication](docs/authentication.md)) |
 
 ## API

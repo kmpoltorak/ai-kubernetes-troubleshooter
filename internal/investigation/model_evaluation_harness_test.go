@@ -97,7 +97,7 @@ func evaluationServer(t *testing.T, provider string, change func(*domain.Analysi
 			w.WriteHeader(500)
 			return
 		}
-		if limit != 4096 {
+		if limit != 16000 {
 			t.Error("unbounded evaluation request")
 			w.WriteHeader(500)
 			return
@@ -178,7 +178,7 @@ func TestModelEvaluationRunsBoundedCorpus(t *testing.T) {
 			ids := map[string]bool{}
 			for _, r := range results {
 				seen[r.Case]++
-				if r.Repeat != seen[r.Case] || r.Repeat > 3 || r.Measurement.Analysis == nil || r.EngineAnalysis == nil || len(r.Violations) != 0 || r.Config.MaxOutputTokens != 4096 || r.Config.TimeoutSeconds != 60 || r.Config.MaxInputBytes != 262144 {
+				if r.Repeat != seen[r.Case] || r.Repeat > 3 || r.Measurement.Analysis == nil || r.EngineAnalysis == nil || len(r.Violations) != 0 || r.Config.MaxOutputTokens != 16000 || r.Config.TimeoutSeconds != 60 || r.Config.MaxInputBytes != 262144 {
 					t.Fatalf("invalid trial: %+v", r)
 				}
 				for _, e := range r.Input.Evidence {
@@ -324,9 +324,9 @@ func TestModelEvaluationStopsWithoutMoreRequests(t *testing.T) {
 
 func TestModelEvaluationReasoningEffort(t *testing.T) {
 	env := evaluationEnvironment("https://api.example.com/v1", "openai")
-	env["MODEL_EVAL_REASONING_EFFORT"] = "medium"
+	env["MODEL_EVAL_REASONING_EFFORT"] = "high"
 	cfg, err := loadModelEvaluation(func(k string) string { return env[k] })
-	if err != nil || cfg.ReasoningEffort != "medium" || cfg.Temperature != nil {
+	if err != nil || cfg.ReasoningEffort != "high" {
 		t.Fatalf("reasoning config: %+v %v", cfg, err)
 	}
 	env["MODEL_EVAL_REASONING_EFFORT"] = "Medium!"
@@ -334,7 +334,7 @@ func TestModelEvaluationReasoningEffort(t *testing.T) {
 		t.Fatal("malformed reasoning effort accepted")
 	}
 	env = evaluationEnvironment("https://api.example.com/v1", "openai")
-	if cfg, err := loadModelEvaluation(func(k string) string { return env[k] }); err != nil || cfg.Temperature == nil || *cfg.Temperature != 0 {
+	if cfg, err := loadModelEvaluation(func(k string) string { return env[k] }); err != nil || cfg.ReasoningEffort != "medium" || cfg.MaxOutputTokens != 16000 {
 		t.Fatalf("default config: %+v %v", cfg, err)
 	}
 }
@@ -343,7 +343,7 @@ func TestModelEvaluationAnthropicConfig(t *testing.T) {
 	env := evaluationEnvironment("", "anthropic")
 	delete(env, "ANTHROPIC_BASE_URL")
 	cfg, err := loadModelEvaluation(func(k string) string { return env[k] })
-	if err != nil || cfg.Endpoint != "https://api.anthropic.com" || cfg.Temperature != nil || cfg.apiKey == "" {
+	if err != nil || cfg.Endpoint != "https://api.anthropic.com" || cfg.apiKey == "" {
 		t.Fatalf("anthropic config: %+v %v", cfg, err)
 	}
 	env["MODEL_EVAL_REASONING_EFFORT"] = "medium"
@@ -377,7 +377,7 @@ func TestModelEvaluationGeminiConfig(t *testing.T) {
 	env := evaluationEnvironment("", "gemini")
 	delete(env, "GEMINI_BASE_URL")
 	cfg, err := loadModelEvaluation(func(k string) string { return env[k] })
-	if err != nil || cfg.Endpoint != "https://generativelanguage.googleapis.com/v1beta" || cfg.Temperature != nil || cfg.apiKey == "" {
+	if err != nil || cfg.Endpoint != "https://generativelanguage.googleapis.com/v1beta" || cfg.apiKey == "" {
 		t.Fatalf("gemini config: %+v %v", cfg, err)
 	}
 	env["GEMINI_API_KEY"] = " "

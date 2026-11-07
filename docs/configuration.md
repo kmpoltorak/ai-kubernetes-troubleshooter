@@ -24,13 +24,14 @@ see [several clusters](clusters.md).
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see [custom resources](#custom-resources)) |
 | `LLM_PROVIDER` | `rules` | `rules`, `openai`, `anthropic`, `gemini`; local models are not supported ([why](evaluation.md#local-models)) |
-| `LLM_MODEL` | per provider | `gpt-4o-mini`, `claude-opus-5-5`, `gemini-3.5-flash` |
-| `LLM_REASONING_EFFORT` | empty | OpenAI reasoning models (e.g. `gpt-6-luna`): `low`, `medium`, `high`, sent instead of temperature 0, which they reject; Anthropic: `output_config.effort` (`low` to `max`); Gemini: `thinkingLevel` (`minimal`, `low`, `medium`, `high`); empty uses the model default |
+| `LLM_MODEL` | per provider | `gpt-6-luna`, `claude-opus-5-5`, `gemini-3.8-flash` |
+| `LLM_REASONING_EFFORT` | `medium` | sent to every provider: OpenAI `reasoning_effort`, Anthropic `output_config.effort`, Gemini `thinkingLevel`; `low`, `medium` or `high` work for all three. `off` sends none, for models without reasoning: OpenAI then gets temperature 0, Anthropic and Gemini use the model default |
+| `LLM_MAX_OUTPUT_TOKENS` | `16000` | output limit per analysis (1–128000), thinking included; a cut-off report fails the analysis |
 | `LLM_MAX_INPUT_BYTES` | `262144` | entire serialized provider request body; overflow fails analysis without sending, preserving evidence |
 | `LLM_TIMEOUT` | `60s` | per LLM request |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude Messages API; no temperature is sent, and thinking counts against the 16000-token output limit |
-| `GEMINI_API_KEY`, `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini `generateContent` with `responseJsonSchema`; no temperature is sent; 16000-token output limit |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude Messages API |
+| `GEMINI_API_KEY`, `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini `generateContent` with `responseJsonSchema` |
 | `INVESTIGATION_TIMEOUT` | `90s` | per execution attempt |
 | `JOB_TIMEOUT`, `JOB_QUEUE_CAPACITY` | `15m`, `100` | total time from acceptance; maximum waiting jobs |
 | `MAX_CONCURRENT_INVESTIGATIONS` | `4` | valid active leases across replicas sharing the database |

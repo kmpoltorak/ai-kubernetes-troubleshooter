@@ -17,9 +17,8 @@ to instructions embedded in workload data.
 
 The opt-in tool sends synthetic evidence through the application's provider
 client and report validator. It needs no database, cluster or UI and does not
-read `.env`, kubeconfig or incident files. Choose an explicit model compatible
-with schema-constrained chat requests and temperature zero (or a reasoning model
-with `MODEL_EVAL_REASONING_EFFORT`), and review its cost
+read `.env`, kubeconfig or incident files. Choose an explicit model that
+supports schema-constrained output and reasoning effort, and review its cost
 before running. There are no automatic retries or redirects.
 
 | Setting | Value |
@@ -28,7 +27,7 @@ before running. There are no automatic retries or redirects.
 | `MODEL_EVAL_MODEL` | required; no default |
 | `MODEL_EVAL_ALLOW_NETWORK` | must equal `true` |
 | `MODEL_EVAL_TIMEOUT_SECONDS` | default `60`, at most `600`; per request, recorded as `request_timeout_seconds` |
-| `MODEL_EVAL_REASONING_EFFORT` | OpenAI or Anthropic, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and Gemini `thinkingLevel`; neither ever gets a temperature |
+| `MODEL_EVAL_REASONING_EFFORT` | default `medium`; sent as OpenAI `reasoning_effort`, Anthropic `output_config.effort` or Gemini `thinkingLevel`; `off` sends none (OpenAI then gets temperature 0) |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
 | `ANTHROPIC_API_KEY` | environment only; required for Anthropic |
@@ -39,7 +38,7 @@ before running. There are no automatic retries or redirects.
 | Attempts | six fixed cases × three attempts, serially; at most 18 requests |
 | Time | the request timeout; each investigation gets 30 seconds more, and the suite 18 requests plus 2 minutes (20 minutes at 60 seconds) |
 | Input | 262144 serialized request bytes, including schema |
-| Generation | at most 4096 tokens requested per attempt |
+| Generation | at most 16000 tokens per attempt, thinking included (the application default) |
 
 Other limits are fixed; application `LLM_*` settings do not change them. The byte
 limit does not ensure a model context fit. Request/token caps are not a currency
@@ -56,8 +55,8 @@ MODEL_EVAL_ALLOW_NETWORK=true MODEL_EVAL_PROVIDER=openai \
 ```
 
 With a longer `MODEL_EVAL_TIMEOUT_SECONDS`, raise `-timeout` above the suite
-limit, e.g. `-timeout=95m` for 300 seconds. The 4096-token limit includes
-Anthropic thinking; a cut-off report fails the attempt. Keep keys out of
+limit, e.g. `-timeout=95m` for 300 seconds. A report cut off at the token
+limit fails the attempt. Keep keys out of
 arguments and output files.
 Choose a new output filename each time: `>` overwrites an existing file.
 Rerunning starts another set of calls; it does not resume failed attempts.
@@ -108,7 +107,6 @@ a 300-second request timeout:
 | `phi4-mini` | 1 of 5 | evidence IDs that do not match their source |
 | `qwen2.5:7b` | 9 of 18 | `no_fault_observed` although logs could not be read; a `kubectl get secret` command |
 
-The validator rejected the failing reports, so they would not reach a user;
-some accepted ones still overstated a past error as a suspected fault. On the
-same corpus, `gpt-6-luna` with medium reasoning had 18 of 18 accepted, at
-10–19 seconds per request against 40–290 seconds locally.
+These runs used a 4096-token limit. The validator rejected the failing reports,
+so they would not reach a user; some accepted ones still overstated a past
+error as a suspected fault. Local requests took 40–290 seconds.

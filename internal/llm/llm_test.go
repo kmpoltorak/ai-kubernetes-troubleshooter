@@ -91,7 +91,7 @@ func TestOpenAIProvider(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewOpenAIProvider(srv.URL, "sk-test", "gpt-test", 5*time.Second)
+	p := NewOpenAIProvider(srv.URL, "sk-test", "gpt-test", "", 5*time.Second)
 	a, err := p.Analyze(context.Background(), sampleInput())
 	if err != nil || a.RootCause != "r" {
 		t.Fatalf("a=%+v err=%v", a, err)
@@ -101,8 +101,8 @@ func TestOpenAIProvider(t *testing.T) {
 	if rf["type"] != "json_schema" || js["strict"] != true || got["model"] != "gpt-test" {
 		t.Fatalf("request not using strict schema: %v", got)
 	}
-	if _, exists := got["max_completion_tokens"]; exists {
-		t.Fatal("ordinary Analyze gained an evaluation-only output cap")
+	if got["max_completion_tokens"] != float64(config.DefaultLLMMaxOutputTokens) {
+		t.Fatalf("ordinary Analyze lost the output limit: %v", got["max_completion_tokens"])
 	}
 	if p.Name() != "openai/gpt-test" {
 		t.Fatalf("name = %s", p.Name())
@@ -131,7 +131,7 @@ func TestOpenAIProviderErrors(t *testing.T) {
 				_, _ = w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			_, err := NewOpenAIProvider(srv.URL, "k", "m", time.Second).Analyze(context.Background(), sampleInput())
+			_, err := NewOpenAIProvider(srv.URL, "k", "m", "", time.Second).Analyze(context.Background(), sampleInput())
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -151,7 +151,7 @@ func TestProviderTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 	start := time.Now()
-	_, err := NewOpenAIProvider(srv.URL, "k", "m", 100*time.Millisecond).Analyze(context.Background(), sampleInput())
+	_, err := NewOpenAIProvider(srv.URL, "k", "m", "", 100*time.Millisecond).Analyze(context.Background(), sampleInput())
 	if err == nil || time.Since(start) > time.Second {
 		t.Fatalf("timeout not enforced: err=%v elapsed=%s", err, time.Since(start))
 	}

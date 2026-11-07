@@ -327,7 +327,7 @@ func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
 		want string
 	}{
 		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout", "KUBERNETES_CUSTOM_RESOURCES": "argoproj.io/v1alpha1/rollouts"},
-			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"clusters":[{"name":"prod","allowed_namespaces":["payments","checkout"]}],"analyzer":{"provider":"openai","model":"gpt-4o-mini"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler","rollouts.argoproj.io"]}`},
+			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"clusters":[{"name":"prod","allowed_namespaces":["payments","checkout"]}],"analyzer":{"provider":"openai","model":"gpt-6-luna"},"scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler","rollouts.argoproj.io"]}`},
 		{"simulation", map[string]string{},
 			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"clusters":[{"name":"prod","allowed_namespaces":[]}],"analyzer":{"provider":"rules","model":"rules-v2"},"scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
 	} {

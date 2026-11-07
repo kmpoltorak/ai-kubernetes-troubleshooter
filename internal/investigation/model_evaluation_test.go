@@ -1,6 +1,7 @@
 package investigation
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,11 +39,9 @@ type modelEvaluationConfig struct {
 	MaxInputBytes   int    `json:"max_input_bytes"`
 	MaxOutputTokens int    `json:"max_output_tokens"`
 	TimeoutSeconds  int    `json:"request_timeout_seconds"`
-	// Temperature is 0, or null where it is not sent: OpenAI reasoning models
-	// accept only the default, the Anthropic API version rejects it, and
-	// Gemini's thinking models are tuned for the default.
-	Temperature     *int   `json:"temperature"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// ReasoningEffort is sent to the provider; "off" sends none, and OpenAI
+	// then gets temperature 0.
+	ReasoningEffort string `json:"reasoning_effort"`
 	apiKey          string
 }
 
@@ -51,8 +50,8 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 	if getenv("MODEL_EVAL_ALLOW_NETWORK") != "true" {
 		return modelEvaluationConfig{}, errors.New("MODEL_EVAL_ALLOW_NETWORK=true is required")
 	}
-	c := modelEvaluationConfig{Provider: getenv("MODEL_EVAL_PROVIDER"), Model: getenv("MODEL_EVAL_MODEL"), MaxInputBytes: config.DefaultLLMMaxInputBytes, MaxOutputTokens: 4096, TimeoutSeconds: 60,
-		Temperature: new(int), ReasoningEffort: getenv("MODEL_EVAL_REASONING_EFFORT")}
+	c := modelEvaluationConfig{Provider: getenv("MODEL_EVAL_PROVIDER"), Model: getenv("MODEL_EVAL_MODEL"), MaxInputBytes: config.DefaultLLMMaxInputBytes, MaxOutputTokens: config.DefaultLLMMaxOutputTokens, TimeoutSeconds: 60,
+		ReasoningEffort: cmp.Or(getenv("MODEL_EVAL_REASONING_EFFORT"), "medium")}
 	if v := getenv("MODEL_EVAL_TIMEOUT_SECONDS"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 600 {
@@ -70,12 +69,12 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 			c.Endpoint = "https://api.openai.com/v1"
 		}
 	case "anthropic":
-		c.Endpoint, c.Temperature = getenv("ANTHROPIC_BASE_URL"), nil
+		c.Endpoint = getenv("ANTHROPIC_BASE_URL")
 		if c.Endpoint == "" {
 			c.Endpoint = "https://api.anthropic.com"
 		}
 	case "gemini":
-		c.Endpoint, c.Temperature = getenv("GEMINI_BASE_URL"), nil
+		c.Endpoint = getenv("GEMINI_BASE_URL")
 		if c.Endpoint == "" {
 			c.Endpoint = "https://generativelanguage.googleapis.com/v1beta"
 		}
@@ -97,11 +96,8 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 		return c, errors.New("evaluation endpoint must use HTTPS except on loopback")
 	}
 	c.Endpoint = strings.TrimRight(c.Endpoint, "/")
-	if c.ReasoningEffort != "" {
-		if !regexp.MustCompile(`^[a-z]{1,16}$`).MatchString(c.ReasoningEffort) {
-			return c, errors.New("MODEL_EVAL_REASONING_EFFORT must be a lowercase word")
-		}
-		c.Temperature = nil
+	if !regexp.MustCompile(`^[a-z]{1,16}$`).MatchString(c.ReasoningEffort) {
+		return c, errors.New("MODEL_EVAL_REASONING_EFFORT must be a lowercase word")
 	}
 	key := map[string]string{"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}[c.Provider]
 	if c.apiKey = getenv(key); strings.TrimSpace(c.apiKey) == "" {
@@ -178,13 +174,17 @@ func runModelEvaluation(ctx context.Context, getenv func(string) string, emit fu
 	ctx, cancel := context.WithTimeout(ctx, suite)
 	defer cancel()
 	var analyze func(context.Context, llm.AnalysisInput, int) (llm.Measurement, error)
+	effort := cfg.ReasoningEffort
+	if effort == "off" {
+		effort = ""
+	}
 	switch cfg.Provider {
 	case "openai":
-		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, request).WithReasoningEffort(cfg.ReasoningEffort).AnalyzeMeasured
+		analyze = llm.NewOpenAIProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, effort, request).AnalyzeMeasured
 	case "anthropic":
-		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
+		analyze = llm.NewAnthropicProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, effort, request).AnalyzeMeasured
 	default:
-		analyze = llm.NewGeminiProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, cfg.ReasoningEffort, request).AnalyzeMeasured
+		analyze = llm.NewGeminiProvider(cfg.Endpoint, cfg.apiKey, cfg.Model, effort, request).AnalyzeMeasured
 	}
 	write := func(value any) error {
 		data, err := json.Marshal(value)

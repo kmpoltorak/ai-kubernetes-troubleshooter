@@ -95,7 +95,8 @@ func TestLoadErrors(t *testing.T) {
 		{"bad env", map[string]string{"DATABASE_URL": "x", "APP_ENV": "staging"}, "APP_ENV"},
 		{"bad cluster name", map[string]string{"DATABASE_URL": "x", "KUBERNETES_CLUSTER_NAME": "Prod Cluster"}, "KUBERNETES_CLUSTER_NAME"},
 		{"bad namespace", map[string]string{"DATABASE_URL": "x", "KUBERNETES_ALLOWED_NAMESPACES": "payments,Bad_NS"}, `"Bad_NS"`},
-		{"reasoning without openai", map[string]string{"DATABASE_URL": "x", "LLM_REASONING_EFFORT": "medium"}, "LLM_REASONING_EFFORT"},
+		{"output tokens zero", map[string]string{"DATABASE_URL": "x", "LLM_MAX_OUTPUT_TOKENS": "0"}, "LLM_MAX_OUTPUT_TOKENS"},
+		{"output tokens above limit", map[string]string{"DATABASE_URL": "x", "LLM_MAX_OUTPUT_TOKENS": "128001"}, "LLM_MAX_OUTPUT_TOKENS"},
 		{"bad reasoning effort", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "k", "LLM_REASONING_EFFORT": "Medium!"}, "LLM_REASONING_EFFORT"},
 		{"zero rate limit", map[string]string{"DATABASE_URL": "x", "RATE_LIMIT_RPS": "0"}, "RATE_LIMIT_RPS"},
 		{"zero concurrency", map[string]string{"DATABASE_URL": "x", "MAX_CONCURRENT_INVESTIGATIONS": "0"}, "MAX_CONCURRENT_INVESTIGATIONS"},
@@ -244,5 +245,20 @@ func TestLoadCustomResources(t *testing.T) {
 		if _, err := Load(env(map[string]string{"DATABASE_URL": "x", "KUBERNETES_CUSTOM_RESOURCES": entry})); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v", entry, err)
 		}
+	}
+}
+
+func TestLoadLLMDefaults(t *testing.T) {
+	c, err := Load(env(map[string]string{"DATABASE_URL": "x"}))
+	if err != nil || c.LLMReasoningEffort != "medium" || c.LLMMaxOutputTokens != 16000 {
+		t.Fatalf("defaults: effort=%q tokens=%d err=%v", c.LLMReasoningEffort, c.LLMMaxOutputTokens, err)
+	}
+	c, err = Load(env(map[string]string{"DATABASE_URL": "x", "LLM_MAX_OUTPUT_TOKENS": "32000", "LLM_REASONING_EFFORT": "high"}))
+	if err != nil || c.LLMReasoningEffort != "high" || c.LLMMaxOutputTokens != 32000 {
+		t.Fatalf("overrides: effort=%q tokens=%d err=%v", c.LLMReasoningEffort, c.LLMMaxOutputTokens, err)
+	}
+	// off sends no effort parameter, for models without reasoning.
+	if c, err = Load(env(map[string]string{"DATABASE_URL": "x", "LLM_REASONING_EFFORT": "off"})); err != nil || c.LLMReasoningEffort != "" {
+		t.Fatalf("off: effort=%q err=%v", c.LLMReasoningEffort, err)
 	}
 }

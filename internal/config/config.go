@@ -24,6 +24,13 @@ import (
 // DefaultLLMMaxInputBytes bounds the serialized provider request, including its schema.
 const DefaultLLMMaxInputBytes = 256 << 10
 
+// DefaultLLMMaxOutputTokens bounds each analysis, thinking included;
+// MaxLLMOutputTokens is the largest accepted value.
+const (
+	DefaultLLMMaxOutputTokens = 16000
+	MaxLLMOutputTokens        = 128000
+)
+
 // Config holds all runtime settings. Construct it with Load.
 type Config struct {
 	AppEnv   string
@@ -40,11 +47,13 @@ type Config struct {
 	// the dynamic client: status and selector only.
 	CustomResources []domain.CustomResource
 
-	LLMMaxInputBytes int
-	LLMProvider      string
-	LLMModel         string
+	LLMMaxInputBytes   int
+	LLMMaxOutputTokens int
+	LLMProvider        string
+	LLMModel           string
 	// LLMReasoningEffort is OpenAI's reasoning_effort, Anthropic's
-	// output_config.effort or Gemini's thinkingLevel; empty leaves the model default.
+	// output_config.effort or Gemini's thinkingLevel; empty (LLM_REASONING_EFFORT=off)
+	// sends none, for models without reasoning. The rules analyzer ignores it.
 	LLMReasoningEffort string
 	LLMTimeout         time.Duration
 	OpenAIAPIKey       string
@@ -88,9 +97,9 @@ type Auth struct {
 
 var defaultModels = map[string]string{
 	"rules":     "rules-v2", // must match llm.RulesProvider.Name
-	"openai":    "gpt-4o-mini",
+	"openai":    "gpt-6-luna",
 	"anthropic": "claude-opus-5-5",
-	"gemini":    "gemini-3.5-flash",
+	"gemini":    "gemini-3.8-flash",
 }
 
 // Load reads configuration using getenv (typically os.Getenv) and validates it.
@@ -105,8 +114,9 @@ func Load(getenv func(string) string) (Config, error) {
 		DatabaseURL:                 p.str("DATABASE_URL", ""),
 		LLMProvider:                 strings.ToLower(p.str("LLM_PROVIDER", "rules")),
 		LLMModel:                    p.str("LLM_MODEL", ""),
-		LLMReasoningEffort:          p.str("LLM_REASONING_EFFORT", ""),
+		LLMReasoningEffort:          p.str("LLM_REASONING_EFFORT", "medium"),
 		LLMMaxInputBytes:            p.int("LLM_MAX_INPUT_BYTES", DefaultLLMMaxInputBytes),
+		LLMMaxOutputTokens:          p.int("LLM_MAX_OUTPUT_TOKENS", DefaultLLMMaxOutputTokens),
 		LLMTimeout:                  p.duration("LLM_TIMEOUT", 60*time.Second),
 		OpenAIAPIKey:                p.str("OPENAI_API_KEY", ""),
 		OpenAIBaseURL:               strings.TrimRight(p.str("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
@@ -151,8 +161,11 @@ func Load(getenv func(string) string) (Config, error) {
 	} else if c.LLMModel == "" {
 		c.LLMModel = defaultModels[c.LLMProvider]
 	}
-	if c.LLMReasoningEffort != "" && (c.LLMProvider == "rules" || !reasoningEffort.MatchString(c.LLMReasoningEffort)) {
-		p.fail("LLM_REASONING_EFFORT", "must be a lowercase word such as low, medium or high, with LLM_PROVIDER=openai, anthropic or gemini")
+	if !reasoningEffort.MatchString(c.LLMReasoningEffort) {
+		p.fail("LLM_REASONING_EFFORT", "must be off or a lowercase word such as low, medium or high")
+	}
+	if c.LLMReasoningEffort == "off" {
+		c.LLMReasoningEffort = "" // providers send no effort parameter
 	}
 	if c.LLMProvider == "openai" && c.OpenAIAPIKey == "" {
 		p.fail("OPENAI_API_KEY", "is required when LLM_PROVIDER=openai")
@@ -165,6 +178,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.LLMMaxInputBytes <= 0 {
 		p.fail("LLM_MAX_INPUT_BYTES", "must be positive")
+	}
+	if c.LLMMaxOutputTokens < 1 || c.LLMMaxOutputTokens > MaxLLMOutputTokens {
+		p.fail("LLM_MAX_OUTPUT_TOKENS", fmt.Sprintf("must be between 1 and %d", MaxLLMOutputTokens))
 	}
 	if c.LLMTimeout <= 0 {
 		p.fail("LLM_TIMEOUT", "must be positive")
