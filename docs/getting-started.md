@@ -160,9 +160,26 @@ The UI header shows `mode: live` and `1 cluster reachable`. The form now lists
 the namespaces and suggests object names from the cluster.
 
 The server address in the kubeconfig must be reachable from a container.
-`https://127.0.0.1:…` or `localhost`, as used by kind, minikube or Docker
+`https://127.0.0.1:…` or `localhost`, as used by minikube, kind or Docker
 Desktop, points at the container itself, so the cluster shows as
-`unreachable`. Several clusters at once: see [several clusters](clusters.md).
+`unreachable`.
+
+For minikube with the Docker driver, point the app's kubeconfig at the
+minikube node and put the app on minikube's Docker network. That network is
+named after the profile, `minikube` by default. The minikube certificate is
+valid for that address:
+
+```bash
+kubectl config --kubeconfig="$KC" set-cluster "$CLUSTER" --server="https://$(minikube ip):8443"
+echo EXTERNAL_DATABASE_NETWORK=minikube >> .env
+docker compose -f docker-compose.yml -f docker-compose.live.yml \
+  -f docker-compose.external-db.yml -f docker-compose.test-db.yml up -d --build
+```
+
+`docker-compose.external-db.yml` joins one extra network. You can use it either
+for minikube or for a database container, not both.
+
+Several clusters at once: see [several clusters](clusters.md).
 
 ## 6. Add a language model (optional)
 
