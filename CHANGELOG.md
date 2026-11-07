@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.6.0...v1.7.0) (2026-11-07)
+
+
+### Features
+
+* name a live cluster after its kubeconfig context instead of "local" ([#110](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/110)) ([9f15b3d](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/9f15b3dbcedb490acb3d040a4fa7f5aad91c95a0))
+
 ## [1.6.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.5.0...v1.6.0) (2026-11-07)
 
 
