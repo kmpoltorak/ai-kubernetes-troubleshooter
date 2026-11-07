@@ -28,7 +28,7 @@ before running. There are no automatic retries or redirects.
 | `MODEL_EVAL_MODEL` | required; no default |
 | `MODEL_EVAL_ALLOW_NETWORK` | must equal `true` |
 | `MODEL_EVAL_TIMEOUT_SECONDS` | default `60`, at most `600`; per request, recorded as `request_timeout_seconds` |
-| `MODEL_EVAL_REASONING_EFFORT` | OpenAI or Anthropic, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and Gemini `thinkingLevel`; neither ever gets a temperature |
+| `MODEL_EVAL_REASONING_EFFORT` | OpenAI, Anthropic or Gemini, e.g. `medium`; OpenAI gets `reasoning_effort` instead of temperature 0, which reasoning models reject (recorded as `temperature: null`); Anthropic gets `output_config.effort` and Gemini `thinkingLevel`; neither ever gets a temperature |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
 | `ANTHROPIC_API_KEY` | environment only; required for Anthropic |
@@ -57,7 +57,7 @@ MODEL_EVAL_ALLOW_NETWORK=true MODEL_EVAL_PROVIDER=openai \
 
 With a longer `MODEL_EVAL_TIMEOUT_SECONDS`, raise `-timeout` above the suite
 limit, e.g. `-timeout=95m` for 300 seconds. The 4096-token limit includes
-Anthropic thinking; a cut-off report fails the attempt. Keep keys out of
+Anthropic and Gemini thinking; a cut-off report fails the attempt. Keep keys out of
 arguments and output files.
 Choose a new output filename each time: `>` overwrites an existing file.
 Rerunning starts another set of calls; it does not resume failed attempts.
@@ -93,6 +93,32 @@ factual support, observation versus hypothesis, disclosed gaps and useful
 read-only follow-up. Do not count engine-added context as model-authored.
 Keep failures in the assessment; three repetitions across six synthetic cases
 are not a statistical accuracy estimate or a production benchmark.
+
+## Measured models
+
+Run on 2026-11-06 and 2026-11-07 with the 1.5.0 system prompt, the default
+60-second timeout and the 4096-token limit. Accepted means the validator kept
+the report; the last column shows the verdict for a past out-of-memory line in
+the logs next to ready pods, which the prompt asks to treat as history
+(`inconclusive`), not as a current fault.
+
+| Model | Effort | Accepted | Seconds per request | Past error read as |
+|---|---|---|---|---|
+| `gpt-6-luna` | medium | 18 of 18 | 7–17 | 3× inconclusive |
+| `gpt-6.1-terra` | medium | 18 of 18 | 10–20 | 2× inconclusive, 1× suspected fault |
+| `claude-sonnet-5-5` | medium | 17 of 18 | 7–13 | 3× inconclusive |
+| `claude-haiku-5-5` | medium | 18 of 18 | 7–15 | 3× suspected fault |
+| `claude-opus-5-5` | medium | 17 of 18 | 14–25 | 1× inconclusive, 2× suspected fault |
+| `gemini-3.5-flash` | medium | 13 of 18 | 9–20 | 2× observed fault, 1× cut off |
+| `gemini-3.5-flash` | low | 18 of 18 | 4–8 | 3× observed fault |
+
+Every finished report called the OOMKilled and NetworkPolicy cases observed
+faults, answered `inconclusive` when logs could not be read, and ignored the
+instructions embedded in a log line. The rejected reports had an empty action
+list for `inconclusive` (Sonnet), a citation whose source did not match its
+evidence (Opus), or ran out of tokens while thinking (Gemini at medium; the
+application allows 16000). `gpt-6-luna` and `claude-sonnet-5-5` kept the past
+error apart from the current state in every attempt.
 
 ## Local models
 

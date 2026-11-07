@@ -30,7 +30,7 @@ see [several clusters](clusters.md).
 | `LLM_TIMEOUT` | `60s` | per LLM request |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | any OpenAI-compatible API |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude Messages API; no temperature is sent, and thinking counts against the 16000-token output limit |
-| `GEMINI_API_KEY`, `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini `generateContent` with `responseJsonSchema`; no temperature is sent; 16000-token output limit |
+| `GEMINI_API_KEY`, `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini `generateContent` with `responseJsonSchema`; no temperature is sent, and thinking counts against the 16000-token output limit |
 | `INVESTIGATION_TIMEOUT` | `90s` | per execution attempt |
 | `JOB_TIMEOUT`, `JOB_QUEUE_CAPACITY` | `15m`, `100` | total time from acceptance; maximum waiting jobs |
 | `MAX_CONCURRENT_INVESTIGATIONS` | `4` | valid active leases across replicas sharing the database |

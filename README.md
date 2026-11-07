@@ -99,6 +99,7 @@ resources are in the [configuration reference](docs/configuration.md).
 | `KUBERNETES_CLUSTERS_FILE` | empty | several clusters, each with its kubeconfig and namespaces ([several clusters](docs/clusters.md)) |
 | `LLM_PROVIDER`, `LLM_MODEL` | `rules`, per provider | `rules`, `openai` (`gpt-4o-mini`), `anthropic` (`claude-opus-5-5`), `gemini` (`gemini-3.5-flash`) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` | | required for the matching provider; environment only |
+| `LLM_REASONING_EFFORT` | empty | e.g. `medium`; required by OpenAI reasoning models such as `gpt-6-luna`. Measured models and results: [evaluation](docs/evaluation.md#measured-models) |
 | `AUTH_ENABLED` | `false` | login through OAuth2 Proxy for UI, API and metrics ([authentication](docs/authentication.md)) |
 
 ## API
@@ -146,7 +147,7 @@ for a digest-pinned release see [releases](docs/releases.md).
 - Clusters of one installation share custom resources, limits and analyzer; replicas must use the same limits, target policy and analyzer. Kubeconfig changes need a restart. No remediation is executed.
 - The UI needs browser session storage for safe submission retries and a browser supporting `AbortSignal.timeout`/`any`; the "?" hints need the Popover API (Chrome 114, Safari 17, Firefox 125). It watches one job at a time; jobs from other sessions are discovered on loaded history pages.
 - An interrupted LLM request is never automatically repeated; its outcome can be unknown and billed without a stored report. Legacy `running` rows are not automatically repaired.
-- Live CI uses single-node kind on Kubernetes 1.37.0, Linux amd64; other Kubernetes versions are untested. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI, Anthropic and Gemini clients use fake servers in CI; the Anthropic and Gemini clients have not yet been run against the real APIs. Local models (Ollama) were measured and removed: none produced usable reports ([results](docs/evaluation.md#local-models)). Browser tests run in Chromium only; Firefox and Safari are untested.
+- Live CI uses single-node kind on Kubernetes 1.37.0, Linux amd64; other Kubernetes versions are untested. Other CNI implementations, clouds and cluster OIDC/TLS/Ingress are not covered. The OpenAI, Anthropic and Gemini clients use fake servers in CI; [measured models](docs/evaluation.md#measured-models) ran against the real APIs. Local models (Ollama) were measured and removed: none produced usable reports ([results](docs/evaluation.md#local-models)). Browser tests run in Chromium only; Firefox and Safari are untested.
 - Redaction uses patterns, not a guarantee of removing every secret; identifiers remain visible. Base64 lines and similar blobs may also be masked. Older rows and backups are not rewritten; API reads mask older data.
 - Accessibility is checked with axe's automated rules in Chromium only; there is no manual screen-reader audit.
 - Exports are created in the browser; the server does not record who exported what.
