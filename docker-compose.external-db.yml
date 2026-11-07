@@ -1,7 +1,7 @@
 # Joins the app to the Docker network of an existing PostgreSQL container, e.g. one from
-# another Compose project, so EXTERNAL_DATABASE_URL can name that container:
-#   EXTERNAL_DATABASE_NETWORK=<network> EXTERNAL_DATABASE_URL=postgres://...@<container>:5432/... \
-#     docker compose -f docker-compose.yml -f docker-compose.external-db.yml up --build -d --no-deps app
+# another Compose project, so DATABASE_URL can name that container:
+#   EXTERNAL_DATABASE_NETWORK=<network> DATABASE_URL=postgres://...@<container>:5432/... \
+#     docker compose -f docker-compose.yml -f docker-compose.external-db.yml up --build -d
 services:
   app:
     networks: [default, external-database]

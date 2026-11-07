@@ -56,7 +56,7 @@ func renderEnv(t *testing.T, env map[string]string, files ...string) (rendered, 
 	cmd := exec.CommandContext(ctx, "docker", append(args, "config", "--format", "json")...)
 	cmd.Dir = "../.."
 	for _, kv := range os.Environ() {
-		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "KUBE_DIR" && name != "EXTERNAL_DATABASE_URL" && name != "EXTERNAL_DATABASE_NETWORK" && name != "POSTGRES_PORT" && name != "KUBERNETES_CUSTOM_RESOURCES" {
+		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "KUBE_DIR" && name != "DATABASE_URL" && name != "TEST_DB_PASSWORD" && name != "EXTERNAL_DATABASE_NETWORK" && name != "KUBERNETES_CUSTOM_RESOURCES" {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
@@ -127,37 +127,45 @@ func TestDefaultComposeStaysInSimulation(t *testing.T) {
 	}
 }
 
-func TestDatabaseDefaultsToBundledPostgresOnLoopback(t *testing.T) {
+// Production uses the operator's PostgreSQL: the base file bundles none, so
+// `up` cannot clash with an existing container or a busy port.
+func TestBaseComposeUsesTheConfiguredDatabase(t *testing.T) {
 	r, stderr, err := renderEnv(t, nil, "docker-compose.yml")
 	if err != nil {
 		t.Fatalf("render: %v %s", err, stderr)
 	}
-	if got := r.Services["app"].Environment["DATABASE_URL"]; !strings.Contains(got, "@postgres:5432/") {
-		t.Fatalf("default database: %q", got)
+	if _, ok := r.Services["postgres"]; ok || r.Services["app"].Environment["DATABASE_URL"] != "" {
+		t.Fatalf("base compose must not bundle or default a database: %+v", r.Services)
 	}
-	ports := r.Services["postgres"].Ports
-	if len(ports) != 1 || ports[0].HostIP != "127.0.0.1" || ports[0].Published != "5432" || ports[0].Target != 5432 {
-		t.Fatalf("PostgreSQL must be published on loopback only: %+v", ports)
-	}
-	r, stderr, err = renderEnv(t, map[string]string{"POSTGRES_PORT": "55432"}, "docker-compose.yml")
-	if err != nil || r.Services["postgres"].Ports[0].Published != "55432" {
-		t.Fatalf("POSTGRES_PORT not applied: %v %s %+v", err, stderr, r.Services["postgres"].Ports)
+	const url = "postgres://troubleshooter:secret@db.example.net:5432/troubleshooter?sslmode=require"
+	r, stderr, err = renderEnv(t, map[string]string{"DATABASE_URL": url, "KUBECONFIG_FILE": "/srv/k"}, "docker-compose.yml", "docker-compose.live.yml")
+	if err != nil || r.Services["app"].Environment["DATABASE_URL"] != url {
+		t.Fatalf("app database: %v %s %q", err, stderr, r.Services["app"].Environment["DATABASE_URL"])
 	}
 }
 
-func TestExternalDatabaseURLReplacesBundledPostgres(t *testing.T) {
-	const url = "postgres://troubleshooter:secret@db.example.net:5432/troubleshooter?sslmode=require"
-	r, stderr, err := renderEnv(t, map[string]string{"EXTERNAL_DATABASE_URL": url, "KUBECONFIG_FILE": "/srv/k"}, "docker-compose.yml", "docker-compose.live.yml")
+func TestTestDatabaseOverrideIsSelfContained(t *testing.T) {
+	// A DATABASE_URL in .env (for make run) must not leak into the throwaway setup.
+	r, stderr, err := renderEnv(t, map[string]string{"DATABASE_URL": "postgres://u:p@localhost:5432/t"}, "docker-compose.yml", "docker-compose.test-db.yml")
 	if err != nil {
 		t.Fatalf("render: %v %s", err, stderr)
 	}
-	if got := r.Services["app"].Environment["DATABASE_URL"]; got != url {
+	if got := r.Services["app"].Environment["DATABASE_URL"]; !strings.Contains(got, "@postgres:5432/") {
 		t.Fatalf("app database: %q", got)
+	}
+	if pg, ok := r.Services["postgres"]; !ok || len(pg.Ports) != 0 {
+		t.Fatalf("test PostgreSQL must exist and publish no host port: %+v", pg)
+	}
+	// One password from .env sets both the container and the app's address.
+	r, stderr, err = renderEnv(t, map[string]string{"TEST_DB_PASSWORD": "trial-pass"}, "docker-compose.yml", "docker-compose.test-db.yml")
+	if err != nil || r.Services["postgres"].Environment["POSTGRES_PASSWORD"] != "trial-pass" ||
+		!strings.Contains(r.Services["app"].Environment["DATABASE_URL"], ":trial-pass@postgres:5432/") {
+		t.Fatalf("TEST_DB_PASSWORD: %v %s %+v", err, stderr, r.Services)
 	}
 }
 
 func TestExternalDatabaseNetworkJoinsExistingNetwork(t *testing.T) {
-	env := map[string]string{"EXTERNAL_DATABASE_NETWORK": "atlas_default", "EXTERNAL_DATABASE_URL": "postgres://u:p@atlas-db:5432/t"}
+	env := map[string]string{"EXTERNAL_DATABASE_NETWORK": "atlas_default", "DATABASE_URL": "postgres://u:p@atlas-db:5432/t"}
 	r, stderr, err := renderEnv(t, env, "docker-compose.yml", "docker-compose.external-db.yml")
 	if err != nil {
 		t.Fatalf("render: %v %s", err, stderr)

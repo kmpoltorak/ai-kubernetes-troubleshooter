@@ -1,33 +1,12 @@
-# Default:            docker compose up --build            (app + postgres, simulation mode)
-# Existing database:  EXTERNAL_DATABASE_URL=postgres://... docker compose up --build --no-deps app
+# Your PostgreSQL:   DATABASE_URL=postgres://... docker compose up --build   (simulation mode)
+# Throwaway test DB: docker compose -f docker-compose.yml -f docker-compose.test-db.yml up --build
 #
-# Values come from .env (see .env.example). The database address is fixed here
-# because it is a fact of this network.
+# Values come from .env (see .env.example). The app refuses to start without DATABASE_URL.
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: troubleshooter
-      POSTGRES_PASSWORD: troubleshooter
-      POSTGRES_DB: troubleshooter
-    # Loopback only, for `make run` outside Docker; the app uses the Compose network.
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U troubleshooter -d troubleshooter"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   app:
     build: .
     image: ai-kubernetes-troubleshooter:local
-    depends_on:
-      postgres:
-        condition: service_healthy
     ports:
       - "${HTTP_PORT:-8080}:8080"
     environment:
@@ -37,8 +16,8 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_PROXY_URL: http://oauth2-proxy:4180
       AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-}
-      # An existing PostgreSQL: set EXTERNAL_DATABASE_URL and start with `up --no-deps app`.
-      DATABASE_URL: ${EXTERNAL_DATABASE_URL:-postgres://troubleshooter:troubleshooter@postgres:5432/troubleshooter?sslmode=disable}
+      # Your PostgreSQL; inside the container, localhost is the container itself.
+      DATABASE_URL: ${DATABASE_URL:-}
       KUBERNETES_CLUSTER_NAME: ${KUBERNETES_CLUSTER_NAME:-local}
       KUBERNETES_ALLOWED_NAMESPACES: ${KUBERNETES_ALLOWED_NAMESPACES:-}
       KUBERNETES_CUSTOM_RESOURCES: ${KUBERNETES_CUSTOM_RESOURCES:-}
@@ -86,5 +65,3 @@ services:
     security_opt:
       - no-new-privileges:true
 
-volumes:
-  pgdata:

@@ -1,0 +1,30 @@
+# A throwaway PostgreSQL for trying the app and for tests, not for real data:
+#   docker compose -f docker-compose.yml -f docker-compose.test-db.yml up --build
+# It publishes no host port, so it cannot clash with a PostgreSQL on this machine;
+# `docker compose -f docker-compose.yml -f docker-compose.test-db.yml down -v` deletes it.
+# TEST_DB_PASSWORD (URL-safe characters) sets its password; the app's address
+# always points at this container, never at DATABASE_URL from .env.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: troubleshooter
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:-troubleshooter}
+      POSTGRES_DB: troubleshooter
+    volumes:
+      - test-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U troubleshooter -d troubleshooter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://troubleshooter:${TEST_DB_PASSWORD:-troubleshooter}@postgres:5432/troubleshooter?sslmode=disable
+
+volumes:
+  test-db:

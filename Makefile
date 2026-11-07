@@ -75,7 +75,7 @@ migrate-down:
 	go run ./cmd/api migrate down
 
 docker-up:
-	docker compose up --build -d
+	docker compose up --build -d   # needs DATABASE_URL in .env
 
 docker-down:
 	docker compose down
