@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -120,8 +121,20 @@ func restConfig(kubeconfig, kubeContext string) (*rest.Config, error) {
 
 // Ping checks the API server answers. /version is readable by any
 // authenticated identity, so it needs no extra RBAC.
+// Ping asks the API server for /version.
 func (c Cluster) Ping(ctx context.Context) error {
-	return c.Client.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx).Error()
+	return rejected(c.Client.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx).Error())
+}
+
+// ErrCredentialsRejected means the API server answered 401: the kubeconfig's
+// token or certificate is invalid or expired, not a network problem.
+var ErrCredentialsRejected = errors.New("the cluster rejected the kubeconfig credentials (expired or invalid token?)")
+
+func rejected(err error) error {
+	if apierrors.IsUnauthorized(err) {
+		return fmt.Errorf("%w: %w", ErrCredentialsRejected, err)
+	}
+	return err
 }
 
 func metricsReader(client kubernetes.Interface) func(context.Context, string) ([]PodUsage, error) {
@@ -212,7 +225,8 @@ func (l Live) ListNames(ctx context.Context, cluster, namespace string, kind dom
 	if err != nil {
 		return nil, err
 	}
-	return c.ListNames(ctx, namespace, kind)
+	names, err := c.ListNames(ctx, namespace, kind)
+	return names, rejected(err)
 }
 
 // Ping checks every cluster in parallel; the result has one entry per

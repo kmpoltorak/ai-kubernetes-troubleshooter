@@ -2,6 +2,7 @@ package kube
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -82,6 +83,20 @@ func TestLiveReadyWhileAnyClusterAnswers(t *testing.T) {
 	live := Live{"lab": connect(up.URL), "prod": connect(down.URL)}
 	if pings := live.Ping(ctx); len(pings) != 2 || pings["lab"] != nil || pings["prod"] == nil {
 		t.Fatalf("pings: %v", pings)
+	}
+	// 401: the server answered, the kubeconfig token is wrong or expired; not unreachable.
+	expired := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}`))
+	}))
+	t.Cleanup(expired.Close)
+	auth := Live{"lab": connect(expired.URL), "prod": connect(down.URL)}
+	if pings := auth.Ping(ctx); !errors.Is(pings["lab"], ErrCredentialsRejected) || errors.Is(pings["prod"], ErrCredentialsRejected) {
+		t.Fatalf("credentials vs network: %v", pings)
+	}
+	if _, err := auth.ListNames(ctx, "lab", "payments", domain.ResourceDeployment); !errors.Is(err, ErrCredentialsRejected) {
+		t.Fatalf("listing with rejected credentials: %v", err)
 	}
 	if err := live.Ready(ctx); err != nil {
 		t.Fatalf("one cluster down made the installation unready: %v", err)

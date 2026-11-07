@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ClusterState, type Readiness, type Incident, type Runtime } from "./api";
+import { api, clusterProblem, type ClusterState, type Readiness, type Incident, type Runtime } from "./api";
 import BuildLabel from "./components/BuildLabel";
 import CreateIncidentForm from "./components/CreateIncidentForm";
 import IncidentList from "./components/IncidentList";
@@ -163,15 +163,15 @@ function StatusPill({ ready }: { ready: Record<string, string> | null }) {
   return <Pill text={text} cls={cls} />;
 }
 
-// Names the unreachable clusters; the checks repeat with readiness every 30 s.
+// Names the clusters that failed their check; the checks repeat with readiness every 30 s.
 function ClusterPill({ clusters }: { clusters: ClusterState[] | "unavailable" | null }) {
   if (!clusters) return null;
   if (clusters === "unavailable") return <Pill text="cluster status unavailable" cls="text-red-600 dark:text-red-400" />;
-  const down = clusters.filter((c) => c.status === "unreachable").map((c) => c.name);
+  const down = clusters.filter((c) => clusterProblem[c.status]);
   const n = clusters.length;
   const [text, cls] = down.length === 0
     ? [`${n} ${n === 1 ? "cluster" : "clusters"} reachable`, "text-emerald-700 dark:text-emerald-400"]
-    : [`${down.join(", ")} unreachable · ${n - down.length}/${n} reachable`, "text-red-600 dark:text-red-400"];
+    : [`${down.map((c) => `${c.name} ${clusterProblem[c.status]}`).join(", ")} · ${n - down.length}/${n} ok`, "text-red-600 dark:text-red-400"];
   return <Pill text={text} cls={cls} />;
 }
 

@@ -32,6 +32,26 @@ without it, or without metrics-server, that diagnostic is recorded as failed and
 the investigation continues. If the target itself cannot be read, the
 investigation fails rather than diagnose something it never saw.
 
+## Kubeconfig for the ServiceAccount
+
+Outside the cluster (Docker, `make run`, another cluster in a
+[clusters file](clusters.md)), the app needs a kubeconfig with a token for the
+`troubleshooter` ServiceAccount. `kubectl create token` issues a token that
+expires, after one hour unless `--duration` is given; the API server may cap it
+lower. An expired token shows as `credentials rejected` in the UI header.
+
+```bash
+TOKEN=$(kubectl -n troubleshooter create token troubleshooter --duration=720h)
+kubectl config set-credentials troubleshooter --token="$TOKEN" --kubeconfig ~/.kube/troubleshooter.yaml
+```
+
+Renew it before it expires, then restart the app: kubeconfigs are read at
+start. A token that does not expire comes from a Secret of type
+`kubernetes.io/service-account-token` annotated with
+`kubernetes.io/service-account.name: troubleshooter`; it stays valid until the
+Secret is deleted, so store and rotate it like a password. Inside the cluster
+the pod's projected token is renewed automatically.
+
 ## Upgrade
 
 Startup applies pending migrations under a PostgreSQL advisory lock: replicas
@@ -88,6 +108,7 @@ active jobs or v2 reports exist.
 |---|---|---|
 | `/ready` `503`, `checks.database: unreachable` | PostgreSQL reachability and credentials | Restore the connection. Running jobs stop; when the database returns, recovery retries them or ends them failed, including any past `JOB_TIMEOUT` |
 | Job routes return `503 unavailable`, other writes `500` | PostgreSQL logs, free disk | Free space or fix the database; readiness may still be green |
+| Header shows `credentials rejected`, names cannot be listed (`Unauthorized`) | the kubeconfig token's expiry | Issue a new token ([kubeconfig](#kubeconfig-for-the-serviceaccount)) and restart the app |
 | `429 busy` on submission | `jobs_queue_depth` vs `JOB_QUEUE_CAPACITY`, `jobs_active` | Wait for `Retry-After`, add capacity, or raise the limit consistently on every replica |
 | Job stays `running` | `stage` and `deadline_at` on the job endpoint, worker logs | A lease expires after 30s; another worker retries before analysis or ends it failed. Nothing changes while no worker runs |
 | Job failed after stage `analyzing` | `llm_failures_total`, provider status and billing | Not retried automatically; the outcome can be unknown. Submit with a new `Idempotency-Key` |

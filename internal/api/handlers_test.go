@@ -21,6 +21,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/llm"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/simulation"
 )
@@ -595,19 +596,19 @@ func TestTargetsListsWithinPolicy(t *testing.T) {
 }
 
 func TestClusterStatus(t *testing.T) {
-	rt := RuntimeFrom(config.Config{Clusters: []config.Cluster{{Name: "lab", Kubeconfig: "/kube/lab.yaml", Context: "lab-ro"}, {Name: "prod"}, {Name: "edge"}}})
-	live := &fakeClusters{pings: map[string]error{"lab": nil, "prod": errors.New("dial tcp 192.0.2.10:6443: connect: connection refused")}}
+	rt := RuntimeFrom(config.Config{Clusters: []config.Cluster{{Name: "lab", Kubeconfig: "/kube/lab.yaml", Context: "lab-ro"}, {Name: "prod"}, {Name: "edge"}, {Name: "dev"}}})
+	live := &fakeClusters{pings: map[string]error{"lab": nil, "prod": errors.New("dial tcp 192.0.2.10:6443: connect: connection refused"), "dev": fmt.Errorf("%w: Unauthorized", kube.ErrCredentialsRejected)}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, rt, live))
 	t.Cleanup(srv.Close)
 	// edge was not pinged at all: unknown counts as unreachable, never as ok.
 	if code, body := get(t, srv.URL+"/api/v1/clusters"); code != 200 ||
-		body != `{"clusters":[{"name":"lab","status":"ok"},{"name":"prod","status":"unreachable"},{"name":"edge","status":"unreachable"}]}` {
+		body != `{"clusters":[{"name":"lab","status":"ok"},{"name":"prod","status":"unreachable"},{"name":"edge","status":"unreachable"},{"name":"dev","status":"unauthorized"}]}` {
 		t.Fatalf("status: %d %s", code, body)
 	}
 	_, runtime := get(t, srv.URL+"/api/v1/runtime")
 	if strings.Contains(runtime, "/kube/") || strings.Contains(runtime, "lab-ro") || !strings.Contains(runtime, `"cluster_name":"lab"`) ||
-		!strings.Contains(runtime, `"clusters":[{"name":"lab","allowed_namespaces":[]},{"name":"prod","allowed_namespaces":[]},{"name":"edge","allowed_namespaces":[]}]`) {
+		!strings.Contains(runtime, `"clusters":[{"name":"lab","allowed_namespaces":[]},{"name":"prod","allowed_namespaces":[]},{"name":"edge","allowed_namespaces":[]},{"name":"dev","allowed_namespaces":[]}]`) {
 		t.Fatalf("runtime: %s", runtime)
 	}
 	sim := httptest.NewServer(New(nil, nil, nil, log, 1000, config.Auth{}, Runtime{Clusters: []RuntimeCluster{{Name: "local"}}}, nil))
