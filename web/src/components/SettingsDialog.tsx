@@ -7,26 +7,25 @@ export default function SettingsDialog({ runtime }: { runtime: Runtime }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const a = runtime.analyzer;
   const l = runtime.limits;
-  const seconds = (n?: number) => (n === undefined ? "—" : `${n} s`);
-  const rows: [string, ReactNode][] = [
+  const seconds = (n?: number) => `${n} s`;
+  type Row = [string, ReactNode];
+  const rows: Row[] = [
     ["Mode", runtime.mode],
-    ...(runtime.default_scenario ? ([["Default scenario", runtime.default_scenario]] as [string, ReactNode][]) : []),
+    ...(runtime.default_scenario ? [["Default scenario", runtime.default_scenario] as Row] : []),
     ["Analyzer", `${a.provider} · ${a.model}`],
     ...(a.reasoning_effort
-      ? ([["Reasoning effort", a.reasoning_effort], ["Output limit", `${a.max_output_tokens} tokens`], ["Input limit", `${a.max_input_bytes} bytes`], ["LLM timeout", seconds(a.timeout_seconds)]] as [string, ReactNode][])
-      : ([["LLM settings", "not used by the rules analyzer"]] as [string, ReactNode][])),
+      ? ([["Reasoning effort", a.reasoning_effort], ["Output limit", `${a.max_output_tokens} tokens`], ["Input limit", `${a.max_input_bytes} bytes`], ["LLM timeout", seconds(a.timeout_seconds)]] as Row[])
+      : [["LLM settings", "not used by the rules analyzer"] as Row]),
     ["Clusters", runtime.clusters.map((c) => `${c.name} (${c.allowed_namespaces.length ? c.allowed_namespaces.join(", ") : "all readable namespaces"})`).join("; ")],
-    ["Custom resources", runtime.resource_types?.filter((k) => k.includes(".")).join(", ") || "none"],
-    ["Login", runtime.authentication === undefined ? "—" : runtime.authentication ? "on" : "off"],
-    ...(l ? ([
-      ["Investigation timeout", seconds(l.investigation_timeout_seconds)],
-      ["Job timeout", seconds(l.job_timeout_seconds)],
-      ["Concurrent investigations", l.max_concurrent_investigations],
-      ["Job queue capacity", l.job_queue_capacity],
-      ["Rate limit", `${l.rate_limit_rps} requests/s per client`],
-    ] as [string, ReactNode][]) : []),
-    ["Environment", runtime.environment ?? "—"],
-    ["Log level", runtime.log_level ?? "—"],
+    ["Custom resources", runtime.resource_types.filter((k) => k.includes(".")).join(", ") || "none"],
+    ["Login", runtime.authentication ? "on" : "off"],
+    ["Investigation timeout", seconds(l.investigation_timeout_seconds)],
+    ["Job timeout", seconds(l.job_timeout_seconds)],
+    ["Concurrent investigations", l.max_concurrent_investigations],
+    ["Job queue capacity", l.job_queue_capacity],
+    ["Rate limit", `${l.rate_limit_rps} requests/s per client`],
+    ["Environment", runtime.environment],
+    ["Log level", runtime.log_level],
   ];
   return (
     <>
