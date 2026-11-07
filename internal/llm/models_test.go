@@ -67,6 +67,12 @@ func TestCheckModel(t *testing.T) {
 	if !errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "gpt-6.1-terra") || !strings.Contains(err.Error(), `"gpt-typo"`) {
 		t.Fatalf("missing model: %v", err)
 	}
+	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		status = code
+		if err := CheckModel(context.Background(), p, "gpt-6-luna"); !errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "rejected the API key") {
+			t.Fatalf("status %d: rejected key not fatal: %v", code, err)
+		}
+	}
 	status = http.StatusServiceUnavailable
 	if err := CheckModel(context.Background(), p, "gpt-6-luna"); err == nil || errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("outage reported as a wrong model: %v", err)

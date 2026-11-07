@@ -63,13 +63,13 @@ func FromConfig(cfg config.Config) Provider {
 	}
 }
 
-// ErrModelUnavailable means the provider's model list for the configured key
-// does not include LLM_MODEL.
+// ErrModelUnavailable means the configured key cannot use LLM_MODEL: the
+// provider rejected the key, or its model list does not include the model.
 var ErrModelUnavailable = errors.New("model not available")
 
 // CheckModel confirms that the configured model is in the provider's list for
 // its key. The rules analyzer has nothing to check. A list that cannot be read
-// returns another error, so callers can tell a wrong model from an outage.
+// returns another error, so callers can tell a wrong model or key from an outage.
 func CheckModel(ctx context.Context, p Provider, model string) error {
 	lister, ok := p.(interface {
 		Models(context.Context) ([]string, error)
@@ -78,6 +78,10 @@ func CheckModel(ctx context.Context, p Provider, model string) error {
 		return nil
 	}
 	models, err := lister.Models(ctx)
+	var se *statusError
+	if errors.As(err, &se) && (se.code == http.StatusUnauthorized || se.code == http.StatusForbidden) {
+		return fmt.Errorf("%w: the provider rejected the API key (status %d); check the key for LLM_PROVIDER", ErrModelUnavailable, se.code)
+	}
 	if err != nil {
 		return fmt.Errorf("list models: %w", redact.Error(err))
 	}
