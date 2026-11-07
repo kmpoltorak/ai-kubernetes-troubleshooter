@@ -38,8 +38,14 @@ EOF
 (cd web && npm run build)
 CGO_ENABLED=0 go build -o "$work/api" ./cmd/api
 
-# Fails every chat completion after 8s, long enough to reload during analysis.
-node -e 'require("http").createServer((req, res) => { req.resume(); setTimeout(() => {
+# Lists one model for the startup check, then fails every chat completion after
+# 8s, long enough to reload during analysis.
+node -e 'require("http").createServer((req, res) => { req.resume();
+if (req.method === "GET" && req.url.endsWith("/models")) {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  return res.end(JSON.stringify({ data: [{ id: "browser-test" }] }));
+}
+setTimeout(() => {
   res.writeHead(500, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: { message: "browser test provider failure" } }));
 }, 8000); }).listen(Number(process.argv[1]), "127.0.0.1");' "$((port + 2))" > "$work/provider.log" 2>&1 &
@@ -47,7 +53,7 @@ pids="$pids $!"
 
 # A low limit makes the UI's normal request bursts hit 429 rate_limited on every run.
 start "$port" akt LLM_PROVIDER=rules RATE_LIMIT_RPS=2
-start $((port + 1)) failing LLM_PROVIDER=openai OPENAI_API_KEY=browser-test OPENAI_BASE_URL="http://127.0.0.1:$((port + 2))/v1"
+start $((port + 1)) failing LLM_PROVIDER=openai LLM_MODEL=browser-test OPENAI_API_KEY=browser-test OPENAI_BASE_URL="http://127.0.0.1:$((port + 2))/v1"
 # Live mode with two clusters, both unreachable: readiness fails, so wait for /health.
 cat > "$work/clusters.yaml" <<EOF
 clusters:

@@ -87,17 +87,19 @@ SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESP
 ## Configuration
 
 The main settings; all variables, simulation scenarios, diagnostics and custom
-resources are in the [configuration reference](docs/configuration.md).
+resources are in the [configuration reference](docs/configuration.md), which also
+lists what is [required to start](docs/configuration.md#required-to-start).
+Only `DATABASE_URL` is always required.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DATABASE_URL` | | PostgreSQL; Compose points it at its own container |
+| `DATABASE_URL` | | required; PostgreSQL; Compose points it at its own container |
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
 | `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |
 | `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CLUSTERS_FILE` | empty | several clusters, each with its kubeconfig and namespaces ([several clusters](docs/clusters.md)) |
-| `LLM_PROVIDER`, `LLM_MODEL` | `rules`, per provider | `rules`, `openai` (`gpt-6-luna`), `anthropic` (`claude-opus-5-5`), `gemini` (`gemini-3.8-flash`) |
+| `LLM_PROVIDER`, `LLM_MODEL` | `rules`, none | `rules`, `openai`, `anthropic`, `gemini`; `LLM_MODEL` is required for the API providers and checked at startup against the provider's model list |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` | | required for the matching provider; environment only |
 | `LLM_REASONING_EFFORT`, `LLM_MAX_OUTPUT_TOKENS` | `medium`, `16000` | sent to every provider (`off` for models without reasoning); the token limit includes thinking |
 | `AUTH_ENABLED` | `false` | login through OAuth2 Proxy for UI, API and metrics ([authentication](docs/authentication.md)) |

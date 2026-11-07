@@ -96,9 +96,21 @@ func run(args []string) error {
 		checks["kubernetes"] = connected.Ready
 	}
 
+	provider := llm.FromConfig(cfg)
+	modelCtx, cancelModel := context.WithTimeout(ctx, 15*time.Second)
+	err = llm.CheckModel(modelCtx, provider, cfg.LLMModel)
+	cancelModel()
+	if errors.Is(err, llm.ErrModelUnavailable) {
+		return err
+	}
+	if err != nil {
+		// An outage at startup must not keep the service down; analyses report it.
+		log.Warn("could not check LLM_MODEL against the provider's model list", "error", err)
+	}
+
 	runtime := api.RuntimeFrom(cfg)
 	policy := runtime.Policy()
-	engine := investigation.NewEngine(store, clusters, llm.FromConfig(cfg), log, investigation.Config{
+	engine := investigation.NewEngine(store, clusters, provider, log, investigation.Config{
 		Timeout:       cfg.InvestigationTimeout,
 		MaxConcurrent: cfg.MaxConcurrentInvestigations,
 		Policy:        policy,
