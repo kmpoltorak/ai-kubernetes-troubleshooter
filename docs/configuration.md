@@ -8,7 +8,7 @@ see [several clusters](clusters.md).
 
 | Variable | Required when |
 |---|---|
-| `DATABASE_URL` | always; Docker Compose sets it to its own PostgreSQL |
+| `DATABASE_URL` | always: your PostgreSQL; only `docker-compose.test-db.yml` sets a throwaway one |
 | `LLM_MODEL` | `LLM_PROVIDER` is `openai`, `anthropic` or `gemini`; there is no built-in default |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` | the matching `LLM_PROVIDER` is chosen |
 | `AUTH_PUBLIC_URL` | `AUTH_ENABLED=true` (with an [OAuth2 Proxy](authentication.md)) |
@@ -33,10 +33,8 @@ for example during a provider outage, the app logs a warning and starts.
 | `AUTH_ENABLED` | `false` | no login/provider needed when off; checks UI, API and metrics through OAuth2 Proxy when on |
 | `AUTH_PROXY_URL` | `http://127.0.0.1:4180` | internal OAuth2 Proxy origin; Compose uses its own service address |
 | `AUTH_PUBLIC_URL` | empty | required when auth is on; HTTPS origin, or HTTP loopback for local auth tests |
-| `DATABASE_URL` | | required; PostgreSQL; Compose points it at its own container |
-| `EXTERNAL_DATABASE_URL` | empty | Compose only: use this PostgreSQL instead; start with `up --no-deps app` |
-| `EXTERNAL_DATABASE_NETWORK` | | Compose with `docker-compose.external-db.yml`: existing Docker network of that database |
-| `POSTGRES_PORT` | `5432` | Compose only: host port of the bundled PostgreSQL, bound to `127.0.0.1` for `make run` |
+| `DATABASE_URL` | | required; your PostgreSQL. Inside Docker, `localhost` is the container |
+| `EXTERNAL_DATABASE_NETWORK` | | Compose with `docker-compose.external-db.yml`: existing Docker network of a PostgreSQL container on the same host |
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
 | `SIMULATION_SCENARIO` | `healthy` | default scenario |
 | `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |

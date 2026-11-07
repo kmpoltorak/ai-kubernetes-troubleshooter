@@ -35,20 +35,28 @@ $ curl -s -X POST localhost:8080/api/v1/incidents/$ID/investigate -d '{"scenario
 
 ## Install
 
-Requires Docker with Compose. Go 1.27+ (and Node 22 for the UI) only to run
+Requires Docker with Compose and your own PostgreSQL (tested with 17); the app
+creates its tables at start. Go 1.27+ (and Node 22 for the UI) only to run
 outside Docker.
 Releases follow SemVer from 1.0.0. For a digest-pinned Kubernetes image and manifests, see [releases](docs/releases.md).
 
 ```bash
 git clone https://github.com/kmpoltorak/ai-kubernetes-troubleshooter.git
 cd ai-kubernetes-troubleshooter
-cp .env.example .env
+cp .env.example .env    # set DATABASE_URL to your PostgreSQL
 ```
 
 ## Quick start
 
 ```bash
 docker compose up --build                          # UI and API on http://localhost:8080
+```
+
+To try it without a database of your own, add a throwaway PostgreSQL. It is for
+tests, not real data, and publishes no host port:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.test-db.yml up --build
 ```
 
 Live cluster from Docker, with a kubeconfig for a read-only ServiceAccount
@@ -61,14 +69,8 @@ KUBECONFIG_FILE=$HOME/.kube/troubleshooter.yaml KUBERNETES_CLUSTER_NAME=lab \
 ```
 
 Several clusters from one installation: [several clusters](docs/clusters.md).
-An existing PostgreSQL instead of the bundled one (the app applies its migrations
-at start; for a database container on the same host see `EXTERNAL_DATABASE_NETWORK`
-in [configuration](docs/configuration.md)):
-
-```bash
-EXTERNAL_DATABASE_URL='postgres://troubleshooter:PASSWORD@db.example.net:5432/troubleshooter?sslmode=require' \
-  docker compose up --build -d --no-deps app
-```
+A PostgreSQL container on the same host: `EXTERNAL_DATABASE_NETWORK` in
+[configuration](docs/configuration.md).
 
 The guides in [docs/](docs/) are also served by the app at `/docs/` (the **Docs**
 link in the UI header), behind the same login as the UI.
@@ -80,9 +82,8 @@ by a language model says so and asks you to verify it. The header shows the mode
 and **Settings** shows the running configuration read-only. Outside Docker:
 
 ```bash
-docker compose up -d postgres
 make web    # optional: builds the UI into the binary
-make run    # applies migrations, serves on :8080
+make run    # DATABASE_URL from .env; applies migrations, serves on :8080
 SIMULATION_ENABLED=false KUBERNETES_CONTEXT=my-cluster KUBERNETES_ALLOWED_NAMESPACES=payments make run   # live
 ```
 
@@ -95,7 +96,7 @@ Only `DATABASE_URL` is always required.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DATABASE_URL` | | required; PostgreSQL; Compose points it at its own container |
+| `DATABASE_URL` | | required; your PostgreSQL (inside Docker, `localhost` is the container) |
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
 | `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |
 | `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
