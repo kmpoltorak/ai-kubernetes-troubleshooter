@@ -209,7 +209,8 @@ A model can be wrong: the report says so and cites the evidence to check.
 
 | Task | Command |
 |---|---|
-| Update to the latest version | `git pull`, then start with `--build` |
+| Update to the latest code | `git pull`, then start with `--build` |
+| Run a released version | `APP_IMAGE=ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter:X.Y.Z` in `.env`, then `docker compose pull` and the start command with `--no-build` instead of `--build` |
 | Apply `.env` or kubeconfig changes | the start command plus `--force-recreate app`; the kubeconfig is read only at start |
 | Renew the cluster token | step 5.2, then `--force-recreate app` |
 | Logs | `docker compose logs app` |

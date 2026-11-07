@@ -14,6 +14,7 @@ import (
 
 type rendered struct {
 	Services map[string]struct {
+		Image       string            `json:"image"`
 		Environment map[string]string `json:"environment"`
 		Ports       []struct {
 			HostIP    string `json:"host_ip"`
@@ -56,7 +57,7 @@ func renderEnv(t *testing.T, env map[string]string, files ...string) (rendered, 
 	cmd := exec.CommandContext(ctx, "docker", append(args, "config", "--format", "json")...)
 	cmd.Dir = "../.."
 	for _, kv := range os.Environ() {
-		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "KUBE_DIR" && name != "DATABASE_URL" && name != "TEST_DB_PASSWORD" && name != "EXTERNAL_DATABASE_NETWORK" && name != "KUBERNETES_CUSTOM_RESOURCES" {
+		if name, _, _ := strings.Cut(kv, "="); name != "APP_IMAGE" && name != "KUBECONFIG_FILE" && name != "KUBE_DIR" && name != "DATABASE_URL" && name != "TEST_DB_PASSWORD" && name != "EXTERNAL_DATABASE_NETWORK" && name != "KUBERNETES_CUSTOM_RESOURCES" {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
@@ -195,5 +196,19 @@ func TestComposePassesProviderSettings(t *testing.T) {
 		if got := r.Services["app"].Environment[k]; got != want {
 			t.Fatalf("%s: got %q, want %q", k, got, want)
 		}
+	}
+}
+
+// Without APP_IMAGE the app is built from the checkout; with it, a published
+// release image runs instead.
+func TestAppImageSelectsAReleaseImage(t *testing.T) {
+	r, stderr, err := renderEnv(t, nil, "docker-compose.yml")
+	if err != nil || r.Services["app"].Image != "ai-kubernetes-troubleshooter:local" {
+		t.Fatalf("default image: %v %s %q", err, stderr, r.Services["app"].Image)
+	}
+	const release = "ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter:1.7.0"
+	r, stderr, err = renderEnv(t, map[string]string{"APP_IMAGE": release}, "docker-compose.yml")
+	if err != nil || r.Services["app"].Image != release {
+		t.Fatalf("APP_IMAGE: %v %s %q", err, stderr, r.Services["app"].Image)
 	}
 }
