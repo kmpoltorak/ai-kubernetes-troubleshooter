@@ -21,7 +21,8 @@ is empty.
 At startup, `LLM_MODEL` is checked against the provider's model list for the
 key: OpenAI and Anthropic `GET /v1/models`, Gemini `GET /v1beta/models`, with
 only `generateContent` models counted for Gemini. A model missing from the
-list stops the app and lists the available ones. If the list cannot be read,
+list stops the app and lists the available ones; so does a key the provider
+rejects (`401` or `403`). If the list cannot otherwise be read,
 for example during a provider outage, the app logs a warning and starts.
 
 ## Variables
