@@ -11,6 +11,7 @@ data:
   AUTH_ENABLED: "false"
   # Live mode: in-cluster ServiceAccount credentials (KUBECONFIG unset).
   SIMULATION_ENABLED: "false"
+  # Required with the in-cluster ServiceAccount: the name users know this cluster by.
   KUBERNETES_CLUSTER_NAME: local
   # Must match the namespaces that have a troubleshooter-reader RoleBinding.
   KUBERNETES_ALLOWED_NAMESPACES: payments

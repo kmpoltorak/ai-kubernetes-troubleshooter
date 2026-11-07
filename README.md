@@ -99,7 +99,7 @@ Only `DATABASE_URL` is always required.
 | `DATABASE_URL` | | required; your PostgreSQL (inside Docker, `localhost` is the container) |
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
 | `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |
-| `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
+| `KUBERNETES_CLUSTER_NAME` | kubeconfig context's cluster | the only value accepted in an incident's `cluster`; `local` in simulation; required in a pod using its ServiceAccount |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CLUSTERS_FILE` | empty | several clusters, each with its kubeconfig and namespaces ([several clusters](docs/clusters.md)) |
 | `LLM_PROVIDER`, `LLM_MODEL` | `rules`, none | `rules`, `openai`, `anthropic`, `gemini`; `LLM_MODEL` is required for the API providers and checked at startup against the provider's model list |

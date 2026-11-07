@@ -39,7 +39,7 @@ for example during a provider outage, the app logs a warning and starts.
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
 | `SIMULATION_SCENARIO` | `healthy` | default scenario |
 | `KUBECONFIG`, `KUBERNETES_CONTEXT` | empty | live mode; empty uses `~/.kube/config`, or the in-cluster ServiceAccount in a pod |
-| `KUBERNETES_CLUSTER_NAME` | `local` | the only value accepted in an incident's `cluster` |
+| `KUBERNETES_CLUSTER_NAME` | the cluster of the kubeconfig context | the only value accepted in an incident's `cluster`. Empty takes the cluster name from the kubeconfig context in use (`KUBERNETES_CONTEXT` or the current one); startup fails if that name is not a lowercase DNS name, or in a pod using its ServiceAccount, where it must be set. `local` in simulation |
 | `KUBERNETES_CLUSTERS_FILE` | empty | YAML list of clusters, each with its kubeconfig, context and allowed namespaces; replaces `KUBERNETES_CLUSTER_NAME`, `KUBERNETES_CONTEXT` and `KUBERNETES_ALLOWED_NAMESPACES` ([several clusters](clusters.md)) |
 | `KUBERNETES_ALLOWED_NAMESPACES` | empty (all readable) | comma-separated allowlist, checked at creation and before each investigation |
 | `KUBERNETES_CUSTOM_RESOURCES` | empty | extra kinds as `group/version/resource`, comma-separated, e.g. `argoproj.io/v1alpha1/rollouts`; incidents name them `rollouts.argoproj.io` (see [custom resources](#custom-resources)) |
