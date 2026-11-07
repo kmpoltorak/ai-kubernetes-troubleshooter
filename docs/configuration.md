@@ -34,6 +34,7 @@ for example during a provider outage, the app logs a warning and starts.
 | `AUTH_PROXY_URL` | `http://127.0.0.1:4180` | internal OAuth2 Proxy origin; Compose uses its own service address |
 | `AUTH_PUBLIC_URL` | empty | required when auth is on; HTTPS origin, or HTTP loopback for local auth tests |
 | `DATABASE_URL` | | required; your PostgreSQL. Inside Docker, `localhost` is the container |
+| `APP_IMAGE` | | Compose: a published image such as `ghcr.io/kmpoltorak/ai-kubernetes-troubleshooter:1.7.0`; start with `docker compose pull` and `up --no-build` (`--build` would build the checkout under that name). Empty: built from the checkout, shown as `dev · unknown` |
 | `TEST_DB_PASSWORD` | `troubleshooter` | Compose with `docker-compose.test-db.yml`: password of the throwaway PostgreSQL, also used in the app's address to it |
 | `EXTERNAL_DATABASE_NETWORK` | | Compose with `docker-compose.external-db.yml`: existing Docker network of a PostgreSQL container on the same host |
 | `SIMULATION_ENABLED` | `true` | simulated clusters instead of a real one |
