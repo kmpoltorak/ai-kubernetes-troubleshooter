@@ -34,6 +34,8 @@ users: [{name: none, user: {token: browser-test}}]
 contexts: [{name: none, context: {cluster: none, user: none}}]
 current-context: none
 EOF
+# The same fake server answers Kubernetes requests with 401, like an expired token.
+sed "s#https://127.0.0.1:9#http://127.0.0.1:$((port + 2))#" "$work/kubeconfig" > "$work/kubeconfig-expired"
 
 (cd web && npm run build)
 CGO_ENABLED=0 go build -o "$work/api" ./cmd/api
@@ -41,6 +43,10 @@ CGO_ENABLED=0 go build -o "$work/api" ./cmd/api
 # Lists one model for the startup check, then fails every chat completion after
 # 8s, long enough to reload during analysis.
 node -e 'require("http").createServer((req, res) => { req.resume();
+if (/^\/(version|apis?\/)/.test(req.url)) {
+  res.writeHead(401, { "Content-Type": "application/json" });
+  return res.end(JSON.stringify({ kind: "Status", apiVersion: "v1", status: "Failure", message: "Unauthorized", reason: "Unauthorized", code: 401 }));
+}
 if (req.method === "GET" && req.url.endsWith("/models")) {
   res.writeHead(200, { "Content-Type": "application/json" });
   return res.end(JSON.stringify({ data: [{ id: "browser-test" }] }));
@@ -54,11 +60,12 @@ pids="$pids $!"
 # A low limit makes the UI's normal request bursts hit 429 rate_limited on every run.
 start "$port" akt LLM_PROVIDER=rules RATE_LIMIT_RPS=2
 start $((port + 1)) failing LLM_PROVIDER=openai LLM_MODEL=browser-test OPENAI_API_KEY=browser-test OPENAI_BASE_URL="http://127.0.0.1:$((port + 2))/v1"
-# Live mode with two clusters, both unreachable: readiness fails, so wait for /health.
+# Live mode with two clusters, one unreachable and one rejecting the token:
+# readiness fails, so wait for /health.
 cat > "$work/clusters.yaml" <<EOF
 clusters:
   - {name: browser-live, kubeconfig: "$work/kubeconfig", allowed_namespaces: [payments, checkout]}
-  - {name: browser-edge, kubeconfig: "$work/kubeconfig", allowed_namespaces: [orders]}
+  - {name: browser-edge, kubeconfig: "$work/kubeconfig-expired", allowed_namespaces: [orders]}
 EOF
 start $((port + 3)) live SIMULATION_ENABLED=false KUBERNETES_CLUSTERS_FILE="$work/clusters.yaml"
 ready "$port"

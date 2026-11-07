@@ -51,11 +51,14 @@ export interface Runtime {
   resource_types?: ResourceType[];
 }
 
-/** "unreachable" when the cluster's API server did not answer the last check. */
+/** "unreachable": the API server did not answer the last check; "unauthorized": it rejected the kubeconfig credentials. */
 export interface ClusterState {
   name: string;
-  status: "ok" | "unreachable" | "simulated";
+  status: "ok" | "unreachable" | "unauthorized" | "simulated";
 }
+
+/** How the header and the form describe a cluster that failed its last check. */
+export const clusterProblem: Partial<Record<ClusterState["status"], string>> = { unreachable: "unreachable", unauthorized: "credentials rejected" };
 
 export interface Incident {
   id: string;

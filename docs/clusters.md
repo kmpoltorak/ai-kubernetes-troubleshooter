@@ -42,10 +42,12 @@ limits apply to every cluster.
 
 ## Status
 
-The UI header shows how many clusters answer, and names the ones that do not.
-The form marks unreachable clusters; they can still be chosen. The UI repeats the check every
-30 seconds through `GET /api/v1/clusters`, which returns `ok` or
-`unreachable` per cluster (`simulated` in simulation). The connection errors go
+The UI header shows how many clusters work, and names the ones that do not:
+`unreachable` when the API server does not answer, `credentials rejected` when it
+answers `401` (an expired or invalid token, see [renewing it](operations.md#kubeconfig-for-the-serviceaccount)).
+The form marks those clusters; they can still be chosen. The UI repeats the check every
+30 seconds through `GET /api/v1/clusters`, which returns `ok`, `unreachable` or
+`unauthorized` per cluster (`simulated` in simulation). The connection errors go
 to the log, because they contain API server addresses.
 
 `/ready` reports one `kubernetes` check, without cluster names because it is

@@ -55,11 +55,12 @@ test("live mode with two clusters shows their state and each cluster's namespace
   await page.goto(live);
   await expect(page.getByText("mode: live")).toBeVisible();
   await expect(page.getByRole("group", { name: "Sample incidents" })).toHaveCount(0);
-  // Both clusters' API servers refuse connections: the header names them.
-  await expect(page.getByText("browser-live, browser-edge unreachable · 0/2 reachable")).toBeVisible();
-  await expect(page.getByLabel("Cluster").locator("option")).toHaveText(["Choose…", "browser-live (unreachable)", "browser-edge (unreachable)"]);
+  // One API server refuses connections, the other rejects the token: the header tells them apart.
+  await expect(page.getByText("browser-live unreachable, browser-edge credentials rejected · 0/2 ok")).toBeVisible();
+  await expect(page.getByLabel("Cluster").locator("option")).toHaveText(["Choose…", "browser-live (unreachable)", "browser-edge (credentials rejected)"]);
   await page.getByLabel("Cluster").selectOption("browser-edge");
   await expect(page.getByLabel("Namespace")).toHaveValue("orders");
+  await expect(page.getByText(/Could not list names \(the cluster rejected the kubeconfig credentials/)).toBeVisible();
   await page.getByLabel("Cluster").selectOption("browser-live");
   await expect(page.getByLabel("Namespace").locator("option")).toHaveText(["Choose…", "payments", "checkout"]);
   await page.getByLabel("Description").fill("Checkout returns 503 after the release.");

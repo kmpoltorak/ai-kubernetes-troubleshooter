@@ -22,6 +22,7 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/incidents"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/investigation"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/jobs"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/observability"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/simulation"
@@ -330,7 +331,11 @@ func (h *handler) clusterStatus(runtime Runtime, live Clusters) http.HandlerFunc
 				if !pinged {
 					err = errors.New("not checked")
 				}
-				if err != nil {
+				switch {
+				case errors.Is(err, kube.ErrCredentialsRejected):
+					h.log.WarnContext(r.Context(), "cluster credentials rejected", "cluster", c.Name, "error", redact.Text(err.Error()))
+					state.Status = "unauthorized"
+				case err != nil:
 					h.log.WarnContext(r.Context(), "cluster unreachable", "cluster", c.Name, "error", redact.Text(err.Error()))
 					state.Status = "unreachable"
 				}

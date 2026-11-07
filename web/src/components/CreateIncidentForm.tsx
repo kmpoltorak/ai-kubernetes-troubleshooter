@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Field } from "./Hint";
-import { api, type ClusterState, type CreateIncident, type Incident, type ResourceType, type Runtime } from "../api";
+import { api, clusterProblem, type ClusterState, type CreateIncident, type Incident, type ResourceType, type Runtime } from "../api";
 
 // Samples load a matching simulation scenario for the first investigation.
 const PRESETS: Record<string, { label: string; incident: CreateIncident }> = {
@@ -54,7 +54,7 @@ export default function CreateIncidentForm({ runtime, clusters: states, onCreate
   const empty: CreateIncident = { title: "", description: "", cluster, namespace: only(namespacesOf(cluster)), resource_type: "deployment", resource_name: "" };
   const [form, setForm] = useState<CreateIncident>(empty);
   const allowed = namespacesOf(form.cluster);
-  const unreachable = new Set(states?.filter((s) => s.status === "unreachable").map((s) => s.name));
+  const problems = new Map(states?.map((s) => [s.name, clusterProblem[s.status]]));
   const [preset, setPreset] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,12 +120,12 @@ export default function CreateIncidentForm({ runtime, clusters: states, onCreate
           {(id) => <textarea id={id} className="field resize-y" rows={3} value={form.description} onChange={set("description")} maxLength={5000} placeholder="What are users seeing?" />}
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Cluster" hint="The clusters this installation reads (KUBERNETES_CLUSTERS_FILE, or KUBERNETES_CLUSTER_NAME for one). An unreachable cluster can still be chosen; its investigation reports the error.">
+          <Field label="Cluster" hint="The clusters this installation reads (KUBERNETES_CLUSTERS_FILE, or KUBERNETES_CLUSTER_NAME for one). An unreachable cluster, or one rejecting the credentials, can still be chosen; its investigation reports the error.">
             {(id) => clusters.length > 1 ? (
               <select id={id} className="field font-mono" value={form.cluster}
                 onChange={(e) => { const c = e.target.value; setForm({ ...form, cluster: c, namespace: only(namespacesOf(c)), resource_name: "" }); }}>
                 <option value="">Choose…</option>
-                {clusters.map((c) => <option key={c.name} value={c.name}>{c.name}{unreachable.has(c.name) ? " (unreachable)" : ""}</option>)}
+                {clusters.map((c) => <option key={c.name} value={c.name}>{c.name}{problems.get(c.name) ? ` (${problems.get(c.name)})` : ""}</option>)}
               </select>
             ) : (
               <input id={id} className="field cursor-default border-transparent bg-zinc-100 font-mono text-zinc-700 dark:border-transparent dark:bg-zinc-800/60 dark:text-zinc-300"
