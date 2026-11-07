@@ -39,7 +39,7 @@ func TestModelEvaluationRequiresOptIn(t *testing.T) {
 
 func TestModelEvaluationRejectsConfigurationBeforeRequests(t *testing.T) {
 	for _, tc := range []struct{ key, value string }{
-		{"MODEL_EVAL_ALLOW_NETWORK", "yes"}, {"MODEL_EVAL_PROVIDER", "rules"}, {"MODEL_EVAL_PROVIDER", "ollama"}, {"MODEL_EVAL_MODEL", ""}, {"MODEL_EVAL_MODEL", "m\nsecret"}, {"OPENAI_API_KEY", ""},
+		{"MODEL_EVAL_ALLOW_NETWORK", "yes"}, {"MODEL_EVAL_PROVIDER", "rules"}, {"MODEL_EVAL_PROVIDER", "mistral"}, {"MODEL_EVAL_MODEL", ""}, {"MODEL_EVAL_MODEL", "m\nsecret"}, {"OPENAI_API_KEY", ""},
 		{"MODEL_EVAL_TIMEOUT_SECONDS", "0"}, {"MODEL_EVAL_TIMEOUT_SECONDS", "601"}, {"MODEL_EVAL_TIMEOUT_SECONDS", "1.5"},
 		{"OPENAI_BASE_URL", "https://user:password@example.com"}, {"OPENAI_BASE_URL", "https://example.com?token=synthetic"}, {"OPENAI_BASE_URL", "https://example.com#token"}, {"OPENAI_BASE_URL", "http://example.com"}, {"OPENAI_BASE_URL", "file:///tmp/api"}, {"OPENAI_BASE_URL", "https://example.com:99999"},
 	} {

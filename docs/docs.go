@@ -8,5 +8,5 @@ import "embed"
 // TestEmbedsExactlyTheTrackedGuides keeps the list equal to the files in Git.
 //
 //go:embed analysis-contract.md api.md authentication.md build-metadata.md clusters.md configuration.md
-//go:embed data-deletion.md durable-jobs.md evaluation.md kubernetes-testing.md operations.md releases.md
+//go:embed data-deletion.md durable-jobs.md evaluation.md kubernetes-testing.md limitations.md operations.md releases.md
 var Files embed.FS

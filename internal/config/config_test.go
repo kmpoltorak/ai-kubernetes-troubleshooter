@@ -92,7 +92,7 @@ func TestLoadErrors(t *testing.T) {
 		{"bad port", map[string]string{"DATABASE_URL": "x", "HTTP_PORT": "99999"}, "HTTP_PORT"},
 		{"non numeric port", map[string]string{"DATABASE_URL": "x", "HTTP_PORT": "abc"}, "HTTP_PORT must be an integer"},
 		{"unknown provider", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "bard"}, "LLM_PROVIDER"},
-		{"removed ollama provider", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "ollama"}, "LLM_PROVIDER"},
+		{"unsupported provider", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "mistral"}, "LLM_PROVIDER"},
 		{"openai without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "openai"}, "OPENAI_API_KEY"},
 		{"anthropic without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "anthropic"}, "ANTHROPIC_API_KEY"},
 		{"gemini without key", map[string]string{"DATABASE_URL": "x", "LLM_PROVIDER": "gemini"}, "GEMINI_API_KEY"},

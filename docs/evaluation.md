@@ -127,21 +127,3 @@ The memory error belongs to a past incident on a healthy Deployment, so
 `observed_fault` misreads history as the current state. All models agreed on
 the other three cases: OOMKilled observed, denied logs inconclusive, and no
 fault for the logs that contain instructions.
-
-## Local models
-
-Local models through Ollama were measured with this tool and removed, because
-none produced usable reports. Each ran the 18 attempts, or as many as the
-results warranted, on a Ryzen with an Intel Arc GPU (10 GB), a 16k context and
-a 300-second request timeout:
-
-| Model | Accepted reports | Typical failure |
-|---|---|---|
-| `llama3.2:1b` | 0 of 18 | `no_fault_observed` for every case, including OOMKilled |
-| `qwen2.5:3b` | 0 of 4 | output looped until the 4096-token limit |
-| `phi4-mini` | 1 of 5 | evidence IDs that do not match their source |
-| `qwen2.5:7b` | 9 of 18 | `no_fault_observed` although logs could not be read; a `kubectl get secret` command |
-
-These runs used a 4096-token limit and are not comparable with the table above. The validator rejected the failing reports,
-so they would not reach a user; some accepted ones still overstated a past
-error as a suspected fault. Local requests took 40–290 seconds.
