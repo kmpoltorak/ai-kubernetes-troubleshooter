@@ -328,9 +328,9 @@ func TestRuntimeDescribesModeWithoutSecrets(t *testing.T) {
 		want string
 	}{
 		{"live", map[string]string{"SIMULATION_ENABLED": "false", "LLM_PROVIDER": "openai", "LLM_MODEL": "gpt-6-luna", "KUBERNETES_ALLOWED_NAMESPACES": "payments,checkout", "KUBERNETES_CUSTOM_RESOURCES": "argoproj.io/v1alpha1/rollouts"},
-			`{"mode":"live","cluster_name":"prod","allowed_namespaces":["payments","checkout"],"clusters":[{"name":"prod","allowed_namespaces":["payments","checkout"]}],"analyzer":{"provider":"openai","model":"gpt-6-luna","reasoning_effort":"medium","max_output_tokens":16000,"timeout_seconds":300,"max_input_bytes":262144},"limits":{"investigation_timeout_seconds":360,"job_timeout_seconds":900,"job_queue_capacity":100,"max_concurrent_investigations":4,"rate_limit_rps":5},"authentication":false,"environment":"development","log_level":"info","scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler","rollouts.argoproj.io"]}`},
+			`{"mode":"live","clusters":[{"name":"prod","allowed_namespaces":["payments","checkout"]}],"analyzer":{"provider":"openai","model":"gpt-6-luna","reasoning_effort":"medium","max_output_tokens":16000,"timeout_seconds":300,"max_input_bytes":262144},"limits":{"investigation_timeout_seconds":360,"job_timeout_seconds":900,"job_queue_capacity":100,"max_concurrent_investigations":4,"rate_limit_rps":5},"authentication":false,"environment":"development","log_level":"info","scenarios":[],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler","rollouts.argoproj.io"]}`},
 		{"simulation", map[string]string{},
-			`{"mode":"simulation","cluster_name":"prod","allowed_namespaces":[],"clusters":[{"name":"prod","allowed_namespaces":[]}],"analyzer":{"provider":"rules","model":"rules-v2"},"limits":{"investigation_timeout_seconds":360,"job_timeout_seconds":900,"job_queue_capacity":100,"max_concurrent_investigations":4,"rate_limit_rps":5},"authentication":false,"environment":"development","log_level":"info","default_scenario":"healthy","scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
+			`{"mode":"simulation","clusters":[{"name":"prod","allowed_namespaces":[]}],"analyzer":{"provider":"rules","model":"rules-v2"},"limits":{"investigation_timeout_seconds":360,"job_timeout_seconds":900,"job_queue_capacity":100,"max_concurrent_investigations":4,"rate_limit_rps":5},"authentication":false,"environment":"development","log_level":"info","default_scenario":"healthy","scenarios":["` + strings.Join(simulation.Scenarios, `","`) + `"],"resource_types":["deployment","statefulset","daemonset","job","cronjob","service","pod","ingress","persistentvolumeclaim","horizontalpodautoscaler"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := config.Load(func(k string) string {
@@ -607,7 +607,7 @@ func TestClusterStatus(t *testing.T) {
 		t.Fatalf("status: %d %s", code, body)
 	}
 	_, runtime := get(t, srv.URL+"/api/v1/runtime")
-	if strings.Contains(runtime, "/kube/") || strings.Contains(runtime, "lab-ro") || !strings.Contains(runtime, `"cluster_name":"lab"`) ||
+	if strings.Contains(runtime, "/kube/") || strings.Contains(runtime, "lab-ro") || strings.Contains(runtime, `"cluster_name"`) ||
 		!strings.Contains(runtime, `"clusters":[{"name":"lab","allowed_namespaces":[]},{"name":"prod","allowed_namespaces":[]},{"name":"edge","allowed_namespaces":[]},{"name":"dev","allowed_namespaces":[]}]`) {
 		t.Fatalf("runtime: %s", runtime)
 	}

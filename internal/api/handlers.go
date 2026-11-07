@@ -47,16 +47,13 @@ type handler struct {
 // Runtime is what the UI needs to know about this installation. It is served
 // behind authentication and never holds URLs, keys, contexts or credentials.
 type Runtime struct {
-	Mode string `json:"mode"`
-	// ClusterName and AllowedNamespaces describe the first cluster, for 1.x clients.
-	ClusterName       string           `json:"cluster_name"`
-	AllowedNamespaces []string         `json:"allowed_namespaces"`
-	Clusters          []RuntimeCluster `json:"clusters"`
-	Analyzer          Analyzer         `json:"analyzer"`
-	Limits            Limits           `json:"limits"`
-	Authentication    bool             `json:"authentication"`
-	Environment       string           `json:"environment"`
-	LogLevel          string           `json:"log_level"`
+	Mode           string           `json:"mode"`
+	Clusters       []RuntimeCluster `json:"clusters"`
+	Analyzer       Analyzer         `json:"analyzer"`
+	Limits         Limits           `json:"limits"`
+	Authentication bool             `json:"authentication"`
+	Environment    string           `json:"environment"`
+	LogLevel       string           `json:"log_level"`
 	// DefaultScenario is SIMULATION_SCENARIO, set in simulation only.
 	DefaultScenario string   `json:"default_scenario,omitempty"`
 	Scenarios       []string `json:"scenarios"`
@@ -93,16 +90,13 @@ type Limits struct {
 
 // RuntimeFrom selects the UI-relevant settings; empty namespaces mean all readable ones.
 func RuntimeFrom(cfg config.Config) Runtime {
-	rt := Runtime{Mode: "live", Clusters: []RuntimeCluster{}, AllowedNamespaces: []string{},
+	rt := Runtime{Mode: "live", Clusters: []RuntimeCluster{},
 		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel},
 		Limits: Limits{InvestigationTimeoutSeconds: int(cfg.InvestigationTimeout.Seconds()), JobTimeoutSeconds: int(cfg.JobTimeout.Seconds()),
 			JobQueueCapacity: cfg.JobQueueCapacity, MaxConcurrentInvestigations: cfg.MaxConcurrentInvestigations, RateLimitRPS: cfg.RateLimitRPS},
 		Authentication: cfg.Auth.Enabled, Environment: cfg.AppEnv, LogLevel: strings.ToLower(cfg.LogLevel.String()), Scenarios: []string{}, ResourceTypes: append(slices.Clone(domain.ResourceTypes), cfg.CustomKinds()...)}
 	for _, c := range cfg.Clusters {
 		rt.Clusters = append(rt.Clusters, RuntimeCluster{Name: c.Name, AllowedNamespaces: append([]string{}, c.AllowedNamespaces...)})
-	}
-	if len(rt.Clusters) > 0 {
-		rt.ClusterName, rt.AllowedNamespaces = rt.Clusters[0].Name, rt.Clusters[0].AllowedNamespaces
 	}
 	if cfg.LLMProvider != "rules" {
 		rt.Analyzer.ReasoningEffort = cmp.Or(cfg.LLMReasoningEffort, "off")
