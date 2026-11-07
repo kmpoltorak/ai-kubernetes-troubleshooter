@@ -25,6 +25,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.goto(live);
     await expect(page.getByText("live ·")).toBeVisible();
     await expectNoViolations(page, "live");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    await expectNoViolations(page, "settings");
   });
 }
 

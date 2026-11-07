@@ -2,6 +2,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -50,6 +51,8 @@ type Runtime struct {
 	AllowedNamespaces []string         `json:"allowed_namespaces"`
 	Clusters          []RuntimeCluster `json:"clusters"`
 	Analyzer          Analyzer         `json:"analyzer"`
+	Limits            Limits           `json:"limits"`
+	Authentication    bool             `json:"authentication"`
 	Scenarios         []string         `json:"scenarios"`
 	// ResourceTypes are the kinds an incident can target, in form order.
 	ResourceTypes []domain.ResourceType `json:"resource_types"`
@@ -61,20 +64,42 @@ type RuntimeCluster struct {
 	AllowedNamespaces []string `json:"allowed_namespaces"`
 }
 
+// Analyzer is the configured analysis: no keys or endpoint URLs.
 type Analyzer struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+	// The rest applies to API providers only; ReasoningEffort is "off" when no
+	// effort parameter is sent.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	MaxOutputTokens int    `json:"max_output_tokens,omitempty"`
+	TimeoutSeconds  int    `json:"timeout_seconds,omitempty"`
+}
+
+// Limits are the job and request bounds of this installation.
+type Limits struct {
+	InvestigationTimeoutSeconds int     `json:"investigation_timeout_seconds"`
+	JobTimeoutSeconds           int     `json:"job_timeout_seconds"`
+	JobQueueCapacity            int     `json:"job_queue_capacity"`
+	MaxConcurrentInvestigations int     `json:"max_concurrent_investigations"`
+	RateLimitRPS                float64 `json:"rate_limit_rps"`
 }
 
 // RuntimeFrom selects the UI-relevant settings; empty namespaces mean all readable ones.
 func RuntimeFrom(cfg config.Config) Runtime {
 	rt := Runtime{Mode: "live", Clusters: []RuntimeCluster{}, AllowedNamespaces: []string{},
-		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel}, Scenarios: []string{}, ResourceTypes: append(slices.Clone(domain.ResourceTypes), cfg.CustomKinds()...)}
+		Analyzer: Analyzer{Provider: cfg.LLMProvider, Model: cfg.LLMModel},
+		Limits: Limits{InvestigationTimeoutSeconds: int(cfg.InvestigationTimeout.Seconds()), JobTimeoutSeconds: int(cfg.JobTimeout.Seconds()),
+			JobQueueCapacity: cfg.JobQueueCapacity, MaxConcurrentInvestigations: cfg.MaxConcurrentInvestigations, RateLimitRPS: cfg.RateLimitRPS},
+		Authentication: cfg.Auth.Enabled, Scenarios: []string{}, ResourceTypes: append(slices.Clone(domain.ResourceTypes), cfg.CustomKinds()...)}
 	for _, c := range cfg.Clusters {
 		rt.Clusters = append(rt.Clusters, RuntimeCluster{Name: c.Name, AllowedNamespaces: append([]string{}, c.AllowedNamespaces...)})
 	}
 	if len(rt.Clusters) > 0 {
 		rt.ClusterName, rt.AllowedNamespaces = rt.Clusters[0].Name, rt.Clusters[0].AllowedNamespaces
+	}
+	if cfg.LLMProvider != "rules" {
+		rt.Analyzer.ReasoningEffort = cmp.Or(cfg.LLMReasoningEffort, "off")
+		rt.Analyzer.MaxOutputTokens, rt.Analyzer.TimeoutSeconds = cfg.LLMMaxOutputTokens, int(cfg.LLMTimeout.Seconds())
 	}
 	if cfg.SimulationEnabled {
 		rt.Mode, rt.Scenarios = "simulation", simulation.Scenarios

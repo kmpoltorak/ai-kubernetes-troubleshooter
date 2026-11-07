@@ -37,7 +37,11 @@ export interface Runtime {
   mode: "simulation" | "live";
   /** The configured clusters in order, each with its allowed namespaces (empty: any). */
   clusters: { name: string; allowed_namespaces: string[] }[];
-  analyzer: { provider: string; model: string };
+  /** Effort, output limit and timeout are sent for API providers only. */
+  analyzer: { provider: string; model: string; reasoning_effort?: string; max_output_tokens?: number; timeout_seconds?: number };
+  /** Job and request bounds; absent from older servers. */
+  limits?: { investigation_timeout_seconds: number; job_timeout_seconds: number; job_queue_capacity: number; max_concurrent_investigations: number; rate_limit_rps: number };
+  authentication?: boolean;
   scenarios: string[];
   /** Kinds an incident can target, in form order; absent before the server lists them. */
   resource_types?: ResourceType[];

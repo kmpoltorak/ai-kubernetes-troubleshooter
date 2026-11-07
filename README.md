@@ -75,7 +75,9 @@ link in the UI header), behind the same login as the UI.
 In simulation, the UI's sample buttons fill in an incident and pick a scenario.
 In live mode the form offers the configured clusters and namespaces and suggests
 object names from the cluster. A "?" next to a field or report term explains it.
-A report opens with its conclusion, cited evidence and export buttons. Outside Docker:
+A report opens with its conclusion, cited evidence and export buttons; one written
+by a language model says so and asks you to verify it. The header names the model,
+and **Settings** shows the running configuration read-only. Outside Docker:
 
 ```bash
 docker compose up -d postgres
