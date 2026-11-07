@@ -75,3 +75,46 @@ func TestCheckModel(t *testing.T) {
 		t.Fatalf("rules analyzer checked: %v", err)
 	}
 }
+
+// A provider repeating its cursor must not loop forever.
+func TestModelPagingStopsOnRepeatedCursor(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests++; requests > 5 {
+			http.Error(w, "looping", http.StatusTeapot) // fail fast instead of hanging
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/v1/models") {
+			fmt.Fprint(w, `{"data":[{"id":"claude-opus-5-5"}],"has_more":true,"last_id":"claude-opus-5-5"}`)
+		} else {
+			fmt.Fprint(w, `{"models":[{"name":"models/gemini-4-argon","supportedGenerationMethods":["generateContent"]}],"nextPageToken":"same"}`)
+		}
+	}))
+	defer srv.Close()
+	for _, p := range []interface {
+		Models(context.Context) ([]string, error)
+	}{
+		NewAnthropicProvider(srv.URL, "k", "m", "", time.Second),
+		NewGeminiProvider(srv.URL+"/gemini", "k", "m", "", time.Second),
+	} {
+		requests = 0
+		if _, err := p.Models(context.Background()); err != nil || requests != 2 {
+			t.Fatalf("%T: %d requests, %v; want 2", p, requests, err)
+		}
+	}
+}
+
+func TestCheckModelListsAtMost60(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		ids := make([]string, 70)
+		for i := range ids {
+			ids[i] = fmt.Sprintf(`{"id":"m%02d"}`, i)
+		}
+		fmt.Fprintf(w, `{"data":[%s]}`, strings.Join(ids, ","))
+	}))
+	defer srv.Close()
+	err := CheckModel(context.Background(), NewOpenAIProvider(srv.URL, "k", "m", "", time.Second), "gpt-typo")
+	if !errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "(70 models)") || !strings.Contains(err.Error(), "m59") || strings.Contains(err.Error(), "m60") {
+		t.Fatalf("model list not capped at 60: %v", err)
+	}
+}
