@@ -97,15 +97,8 @@ func run(args []string) error {
 	}
 
 	provider := llm.FromConfig(cfg)
-	modelCtx, cancelModel := context.WithTimeout(ctx, 15*time.Second)
-	err = llm.CheckModel(modelCtx, provider, cfg.LLMModel)
-	cancelModel()
-	if errors.Is(err, llm.ErrModelUnavailable) {
+	if err := checkModel(ctx, log, provider, cfg.LLMModel); err != nil {
 		return err
-	}
-	if err != nil {
-		// An outage at startup must not keep the service down; analyses report it.
-		log.Warn("could not check LLM_MODEL against the provider's model list", "error", err)
 	}
 
 	runtime := api.RuntimeFrom(cfg)
@@ -184,4 +177,17 @@ func migrateCommand(ctx context.Context, store *storage.Store, args []string, lo
 		return err
 	}
 	return errors.New("usage: api [migrate up|down]")
+}
+
+// checkModel stops startup on a model the key cannot use. An unreadable list
+// only warns: a provider outage must not keep the service down; analyses report it.
+func checkModel(ctx context.Context, log *slog.Logger, p llm.Provider, model string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	err := llm.CheckModel(ctx, p, model)
+	if err != nil && !errors.Is(err, llm.ErrModelUnavailable) {
+		log.Warn("could not check LLM_MODEL against the provider's model list", "error", err)
+		return nil
+	}
+	return err
 }

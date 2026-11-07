@@ -79,6 +79,13 @@ test("v2 assessment links exact evidence, separates hypotheses and states bounds
   assert.doesNotMatch(other, /href="#evidence/);
 });
 
+test("a model-written report shows the verification notice; a rules report does not", () => {
+  const analysis = { schema_version: 2, verdict: "observed_fault", support: "strong", summary: "s", root_cause: "Container OOMKilled", severity: "high", evidence: [] };
+  const record = (provider) => ({ investigation: success, tool_executions: [], evidence: [], report: { provider, created_at: success.completed_at, analysis } });
+  assert.match(render(Report, { record: record("anthropic/claude-opus-5-5") }), /Written by anthropic\/claude-opus-5-5\. AI can make mistakes/);
+  assert.doesNotMatch(render(Report, { record: record("rules/rules-v2") }), /AI can make mistakes/);
+});
+
 test("legacy reports stay readable without recasting their score as evidence support", () => {
   const html = render(Report, { record: { investigation: success, evidence: [], tool_executions: [], report: { provider: "rules/rules-v1", analysis: { summary: "old summary", root_cause: "old cause", confidence: 0.94, severity: "high", evidence: [{ source: "get_pods", description: "legacy citation" }] } } } });
   assert.match(html, /old summary/);
