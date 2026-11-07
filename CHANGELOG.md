@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.6.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.5.0...v1.6.0) (2026-11-07)
+
+
+### Features
+
+* add Gemini as an LLM provider ([#90](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/90)) ([ff17716](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/ff177165aa9aab3e55edadadab670a08e4978f57))
+* Compose uses your PostgreSQL; the bundled one moves to a test-only override ([#109](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/109)) ([8db5fe8](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/8db5fe87dceb598794982bb91fe6f2e6381f181e))
+* configurable output token limit and reasoning effort by default ([#93](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/93)) ([c274f6c](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/c274f6c7d849291dddd3442e37eb774e6ecaf6a5))
+* default LLM timeout 300s, investigation 360s, checked against each other ([#96](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/96)) ([62d497b](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/62d497b9f64dd46b8a87d3a5494a4fb7c3eaf70a))
+* drop the 1.x compatibility fields from /api/v1/runtime ([#108](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/108)) ([8464f77](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/8464f77cdac5dd797d6c58d7676c638225afd0e4))
+* header shows mode and model once; Settings lists every non-secret setting ([#98](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/98)) ([52745c7](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/52745c72109b648fd37b2f20e9745cc893eb2da9))
+* require LLM_MODEL and check it against the provider's model list ([#94](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/94)) ([fefcc0f](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/fefcc0f885c393bf15adf12961f1750c52df56c1))
+* show the model, a read-only Settings dialog and an AI verification notice ([#95](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/95)) ([f56fc44](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/f56fc440d8a2d07cb550f3a554f03cfd9e70ab81))
+
+
+### Bug Fixes
+
+* JSON export carries the AI verification notice for model-written reports ([#101](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/101)) ([a8b3c1d](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/a8b3c1dd074c17631e93226f28593cf6b77c3700))
+* report rejected cluster credentials instead of unreachable ([#106](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/106)) ([24c574c](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/24c574c06c4529b082cbdac9f5a1c3e690b54060))
+* stop startup when the provider rejects the API key ([#105](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/105)) ([4a99352](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/4a9935289639c6e9da758399a417838783c46420))
+* suggest LLM_REASONING_EFFORT=off when a model rejects the effort parameter ([#103](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/issues/103)) ([ab636a4](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/commit/ab636a47582486fb4dde66dbe2b59ab6810e21db))
+
 ## [1.5.0](https://github.com/kmpoltorak/ai-kubernetes-troubleshooter/compare/v1.4.0...v1.5.0) (2026-11-06)
 
 
