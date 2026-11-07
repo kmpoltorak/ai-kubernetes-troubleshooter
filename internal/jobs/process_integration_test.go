@@ -118,7 +118,7 @@ func TestDurableWorkerProcess(t *testing.T) {
 		s, _ := workerDB(t)
 		var provider llm.Provider = llm.RulesProvider{}
 		if mode == "analyzing" {
-			provider = llm.NewOpenAIProvider(os.Getenv("T05_MARKER_URL"), "fixture", "fixture", 10*time.Second)
+			provider = llm.NewOpenAIProvider(os.Getenv("T05_MARKER_URL"), "fixture", "fixture", "", 10*time.Second)
 		}
 		engine := workerEngine(t, s, provider)
 		var runner jobs.Runner = engine
@@ -191,7 +191,7 @@ func TestDurableWorkerProcess(t *testing.T) {
 			_ = cmd.Wait()
 			provider := llm.Provider(llm.RulesProvider{})
 			if mode == "analyzing" {
-				provider = llm.NewOpenAIProvider(endpoint.URL, "fixture", "fixture", time.Second)
+				provider = llm.NewOpenAIProvider(endpoint.URL, "fixture", "fixture", "", time.Second)
 			}
 			svc := jobs.New(s, workerEngine(t, s, provider), slog.New(slog.NewTextHandler(io.Discard, nil)), workerConfig())
 			startWorkers(t, svc)

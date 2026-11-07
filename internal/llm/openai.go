@@ -14,31 +14,26 @@ import (
 
 // OpenAIProvider calls the Chat Completions API (or any compatible endpoint)
 // with a strict JSON schema response format.
+// No temperature is sent: reasoning models accept only the default, and
+// reasoning_effort controls depth instead.
 type OpenAIProvider struct {
-	maxInputBytes int
-	baseURL       string
-	apiKey        string
-	model         string
-	client        *http.Client
-	// reasoningEffort is sent to reasoning models, which accept only the default
-	// temperature; empty sends temperature 0 instead.
-	reasoningEffort string
+	maxInputBytes   int
+	maxOutputTokens int
+	baseURL         string
+	apiKey          string
+	model           string
+	effort          string
+	client          *http.Client
 }
 
-func NewOpenAIProvider(baseURL, apiKey, model string, timeout time.Duration) *OpenAIProvider {
-	return &OpenAIProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, baseURL: baseURL, apiKey: apiKey, model: model, client: &http.Client{Timeout: timeout}}
-}
-
-// WithReasoningEffort sets reasoning_effort (e.g. medium) for reasoning models.
-func (p *OpenAIProvider) WithReasoningEffort(effort string) *OpenAIProvider {
-	p.reasoningEffort = effort
-	return p
+func NewOpenAIProvider(baseURL, apiKey, model, effort string, timeout time.Duration) *OpenAIProvider {
+	return &OpenAIProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, maxOutputTokens: config.DefaultLLMMaxOutputTokens, baseURL: baseURL, apiKey: apiKey, model: model, effort: effort, client: &http.Client{Timeout: timeout}}
 }
 
 func (p *OpenAIProvider) Name() string { return "openai/" + p.model }
 
 func (p *OpenAIProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.Analysis, error) {
-	result, err := p.analyze(ctx, in, 0)
+	result, err := p.analyze(ctx, in, p.maxOutputTokens, false)
 	if result.Analysis == nil {
 		return domain.Analysis{}, err
 	}
@@ -47,13 +42,13 @@ func (p *OpenAIProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.
 
 // AnalyzeMeasured adds a bounded generation and per-call metadata for manual evaluation.
 func (p *OpenAIProvider) AnalyzeMeasured(ctx context.Context, in AnalysisInput, maxOutputTokens int) (Measurement, error) {
-	if maxOutputTokens < 1 || maxOutputTokens > 4096 {
-		return Measurement{}, fmt.Errorf("output token limit must be between 1 and 4096")
+	if maxOutputTokens < 1 || maxOutputTokens > config.MaxLLMOutputTokens {
+		return Measurement{}, fmt.Errorf("output token limit must be between 1 and %d", config.MaxLLMOutputTokens)
 	}
-	return p.analyze(ctx, in, maxOutputTokens)
+	return p.analyze(ctx, in, maxOutputTokens, true)
 }
 
-func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutputTokens int) (result Measurement, err error) {
+func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutputTokens int, measured bool) (result Measurement, err error) {
 	start := time.Now()
 	result = measurement()
 	defer func() {
@@ -67,8 +62,9 @@ func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 		return result, err
 	}
 	req := map[string]any{
-		"model":    p.model,
-		"messages": msgs,
+		"model":                 p.model,
+		"messages":              msgs,
+		"max_completion_tokens": maxOutputTokens,
 		"response_format": map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
@@ -78,13 +74,8 @@ func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 			},
 		},
 	}
-	if p.reasoningEffort != "" {
-		req["reasoning_effort"] = p.reasoningEffort
-	} else {
-		req["temperature"] = 0
-	}
-	if maxOutputTokens > 0 {
-		req["max_completion_tokens"] = maxOutputTokens
+	if p.effort != "" {
+		req["reasoning_effort"] = p.effort
 	}
 	var resp struct {
 		Choices []struct {
@@ -97,11 +88,11 @@ func (p *OpenAIProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 	}
 	headers := map[string]string{"Authorization": "Bearer " + p.apiKey}
 	var raw json.RawMessage
-	if err := postJSON(ctx, evaluationClient(p.client, maxOutputTokens), p.baseURL+"/chat/completions", headers, req, &raw, p.maxInputBytes); err != nil {
+	if err := postJSON(ctx, evaluationClient(p.client, measured), p.baseURL+"/chat/completions", headers, req, &raw, p.maxInputBytes); err != nil {
 		return result, fmt.Errorf("openai: %w", err)
 	}
 
-	if maxOutputTokens > 0 {
+	if measured {
 		var metadata struct {
 			Model string `json:"model"`
 			Usage struct {

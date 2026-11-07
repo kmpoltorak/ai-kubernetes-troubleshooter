@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/config"
 )
 
 func TestMeasuredProviders(t *testing.T) {
@@ -75,7 +77,7 @@ func TestMeasuredProviders(t *testing.T) {
 				var err error
 				switch provider {
 				case "openai":
-					result, err = NewOpenAIProvider(srv.URL, "synthetic", "requested", time.Second).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
+					result, err = NewOpenAIProvider(srv.URL, "synthetic", "requested", "", time.Second).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
 					if request["max_completion_tokens"] != float64(4096) {
 						t.Fatalf("missing token cap: %v", request)
 					}
@@ -124,13 +126,13 @@ func TestMeasuredLimitsAndRedirects(t *testing.T) {
 			var analyze func(context.Context, AnalysisInput, int) (Measurement, error)
 			switch provider {
 			case "openai":
-				analyze = NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second).AnalyzeMeasured
+				analyze = NewOpenAIProvider(srv.URL, "synthetic", "m", "", time.Second).AnalyzeMeasured
 			case "anthropic":
 				analyze = NewAnthropicProvider(srv.URL, "synthetic", "m", "", time.Second).AnalyzeMeasured
 			case "gemini":
 				analyze = NewGeminiProvider(srv.URL, "synthetic", "m", "", time.Second).AnalyzeMeasured
 			}
-			for _, limit := range []int{-1, 0, 4097} {
+			for _, limit := range []int{-1, 0, config.MaxLLMOutputTokens + 1} {
 				before := calls.Load()
 				if _, err := analyze(context.Background(), sampleInput(), limit); err == nil || calls.Load() != before {
 					t.Fatal("invalid limit sent a request")
@@ -152,7 +154,7 @@ func TestMeasuredTimeoutKeepsFingerprint(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	result, err := NewOpenAIProvider(srv.URL, "synthetic", "m", 20*time.Millisecond).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
+	result, err := NewOpenAIProvider(srv.URL, "synthetic", "m", "", 20*time.Millisecond).AnalyzeMeasured(context.Background(), sampleInput(), 4096)
 	if !errors.Is(err, context.DeadlineExceeded) || result.ElapsedNS <= 0 || len(result.SchemaSHA256) != 64 || result.Analysis != nil || result.Usage.InputTokens != nil {
 		t.Fatalf("timeout metadata: %+v %v", result, err)
 	}
@@ -175,7 +177,7 @@ func TestMeasuredRequestsKeepSeparateUsage(t *testing.T) {
 		_, _ = fmt.Fprintf(w, `{"usage":{"prompt_tokens":%d},"choices":[{"message":{"content":%s}}]}`, count, content)
 	}))
 	defer srv.Close()
-	p := NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second)
+	p := NewOpenAIProvider(srv.URL, "synthetic", "m", "", time.Second)
 	results := make(chan Measurement, 2)
 	for _, title := range []string{"first", "second"} {
 		go func() {

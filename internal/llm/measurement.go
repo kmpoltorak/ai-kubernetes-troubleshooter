@@ -31,8 +31,8 @@ func measurement() Measurement {
 	return Measurement{PromptSHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(systemPrompt))), SchemaSHA256: fmt.Sprintf("%x", sha256.Sum256(analysisSchema))}
 }
 
-func evaluationClient(client *http.Client, outputLimit int) *http.Client {
-	if outputLimit == 0 {
+func evaluationClient(client *http.Client, measured bool) *http.Client {
+	if !measured {
 		return client
 	}
 	copy := *client

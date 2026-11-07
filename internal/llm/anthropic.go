@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,30 +17,27 @@ import (
 // requests carry none; output_config.effort is the only quality control.
 const anthropicVersion = "2026-10-21"
 
-// anthropicMaxTokens bounds an ordinary analysis. Thinking counts against it,
-// so it is well above the report itself.
-const anthropicMaxTokens = 16000
-
 // AnthropicProvider calls the Claude Messages API over the same request path
 // as the other providers (size budget, masked errors, no retries), with the
 // analysis schema as structured output.
 type AnthropicProvider struct {
-	maxInputBytes int
-	baseURL       string
-	apiKey        string
-	model         string
-	effort        string
-	client        *http.Client
+	maxInputBytes   int
+	maxOutputTokens int
+	baseURL         string
+	apiKey          string
+	model           string
+	effort          string
+	client          *http.Client
 }
 
 func NewAnthropicProvider(baseURL, apiKey, model, effort string, timeout time.Duration) *AnthropicProvider {
-	return &AnthropicProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, baseURL: baseURL, apiKey: apiKey, model: model, effort: effort, client: &http.Client{Timeout: timeout}}
+	return &AnthropicProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, maxOutputTokens: config.DefaultLLMMaxOutputTokens, baseURL: baseURL, apiKey: apiKey, model: model, effort: effort, client: &http.Client{Timeout: timeout}}
 }
 
 func (p *AnthropicProvider) Name() string { return "anthropic/" + p.model }
 
 func (p *AnthropicProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.Analysis, error) {
-	result, err := p.analyze(ctx, in, 0)
+	result, err := p.analyze(ctx, in, p.maxOutputTokens, false)
 	if result.Analysis == nil {
 		return domain.Analysis{}, err
 	}
@@ -50,13 +46,13 @@ func (p *AnthropicProvider) Analyze(ctx context.Context, in AnalysisInput) (doma
 
 // AnalyzeMeasured adds a bounded generation and per-call metadata for manual evaluation.
 func (p *AnthropicProvider) AnalyzeMeasured(ctx context.Context, in AnalysisInput, maxOutputTokens int) (Measurement, error) {
-	if maxOutputTokens < 1 || maxOutputTokens > 4096 {
-		return Measurement{}, fmt.Errorf("output token limit must be between 1 and 4096")
+	if maxOutputTokens < 1 || maxOutputTokens > config.MaxLLMOutputTokens {
+		return Measurement{}, fmt.Errorf("output token limit must be between 1 and %d", config.MaxLLMOutputTokens)
 	}
-	return p.analyze(ctx, in, maxOutputTokens)
+	return p.analyze(ctx, in, maxOutputTokens, true)
 }
 
-func (p *AnthropicProvider) analyze(ctx context.Context, in AnalysisInput, maxOutputTokens int) (result Measurement, err error) {
+func (p *AnthropicProvider) analyze(ctx context.Context, in AnalysisInput, maxOutputTokens int, measured bool) (result Measurement, err error) {
 	start := time.Now()
 	result = measurement()
 	defer func() {
@@ -75,7 +71,7 @@ func (p *AnthropicProvider) analyze(ctx context.Context, in AnalysisInput, maxOu
 	}
 	req := map[string]any{
 		"model":         p.model,
-		"max_tokens":    cmp.Or(maxOutputTokens, anthropicMaxTokens),
+		"max_tokens":    maxOutputTokens,
 		"system":        systemPrompt,
 		"messages":      []chatMessage{{Role: "user", Content: user}},
 		"output_config": outputConfig,
@@ -88,10 +84,10 @@ func (p *AnthropicProvider) analyze(ctx context.Context, in AnalysisInput, maxOu
 	}
 	headers := map[string]string{"x-api-key": p.apiKey, "anthropic-version": anthropicVersion}
 	var raw json.RawMessage
-	if err := postJSON(ctx, evaluationClient(p.client, maxOutputTokens), p.baseURL+"/v1/messages", headers, req, &raw, p.maxInputBytes); err != nil {
+	if err := postJSON(ctx, evaluationClient(p.client, measured), p.baseURL+"/v1/messages", headers, req, &raw, p.maxInputBytes); err != nil {
 		return result, fmt.Errorf("anthropic: %w", err)
 	}
-	if maxOutputTokens > 0 {
+	if measured {
 		var metadata struct {
 			Model string `json:"model"`
 			Usage struct {

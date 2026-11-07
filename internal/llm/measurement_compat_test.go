@@ -31,7 +31,7 @@ func TestOrdinaryAnalysisIgnoresUnusedProviderMetadata(t *testing.T) {
 			var p Provider
 			switch provider {
 			case "openai":
-				p = NewOpenAIProvider(srv.URL, "synthetic", "m", time.Second)
+				p = NewOpenAIProvider(srv.URL, "synthetic", "m", "", time.Second)
 			case "anthropic":
 				p = NewAnthropicProvider(srv.URL, "synthetic", "m", "", time.Second)
 			case "gemini":

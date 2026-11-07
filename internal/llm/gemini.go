@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,30 +14,28 @@ import (
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/redact"
 )
 
-// geminiMaxTokens bounds an ordinary analysis, leaving room for thinking.
-const geminiMaxTokens = 16000
-
 // GeminiProvider calls the Gemini generateContent API over the same request
 // path as the other providers (size budget, masked errors, no retries), with
 // the analysis schema as responseJsonSchema. No temperature is sent: Gemini's
 // thinking models are tuned for the default.
 type GeminiProvider struct {
-	maxInputBytes int
-	baseURL       string
-	apiKey        string
-	model         string
-	effort        string
-	client        *http.Client
+	maxInputBytes   int
+	maxOutputTokens int
+	baseURL         string
+	apiKey          string
+	model           string
+	effort          string
+	client          *http.Client
 }
 
 func NewGeminiProvider(baseURL, apiKey, model, effort string, timeout time.Duration) *GeminiProvider {
-	return &GeminiProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, baseURL: baseURL, apiKey: apiKey, model: model, effort: effort, client: &http.Client{Timeout: timeout}}
+	return &GeminiProvider{maxInputBytes: config.DefaultLLMMaxInputBytes, maxOutputTokens: config.DefaultLLMMaxOutputTokens, baseURL: baseURL, apiKey: apiKey, model: model, effort: effort, client: &http.Client{Timeout: timeout}}
 }
 
 func (p *GeminiProvider) Name() string { return "gemini/" + p.model }
 
 func (p *GeminiProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.Analysis, error) {
-	result, err := p.analyze(ctx, in, 0)
+	result, err := p.analyze(ctx, in, p.maxOutputTokens, false)
 	if result.Analysis == nil {
 		return domain.Analysis{}, err
 	}
@@ -47,10 +44,10 @@ func (p *GeminiProvider) Analyze(ctx context.Context, in AnalysisInput) (domain.
 
 // AnalyzeMeasured adds a bounded generation and per-call metadata for manual evaluation.
 func (p *GeminiProvider) AnalyzeMeasured(ctx context.Context, in AnalysisInput, maxOutputTokens int) (Measurement, error) {
-	if maxOutputTokens < 1 || maxOutputTokens > 4096 {
-		return Measurement{}, fmt.Errorf("output token limit must be between 1 and 4096")
+	if maxOutputTokens < 1 || maxOutputTokens > config.MaxLLMOutputTokens {
+		return Measurement{}, fmt.Errorf("output token limit must be between 1 and %d", config.MaxLLMOutputTokens)
 	}
-	return p.analyze(ctx, in, maxOutputTokens)
+	return p.analyze(ctx, in, maxOutputTokens, true)
 }
 
 type geminiContent struct {
@@ -63,7 +60,7 @@ type geminiPart struct {
 	Thought bool   `json:"thought,omitempty"`
 }
 
-func (p *GeminiProvider) analyze(ctx context.Context, in AnalysisInput, maxOutputTokens int) (result Measurement, err error) {
+func (p *GeminiProvider) analyze(ctx context.Context, in AnalysisInput, maxOutputTokens int, measured bool) (result Measurement, err error) {
 	start := time.Now()
 	result = measurement()
 	defer func() {
@@ -79,7 +76,7 @@ func (p *GeminiProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 	generation := map[string]any{
 		"responseMimeType":   "application/json",
 		"responseJsonSchema": analysisSchema,
-		"maxOutputTokens":    cmp.Or(maxOutputTokens, geminiMaxTokens),
+		"maxOutputTokens":    maxOutputTokens,
 	}
 	if p.effort != "" {
 		generation["thinkingConfig"] = map[string]string{"thinkingLevel": strings.ToUpper(p.effort)}
@@ -100,10 +97,10 @@ func (p *GeminiProvider) analyze(ctx context.Context, in AnalysisInput, maxOutpu
 	}
 	endpoint := p.baseURL + "/models/" + url.PathEscape(p.model) + ":generateContent"
 	var raw json.RawMessage
-	if err := postJSON(ctx, evaluationClient(p.client, maxOutputTokens), endpoint, map[string]string{"x-goog-api-key": p.apiKey}, req, &raw, p.maxInputBytes); err != nil {
+	if err := postJSON(ctx, evaluationClient(p.client, measured), endpoint, map[string]string{"x-goog-api-key": p.apiKey}, req, &raw, p.maxInputBytes); err != nil {
 		return result, fmt.Errorf("gemini: %w", err)
 	}
-	if maxOutputTokens > 0 {
+	if measured {
 		var metadata struct {
 			ModelVersion string `json:"modelVersion"`
 			Usage        struct {
