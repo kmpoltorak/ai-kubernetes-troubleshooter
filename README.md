@@ -48,6 +48,9 @@ cp .env.example .env    # set DATABASE_URL to your PostgreSQL
 
 ## Quick start
 
+New to it? [Getting started](docs/getting-started.md) walks through every step,
+from a trial in simulation to a live cluster and a language model.
+
 ```bash
 docker compose up --build                          # UI and API on http://localhost:8080
 ```
