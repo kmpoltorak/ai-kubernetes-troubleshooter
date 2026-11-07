@@ -73,4 +73,6 @@ test("model-written reports carry a verification notice; rules reports do not", 
   const llm = { ...v2, report: { ...v2.report, provider: "openai/gpt-6-luna" } };
   assert.match(reportMarkdown(incident, llm, meta), /> Written by openai\/gpt-6-luna\. AI can make mistakes: verify/);
   assert.doesNotMatch(reportMarkdown(incident, v2, meta), /AI can make mistakes/);
+  assert.match(JSON.parse(reportJSON(incident, llm, meta)).export.ai_notice, /^Written by openai\/gpt-6-luna\. AI can make mistakes/);
+  assert.equal(JSON.parse(reportJSON(incident, v2, meta)).export.ai_notice, undefined);
 });
