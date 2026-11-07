@@ -63,8 +63,8 @@
   Kubernetes versions are untested. Other CNI implementations, clouds and cluster
   OIDC/TLS/Ingress are not covered.
 - The OpenAI, Anthropic and Gemini clients use fake servers in CI; two models per
-  provider were run against the real APIs on 18 synthetic attempts, with human
-  review pending ([results](evaluation.md#measured-models)).
+  provider were run against the real APIs on 18 synthetic attempts
+  ([results](evaluation.md#measured-models)); that is not a production benchmark.
 - Browser tests run in Chromium only; Firefox and Safari are untested.
 
 ## Upgrades

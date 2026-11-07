@@ -97,8 +97,8 @@ are not a statistical accuracy estimate or a production benchmark.
 
 Each model ran the 18 attempts once on 2026-11-07 with the defaults:
 `LLM_REASONING_EFFORT=medium`, `LLM_MAX_OUTPUT_TOKENS=16000`, a 300-second
-request timeout. The validator accepted all 18 reports of every model; human
-review is still pending, so none is `qualified`.
+request timeout. The validator accepted all 18 reports of every model, and the
+reports were then reviewed by hand against their evidence.
 
 | Model | Accepted | Seconds per request (median, range) | Output tokens (median) |
 |---|---|---|---|
