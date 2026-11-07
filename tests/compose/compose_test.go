@@ -56,7 +56,7 @@ func renderEnv(t *testing.T, env map[string]string, files ...string) (rendered, 
 	cmd := exec.CommandContext(ctx, "docker", append(args, "config", "--format", "json")...)
 	cmd.Dir = "../.."
 	for _, kv := range os.Environ() {
-		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "KUBE_DIR" && name != "DATABASE_URL" && name != "EXTERNAL_DATABASE_NETWORK" && name != "KUBERNETES_CUSTOM_RESOURCES" {
+		if name, _, _ := strings.Cut(kv, "="); name != "KUBECONFIG_FILE" && name != "KUBE_DIR" && name != "DATABASE_URL" && name != "TEST_DB_PASSWORD" && name != "EXTERNAL_DATABASE_NETWORK" && name != "KUBERNETES_CUSTOM_RESOURCES" {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
@@ -155,6 +155,12 @@ func TestTestDatabaseOverrideIsSelfContained(t *testing.T) {
 	}
 	if pg, ok := r.Services["postgres"]; !ok || len(pg.Ports) != 0 {
 		t.Fatalf("test PostgreSQL must exist and publish no host port: %+v", pg)
+	}
+	// One password from .env sets both the container and the app's address.
+	r, stderr, err = renderEnv(t, map[string]string{"TEST_DB_PASSWORD": "trial-pass"}, "docker-compose.yml", "docker-compose.test-db.yml")
+	if err != nil || r.Services["postgres"].Environment["POSTGRES_PASSWORD"] != "trial-pass" ||
+		!strings.Contains(r.Services["app"].Environment["DATABASE_URL"], ":trial-pass@postgres:5432/") {
+		t.Fatalf("TEST_DB_PASSWORD: %v %s %+v", err, stderr, r.Services)
 	}
 }
 
