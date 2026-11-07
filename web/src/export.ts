@@ -21,7 +21,8 @@ export const schemaVersion = (record: InvestigationRecord) =>
   record.report ? record.report.analysis.schema_version ?? 1 : null;
 
 export function reportJSON(incident: Incident, record: InvestigationRecord, meta: ExportMeta): string {
-  return JSON.stringify({ export: { ...meta, schema_version: schemaVersion(record) }, incident, ...record }, null, 2) + "\n";
+  const notice = record.report && aiNotice(record.report.provider);
+  return JSON.stringify({ export: { ...meta, schema_version: schemaVersion(record), ...(notice && { ai_notice: notice }) }, incident, ...record }, null, 2) + "\n";
 }
 
 const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
