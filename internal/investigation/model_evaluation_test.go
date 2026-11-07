@@ -50,7 +50,7 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 	if getenv("MODEL_EVAL_ALLOW_NETWORK") != "true" {
 		return modelEvaluationConfig{}, errors.New("MODEL_EVAL_ALLOW_NETWORK=true is required")
 	}
-	c := modelEvaluationConfig{Provider: getenv("MODEL_EVAL_PROVIDER"), Model: getenv("MODEL_EVAL_MODEL"), MaxInputBytes: config.DefaultLLMMaxInputBytes, MaxOutputTokens: config.DefaultLLMMaxOutputTokens, TimeoutSeconds: 60,
+	c := modelEvaluationConfig{Provider: getenv("MODEL_EVAL_PROVIDER"), Model: getenv("MODEL_EVAL_MODEL"), MaxInputBytes: config.DefaultLLMMaxInputBytes, MaxOutputTokens: config.DefaultLLMMaxOutputTokens, TimeoutSeconds: 300,
 		ReasoningEffort: cmp.Or(getenv("MODEL_EVAL_REASONING_EFFORT"), "medium")}
 	if v := getenv("MODEL_EVAL_TIMEOUT_SECONDS"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -108,7 +108,7 @@ func loadModelEvaluation(getenv func(string) string) (modelEvaluationConfig, err
 
 // evaluationDeadlines derives every limit from the request timeout: the
 // investigation adds 30 s for diagnostics, and the suite fits 18 such requests
-// plus 2 minutes. The 60 s default gives 90 s and 20 minutes.
+// plus 2 minutes. The 300 s default gives 330 s and 92 minutes.
 func evaluationDeadlines(seconds int) (request, investigation, suite time.Duration) {
 	request = time.Duration(seconds) * time.Second
 	return request, request + 30*time.Second, modelEvaluationAttempts*request + 2*time.Minute

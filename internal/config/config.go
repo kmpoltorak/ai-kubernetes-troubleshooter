@@ -113,7 +113,7 @@ func Load(getenv func(string) string) (Config, error) {
 		LLMReasoningEffort:          p.str("LLM_REASONING_EFFORT", "medium"),
 		LLMMaxInputBytes:            p.int("LLM_MAX_INPUT_BYTES", DefaultLLMMaxInputBytes),
 		LLMMaxOutputTokens:          p.int("LLM_MAX_OUTPUT_TOKENS", DefaultLLMMaxOutputTokens),
-		LLMTimeout:                  p.duration("LLM_TIMEOUT", 60*time.Second),
+		LLMTimeout:                  p.duration("LLM_TIMEOUT", 300*time.Second),
 		OpenAIAPIKey:                p.str("OPENAI_API_KEY", ""),
 		OpenAIBaseURL:               strings.TrimRight(p.str("OPENAI_BASE_URL", "https://api.openai.com/v1"), "/"),
 		AnthropicAPIKey:             p.str("ANTHROPIC_API_KEY", ""),
@@ -124,7 +124,7 @@ func Load(getenv func(string) string) (Config, error) {
 		SimulationScenario:          p.str("SIMULATION_SCENARIO", "healthy"),
 		JobTimeout:                  p.duration("JOB_TIMEOUT", 15*time.Minute),
 		JobQueueCapacity:            p.int("JOB_QUEUE_CAPACITY", 100),
-		InvestigationTimeout:        p.duration("INVESTIGATION_TIMEOUT", 90*time.Second),
+		InvestigationTimeout:        p.duration("INVESTIGATION_TIMEOUT", 360*time.Second),
 		MaxConcurrentInvestigations: p.int("MAX_CONCURRENT_INVESTIGATIONS", 4),
 		RateLimitRPS:                p.float("RATE_LIMIT_RPS", 5),
 	}
@@ -196,6 +196,11 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.InvestigationTimeout <= 0 {
 		p.fail("INVESTIGATION_TIMEOUT", "must be positive")
+	}
+	// The analysis runs inside the investigation; a shorter attempt would cancel
+	// every LLM request before its own timeout.
+	if c.LLMProvider != "rules" && c.InvestigationTimeout > 0 && c.InvestigationTimeout <= c.LLMTimeout {
+		p.fail("INVESTIGATION_TIMEOUT", fmt.Sprintf("must be longer than LLM_TIMEOUT (%s), which runs inside it", c.LLMTimeout))
 	}
 	if c.MaxConcurrentInvestigations < 1 {
 		p.fail("MAX_CONCURRENT_INVESTIGATIONS", "must be at least 1")

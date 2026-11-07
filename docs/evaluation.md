@@ -26,7 +26,7 @@ before running. There are no automatic retries or redirects.
 | `MODEL_EVAL_PROVIDER` | required: `openai`, `anthropic` or `gemini` |
 | `MODEL_EVAL_MODEL` | required; no default |
 | `MODEL_EVAL_ALLOW_NETWORK` | must equal `true` |
-| `MODEL_EVAL_TIMEOUT_SECONDS` | default `60`, at most `600`; per request, recorded as `request_timeout_seconds` |
+| `MODEL_EVAL_TIMEOUT_SECONDS` | default `300`, at most `600`; per request, recorded as `request_timeout_seconds` |
 | `MODEL_EVAL_REASONING_EFFORT` | default `medium`; sent as OpenAI `reasoning_effort`, Anthropic `output_config.effort` or Gemini `thinkingLevel`; `off` sends none (OpenAI then gets temperature 0) |
 | `OPENAI_API_KEY` | environment only; required for OpenAI |
 | `OPENAI_BASE_URL` | default `https://api.openai.com/v1` |
@@ -36,7 +36,7 @@ before running. There are no automatic retries or redirects.
 | `GEMINI_BASE_URL` | default `https://generativelanguage.googleapis.com/v1beta` |
 | Endpoint | HTTPS, or HTTP loopback; no URL credentials, query or fragment |
 | Attempts | six fixed cases × three attempts, serially; at most 18 requests |
-| Time | the request timeout; each investigation gets 30 seconds more, and the suite 18 requests plus 2 minutes (20 minutes at 60 seconds) |
+| Time | the request timeout; each investigation gets 30 seconds more, and the suite 18 requests plus 2 minutes (92 minutes at the 300-second default) |
 | Input | 262144 serialized request bytes, including schema |
 | Generation | at most 16000 tokens per attempt, thinking included (the application default) |
 
@@ -50,12 +50,12 @@ provider and an exact model name, then run:
 ```bash
 : "${MODEL_EVAL_MODEL:?Set an explicit model first}"
 MODEL_EVAL_ALLOW_NETWORK=true MODEL_EVAL_PROVIDER=openai \
-  go test -tags modeleval -run '^TestEvaluateModel$' -count=1 -timeout=22m -json \
+  go test -tags modeleval -run '^TestEvaluateModel$' -count=1 -timeout=95m -json \
   ./internal/investigation > report-model-evaluation.jsonl
 ```
 
-With a longer `MODEL_EVAL_TIMEOUT_SECONDS`, raise `-timeout` above the suite
-limit, e.g. `-timeout=95m` for 300 seconds. A report cut off at the token
+`-timeout=95m` covers the suite at the 300-second default; for a longer
+`MODEL_EVAL_TIMEOUT_SECONDS`, raise it above the suite limit. A report cut off at the token
 limit fails the attempt. Keep keys out of
 arguments and output files.
 Choose a new output filename each time: `>` overwrites an existing file.
