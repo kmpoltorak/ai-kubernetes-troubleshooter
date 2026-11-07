@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/domain"
+	"github.com/kmpoltorak/ai-kubernetes-troubleshooter/internal/kube"
 )
 
 // DefaultLLMMaxInputBytes bounds the serialized provider request, including its schema.
@@ -143,7 +144,7 @@ func Load(getenv func(string) string) (Config, error) {
 	if c.DatabaseURL == "" {
 		p.fail("DATABASE_URL", "is required")
 	}
-	c.Clusters = p.clusters()
+	c.Clusters = p.clusters(c.SimulationEnabled)
 	for _, entry := range p.list("KUBERNETES_CUSTOM_RESOURCES") {
 		cr, err := parseCustomResource(entry)
 		if err != nil {
@@ -217,13 +218,20 @@ func Load(getenv func(string) string) (Config, error) {
 
 // clusters reads KUBERNETES_CLUSTERS_FILE, or builds one cluster from the
 // single-cluster variables. Setting both is ambiguous and rejected.
-func (p *parser) clusters() []Cluster {
+func (p *parser) clusters(simulation bool) []Cluster {
 	path := p.str("KUBERNETES_CLUSTERS_FILE", "")
 	if path == "" {
-		c := Cluster{Name: p.str("KUBERNETES_CLUSTER_NAME", "local"), Kubeconfig: p.str("KUBECONFIG", ""),
+		c := Cluster{Name: p.str("KUBERNETES_CLUSTER_NAME", ""), Kubeconfig: p.str("KUBECONFIG", ""),
 			Context: p.str("KUBERNETES_CONTEXT", ""), AllowedNamespaces: p.list("KUBERNETES_ALLOWED_NAMESPACES")}
-		if err := domain.ValidateObjectName(c.Name); err != nil {
-			p.fail("KUBERNETES_CLUSTER_NAME", err.Error())
+		switch {
+		case c.Name != "":
+			if err := domain.ValidateObjectName(c.Name); err != nil {
+				p.fail("KUBERNETES_CLUSTER_NAME", err.Error())
+			}
+		case simulation:
+			c.Name = "local"
+		default:
+			c.Name = p.kubeconfigClusterName(c)
 		}
 		for _, ns := range c.AllowedNamespaces {
 			if err := domain.ValidateNamespace(ns); err != nil {
@@ -268,6 +276,22 @@ func (p *parser) clusters() []Cluster {
 		}
 	}
 	return file.Clusters
+}
+
+// kubeconfigClusterName names a live cluster after its kubeconfig context's
+// cluster, so the name shown is the cluster's own, not an invented default.
+func (p *parser) kubeconfigClusterName(c Cluster) string {
+	const key = "KUBERNETES_CLUSTER_NAME"
+	name, err := kube.ContextCluster(c.Kubeconfig, c.Context)
+	switch {
+	case err != nil:
+		p.fail(key, "is not set and the kubeconfig cannot name the cluster: "+err.Error())
+	case name == "":
+		p.fail(key, "is required with the in-cluster ServiceAccount, which has no kubeconfig to name the cluster")
+	case domain.ValidateObjectName(name) != nil:
+		p.fail(key, fmt.Sprintf("is not set and the kubeconfig's cluster name %q is not a valid name; set it", name))
+	}
+	return name
 }
 
 // CustomKinds lists the configured custom resources as incident kinds.

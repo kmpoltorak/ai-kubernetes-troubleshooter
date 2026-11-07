@@ -281,3 +281,52 @@ func TestLoadTimeoutDefaults(t *testing.T) {
 		t.Fatalf("rules with a short attempt: %v", err)
 	}
 }
+
+// A live cluster without KUBERNETES_CLUSTER_NAME is named after its kubeconfig
+// context's cluster, never an invented default.
+func TestLiveClusterNameComesFromKubeconfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(path, []byte(`apiVersion: v1
+kind: Config
+current-context: lab
+clusters:
+  - {name: lab, cluster: {server: "https://192.0.2.10:6443"}}
+  - {name: "arn:aws:eks:eu-west-1:000000000000:cluster/prod", cluster: {server: "https://192.0.2.20:6443"}}
+contexts:
+  - {name: lab, context: {cluster: lab, user: ro}}
+  - {name: eks, context: {cluster: "arn:aws:eks:eu-west-1:000000000000:cluster/prod", user: ro}}
+users: [{name: ro, user: {token: synthetic}}]
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	live := func(extra map[string]string) (Config, error) {
+		e := map[string]string{"DATABASE_URL": "x", "SIMULATION_ENABLED": "false", "KUBECONFIG": path}
+		for k, v := range extra {
+			e[k] = v
+		}
+		return Load(env(e))
+	}
+	if c, err := live(nil); err != nil || c.Clusters[0].Name != "lab" {
+		t.Fatalf("current context: %v %+v", err, c.Clusters)
+	}
+	if c, err := live(map[string]string{"KUBERNETES_CLUSTER_NAME": "staging"}); err != nil || c.Clusters[0].Name != "staging" {
+		t.Fatalf("explicit name must win: %v %+v", err, c.Clusters)
+	}
+	for _, tc := range []struct {
+		name  string
+		extra map[string]string
+		want  string
+	}{
+		{"name not a valid DNS name", map[string]string{"KUBERNETES_CONTEXT": "eks"}, "is not a valid name"},
+		{"unknown context", map[string]string{"KUBERNETES_CONTEXT": "missing"}, `no context "missing"`},
+		{"unreadable kubeconfig", map[string]string{"KUBECONFIG": "/does/not/exist"}, "cannot name the cluster"},
+	} {
+		if _, err := live(tc.extra); err == nil || !strings.Contains(err.Error(), "KUBERNETES_CLUSTER_NAME") || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+	}
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	if _, err := live(map[string]string{"KUBECONFIG": ""}); err == nil || !strings.Contains(err.Error(), "in-cluster ServiceAccount") {
+		t.Fatalf("in a pod without a name: %v", err)
+	}
+}

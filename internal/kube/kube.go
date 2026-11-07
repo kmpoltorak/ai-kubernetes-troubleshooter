@@ -107,21 +107,44 @@ func restConfig(kubeconfig, kubeContext string) (*rest.Config, error) {
 		}
 		return cfg, nil
 	}
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if kubeconfig != "" {
-		rules.ExplicitPath = kubeconfig
-	}
-	overrides := &clientcmd.ConfigOverrides{CurrentContext: kubeContext}
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+	cfg, err := kubeconfigLoader(kubeconfig, kubeContext).ClientConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig: %w", err)
 	}
 	return cfg, nil
 }
 
+// kubeconfigLoader reads kubeconfig, or $KUBECONFIG and ~/.kube/config when it
+// is empty, at kubeContext or the current context.
+func kubeconfigLoader(kubeconfig, kubeContext string) clientcmd.ClientConfig {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	rules.ExplicitPath = kubeconfig
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{CurrentContext: kubeContext})
+}
+
+// ContextCluster is the cluster name of the kubeconfig context Connect would
+// use. It is empty in a pod using its ServiceAccount, which has no kubeconfig.
+func ContextCluster(kubeconfig, kubeContext string) (string, error) {
+	if kubeconfig == "" && kubeContext == "" && os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return "", nil
+	}
+	raw, err := kubeconfigLoader(kubeconfig, kubeContext).RawConfig()
+	if err != nil {
+		return "", fmt.Errorf("load kubeconfig: %w", err)
+	}
+	name := kubeContext
+	if name == "" {
+		name = raw.CurrentContext
+	}
+	c, ok := raw.Contexts[name]
+	if !ok {
+		return "", fmt.Errorf("kubeconfig has no context %q", name)
+	}
+	return c.Cluster, nil
+}
+
 // Ping checks the API server answers. /version is readable by any
 // authenticated identity, so it needs no extra RBAC.
-// Ping asks the API server for /version.
 func (c Cluster) Ping(ctx context.Context) error {
 	return rejected(c.Client.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx).Error())
 }
