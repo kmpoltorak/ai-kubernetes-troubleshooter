@@ -102,10 +102,9 @@ export default function App() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
-              {runtime ? `${runtime.mode} · ${runtime.clusters.length === 1 ? runtime.clusters[0].name : `${runtime.clusters.length} clusters`} · ${runtime.analyzer.provider}/${runtime.analyzer.model}` : runtimeError && `settings unavailable: ${runtimeError}`}
-            </span>
-            {runtime && <Pill text={`model: ${runtime.analyzer.model}`} cls="text-indigo-700 dark:text-indigo-300" />}
+            {runtimeError && <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">settings unavailable: {runtimeError}</span>}
+            {runtime && <Pill text={`mode: ${runtime.mode}`} cls="text-zinc-600 dark:text-zinc-400" />}
+            {runtime && <Pill text={`model: ${runtime.analyzer.provider}/${runtime.analyzer.model}`} cls="text-indigo-700 dark:text-indigo-300" />}
             {runtime && <SettingsDialog runtime={runtime} />}
             {runtime?.mode === "live" && <ClusterPill clusters={clusters} />}
             <a href="/docs/" target="_blank" rel="noopener" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">

@@ -2,7 +2,7 @@ import { useRef, type ReactNode } from "react";
 import type { Runtime } from "../api";
 
 // The settings this installation runs with, read-only; they change in the
-// environment (.env or ConfigMap), not here. The API returns no keys or URLs.
+// environment (.env or ConfigMap), not here. The API returns no keys, URLs, kubeconfig contexts or OIDC settings.
 export default function SettingsDialog({ runtime }: { runtime: Runtime }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const a = runtime.analyzer;
@@ -10,8 +10,11 @@ export default function SettingsDialog({ runtime }: { runtime: Runtime }) {
   const seconds = (n?: number) => (n === undefined ? "—" : `${n} s`);
   const rows: [string, ReactNode][] = [
     ["Mode", runtime.mode],
+    ...(runtime.default_scenario ? ([["Default scenario", runtime.default_scenario]] as [string, ReactNode][]) : []),
     ["Analyzer", `${a.provider} · ${a.model}`],
-    ...(a.reasoning_effort ? ([["Reasoning effort", a.reasoning_effort], ["Output limit", `${a.max_output_tokens} tokens`], ["LLM timeout", seconds(a.timeout_seconds)]] as [string, ReactNode][]) : []),
+    ...(a.reasoning_effort
+      ? ([["Reasoning effort", a.reasoning_effort], ["Output limit", `${a.max_output_tokens} tokens`], ["Input limit", `${a.max_input_bytes} bytes`], ["LLM timeout", seconds(a.timeout_seconds)]] as [string, ReactNode][])
+      : ([["LLM settings", "not used by the rules analyzer"]] as [string, ReactNode][])),
     ["Clusters", runtime.clusters.map((c) => `${c.name} (${c.allowed_namespaces.length ? c.allowed_namespaces.join(", ") : "all readable namespaces"})`).join("; ")],
     ["Custom resources", runtime.resource_types?.filter((k) => k.includes(".")).join(", ") || "none"],
     ["Login", runtime.authentication === undefined ? "—" : runtime.authentication ? "on" : "off"],
@@ -22,6 +25,8 @@ export default function SettingsDialog({ runtime }: { runtime: Runtime }) {
       ["Job queue capacity", l.job_queue_capacity],
       ["Rate limit", `${l.rate_limit_rps} requests/s per client`],
     ] as [string, ReactNode][]) : []),
+    ["Environment", runtime.environment ?? "—"],
+    ["Log level", runtime.log_level ?? "—"],
   ];
   return (
     <>

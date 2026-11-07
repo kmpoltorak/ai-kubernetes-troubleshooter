@@ -16,7 +16,10 @@ const jobStatus = (page: Page) => page.getByRole("region", { name: "Investigatio
 
 test("a sample investigation links citations to evidence and survives a reload", async ({ page }) => {
   await createSample(page, rules, "OOM");
-  await expect(page.getByText("simulation · local · rules/rules-v2")).toBeVisible();
+  await expect(page.getByText("mode: simulation")).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("dialog", { name: "Settings" }).getByText("not used by the rules analyzer")).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByLabel("Scenario")).toHaveValue("oom_killed");
   await page.getByRole("button", { name: "Run investigation" }).click();
   await expect(page.getByRole("heading", { name: /OOMKilled/ })).toBeVisible();
@@ -50,7 +53,7 @@ test("a reload during analysis resumes the job and keeps the failed attempt's ev
 
 test("live mode with two clusters shows their state and each cluster's namespaces", async ({ page }) => {
   await page.goto(live);
-  await expect(page.getByText("live · 2 clusters · rules/rules-v2")).toBeVisible();
+  await expect(page.getByText("mode: live")).toBeVisible();
   await expect(page.getByRole("group", { name: "Sample incidents" })).toHaveCount(0);
   // Both clusters' API servers refuse connections: the header names them.
   await expect(page.getByText("browser-live, browser-edge unreachable · 0/2 reachable")).toBeVisible();
@@ -112,13 +115,16 @@ test("incidents are deleted one at a time and in bulk after confirmation", async
 
 test("the header names the model and Settings shows the configuration read-only", async ({ page }) => {
   await page.goto(failing);
-  await expect(page.getByText("model: browser-test")).toBeVisible();
+  await expect(page.getByText("model: openai/browser-test")).toBeVisible();
   await page.getByRole("button", { name: "Settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("openai · browser-test")).toBeVisible();
   await expect(dialog.getByText("medium")).toBeVisible();
   await expect(dialog.getByText("16000 tokens")).toBeVisible();
+  await expect(dialog.getByText("262144 bytes")).toBeVisible();
+  await expect(dialog.getByText("300 s")).toBeVisible();
+  await expect(dialog.getByText("development")).toBeVisible();
   await expect(dialog.getByRole("textbox")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
