@@ -4,6 +4,7 @@ import BuildLabel from "./components/BuildLabel";
 import CreateIncidentForm from "./components/CreateIncidentForm";
 import IncidentList from "./components/IncidentList";
 import IncidentDetail from "./components/IncidentDetail";
+import SettingsDialog from "./components/SettingsDialog";
 
 const pageSize = 20;
 
@@ -104,6 +105,8 @@ export default function App() {
             <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
               {runtime ? `${runtime.mode} · ${runtime.clusters.length === 1 ? runtime.clusters[0].name : `${runtime.clusters.length} clusters`} · ${runtime.analyzer.provider}/${runtime.analyzer.model}` : runtimeError && `settings unavailable: ${runtimeError}`}
             </span>
+            {runtime && <Pill text={`model: ${runtime.analyzer.model}`} cls="text-indigo-700 dark:text-indigo-300" />}
+            {runtime && <SettingsDialog runtime={runtime} />}
             {runtime?.mode === "live" && <ClusterPill clusters={clusters} />}
             <a href="/docs/" target="_blank" rel="noopener" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
               Docs

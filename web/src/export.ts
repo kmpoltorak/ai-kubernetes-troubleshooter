@@ -12,6 +12,10 @@ export const verdictLabel: Record<string, string> = {
   no_fault_observed: "No fault observed in this sample", inconclusive: "Inconclusive",
 };
 
+// Shown with every report a language model wrote; the rules analyzer is deterministic.
+export const aiNotice = (provider: string) =>
+  provider.startsWith("rules/") ? null : `Written by ${provider}. AI can make mistakes: verify the findings and commands against the cited evidence before acting.`;
+
 // Reports without schema_version are the legacy v1 contract.
 export const schemaVersion = (record: InvestigationRecord) =>
   record.report ? record.report.analysis.schema_version ?? 1 : null;
@@ -40,7 +44,10 @@ export function reportMarkdown(incident: Incident, record: InvestigationRecord, 
   if (incident.description) out.push("", "## Description", "", incident.description);
   if (inv.error) out.push("", "## Error", "", inv.error);
   if (a && report) {
-    out.push("", "## Assessment", "", `**${a.root_cause}**`, "", a.summary, "", `- Severity: ${a.severity}`);
+    out.push("", "## Assessment", "");
+    const notice = aiNotice(report.provider);
+    if (notice) out.push(`> ${notice}`, "");
+    out.push(`**${a.root_cause}**`, "", a.summary, "", `- Severity: ${a.severity}`);
     if (version === 2) {
       out.push(`- Verdict: ${a.verdict ? verdictLabel[a.verdict] ?? a.verdict : "unknown"}`,
         `- Evidence support: ${a.support} (describes the evidence, not a probability of correctness)`);

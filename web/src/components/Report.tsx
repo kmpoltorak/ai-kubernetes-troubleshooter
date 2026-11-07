@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { Health, InvestigationRecord, Severity } from "../api";
-import { verdictLabel } from "../export";
+import { aiNotice, verdictLabel } from "../export";
 import { timeAgo } from "../format";
 import { Hint } from "./Hint";
 
@@ -97,6 +97,7 @@ export default function Report({ record, toolbar, notice }: Props) {
                 Severity (low to critical) is the analyzer's estimate of impact, not a measurement.
               </Hint>
             </div>
+            {aiNotice(report.provider) && <p className="mt-3 rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">{aiNotice(report.provider)}</p>}
             <h3 className="mt-3 text-xl font-semibold text-balance break-words">{a.root_cause}</h3>
             <p className="mt-2 max-w-[70ch] text-sm text-zinc-700 dark:text-zinc-300">{a.summary}</p>
             {v2 ? (

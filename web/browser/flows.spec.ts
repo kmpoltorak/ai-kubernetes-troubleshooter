@@ -109,3 +109,17 @@ test("incidents are deleted one at a time and in bulk after confirmation", async
   await expect(page.getByRole("heading", { name: "Select or create an incident" })).toBeVisible();
   expect(new URL(page.url()).search).toBe("");
 });
+
+test("the header names the model and Settings shows the configuration read-only", async ({ page }) => {
+  await page.goto(failing);
+  await expect(page.getByText("model: browser-test")).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("openai · browser-test")).toBeVisible();
+  await expect(dialog.getByText("medium")).toBeVisible();
+  await expect(dialog.getByText("16000 tokens")).toBeVisible();
+  await expect(dialog.getByRole("textbox")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});

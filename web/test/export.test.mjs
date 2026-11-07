@@ -68,3 +68,9 @@ test("JSON is the API record plus incident and export metadata with the schema v
     assert.deepEqual(out.evidence, record.evidence);
   }
 });
+
+test("model-written reports carry a verification notice; rules reports do not", () => {
+  const llm = { ...v2, report: { ...v2.report, provider: "openai/gpt-6-luna" } };
+  assert.match(reportMarkdown(incident, llm, meta), /> Written by openai\/gpt-6-luna\. AI can make mistakes: verify/);
+  assert.doesNotMatch(reportMarkdown(incident, v2, meta), /AI can make mistakes/);
+});
